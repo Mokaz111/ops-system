@@ -43,3 +43,14 @@ vm:
   sync_enabled: false
   vmauth_webhook_url: ""
   http_timeout_seconds: 15
+
+# 夜莺 N9E（§2.4）
+n9e:
+  enabled: false
+  base_url: "http://n9e.platform:18000"
+  username: "${N9E_USERNAME}"
+  password: "${N9E_PASSWORD}"
+  token: ""
+  api_prefix: "/api/n9e"
+  http_timeout_seconds: 20
+  prometheus_datasource_url: ""

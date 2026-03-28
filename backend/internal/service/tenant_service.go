@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"ops-system/backend/internal/model"
+	"ops-system/backend/internal/n9e"
 	"ops-system/backend/internal/repository"
 	"ops-system/backend/internal/vm"
 	"ops-system/backend/pkg/utils"
@@ -52,6 +53,7 @@ type TenantService struct {
 	tenant *repository.TenantRepository
 	inst   *repository.InstanceRepository
 	vmSync *vm.SyncService
+	n9e    *n9e.Client
 }
 
 func NewTenantService(
@@ -59,8 +61,9 @@ func NewTenantService(
 	tenant *repository.TenantRepository,
 	inst *repository.InstanceRepository,
 	vmSync *vm.SyncService,
+	n9eClient *n9e.Client,
 ) *TenantService {
-	return &TenantService{dept: dept, tenant: tenant, inst: inst, vmSync: vmSync}
+	return &TenantService{dept: dept, tenant: tenant, inst: inst, vmSync: vmSync, n9e: n9eClient}
 }
 
 // InsertURL 对外写入路径（vmauth /insert/{vmuser_id}）。
@@ -122,6 +125,11 @@ func (s *TenantService) Create(ctx context.Context, req *CreateTenantRequest) (*
 	}
 	if s.vmSync != nil {
 		s.vmSync.OnTenantCreated(ctx, t)
+	}
+	if s.n9e != nil && s.n9e.Enabled() {
+		if err := s.n9e.SyncTenantOnCreate(ctx, t); err == nil {
+			_ = s.tenant.Update(ctx, t)
+		}
 	}
 	return t, nil
 }
@@ -236,6 +244,9 @@ func (s *TenantService) Delete(ctx context.Context, id uuid.UUID) error {
 	}
 	if n > 0 {
 		return ErrTenantHasInstances
+	}
+	if s.n9e != nil {
+		s.n9e.SyncTenantOnDelete(ctx, t)
 	}
 	if s.vmSync != nil {
 		s.vmSync.OnTenantDeleted(ctx, t)

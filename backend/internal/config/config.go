@@ -18,6 +18,7 @@ type Config struct {
 	JWT         JWTConfig         `mapstructure:"jwt"`
 	RateLimit   RateLimitConfig   `mapstructure:"ratelimit"`
 	VM          VMConfig          `mapstructure:"vm"`
+	N9E         N9EConfig         `mapstructure:"n9e"`
 }
 
 type ServerConfig struct {
@@ -77,6 +78,22 @@ type VMConfig struct {
 	VMAuthWebhookURL string `mapstructure:"vmauth_webhook_url"`
 	// HTTPTimeoutSeconds Webhook 请求超时。
 	HTTPTimeoutSeconds int `mapstructure:"http_timeout_seconds"`
+}
+
+// N9EConfig 夜莺 / N9E（§2.4）。
+type N9EConfig struct {
+	Enabled bool `mapstructure:"enabled"`
+	// BaseURL 中心地址，如 http://n9e.platform:18000
+	BaseURL string `mapstructure:"base_url"`
+	// Username / Password 用于登录换 Token；若填写 Token 则跳过登录。
+	Username string `mapstructure:"username"`
+	Password string `mapstructure:"password"`
+	Token    string `mapstructure:"token"`
+	// APIPrefix 夜莺 API 前缀，默认 /api/n9e。
+	APIPrefix string `mapstructure:"api_prefix"`
+	HTTPTimeoutSeconds int `mapstructure:"http_timeout_seconds"`
+	// PrometheusDatasourceURL 写入 N9E 的 Prometheus 类数据源地址（如 VM select）。
+	PrometheusDatasourceURL string `mapstructure:"prometheus_datasource_url"`
 }
 
 // Load 从配置文件加载；支持环境变量覆盖（前缀 OPS_，例如 OPS_SERVER_PORT）。
@@ -139,6 +156,9 @@ func Load(configPath string) (*Config, error) {
 	if cfg.VM.HTTPTimeoutSeconds <= 0 {
 		cfg.VM.HTTPTimeoutSeconds = 15
 	}
+	if cfg.N9E.HTTPTimeoutSeconds <= 0 {
+		cfg.N9E.HTTPTimeoutSeconds = 20
+	}
 
 	return &cfg, nil
 }
@@ -148,4 +168,8 @@ func expandPlaceholders(cfg *Config) {
 	cfg.JWT.Secret = os.ExpandEnv(cfg.JWT.Secret)
 	cfg.VM.VMAuthBaseURL = os.ExpandEnv(cfg.VM.VMAuthBaseURL)
 	cfg.VM.VMAuthWebhookURL = os.ExpandEnv(cfg.VM.VMAuthWebhookURL)
+	cfg.N9E.Password = os.ExpandEnv(cfg.N9E.Password)
+	cfg.N9E.Token = os.ExpandEnv(cfg.N9E.Token)
+	cfg.N9E.BaseURL = os.ExpandEnv(cfg.N9E.BaseURL)
+	cfg.N9E.PrometheusDatasourceURL = os.ExpandEnv(cfg.N9E.PrometheusDatasourceURL)
 }

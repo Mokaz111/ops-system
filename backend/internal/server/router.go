@@ -6,6 +6,7 @@ import (
 	"ops-system/backend/internal/config"
 	"ops-system/backend/internal/handler"
 	"ops-system/backend/internal/middleware"
+	"ops-system/backend/internal/n9e"
 	"ops-system/backend/internal/repository"
 	"ops-system/backend/internal/service"
 	"ops-system/backend/internal/vm"
@@ -68,7 +69,8 @@ func NewRouter(cfg *config.Config, log *zap.Logger, db *gorm.DB) *gin.Engine {
 			deptH := handler.NewDepartmentHandler(deptSvc)
 
 			vmSync := vm.NewSyncService(&cfg.VM, log)
-			tenantSvc := service.NewTenantService(deptRepo, tenantRepo, instanceRepo, vmSync)
+			n9eClient := n9e.NewClient(&cfg.N9E, log)
+			tenantSvc := service.NewTenantService(deptRepo, tenantRepo, instanceRepo, vmSync, n9eClient)
 			tenantH := handler.NewTenantHandler(tenantSvc)
 
 			api.POST("/auth/login", authH.Login)
