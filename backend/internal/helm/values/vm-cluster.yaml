@@ -1,6 +1,74 @@
-# 独享集群版 VM（占位）
+# 独享集群版 VictoriaMetrics
 tenant:
   mode: dedicated_cluster
+
 vm:
+  single:
+    enabled: false
+
   cluster:
     replicationFactor: 2
+
+  vmstorage:
+    replicaCount: 2
+    retentionPeriod: "90d"
+    resources:
+      requests:
+        cpu: 500m
+        memory: 1Gi
+      limits:
+        cpu: "4"
+        memory: 4Gi
+    storage:
+      size: 100Gi
+      storageClassName: ""
+    extraArgs:
+      dedup.minScrapeInterval: "30s"
+
+  vmselect:
+    replicaCount: 2
+    resources:
+      requests:
+        cpu: 200m
+        memory: 256Mi
+      limits:
+        cpu: "2"
+        memory: 2Gi
+    extraArgs:
+      search.maxUniqueTimeseries: "1000000"
+
+  vminsert:
+    replicaCount: 2
+    resources:
+      requests:
+        cpu: 200m
+        memory: 256Mi
+      limits:
+        cpu: "2"
+        memory: 2Gi
+    extraArgs:
+      maxLabelsPerTimeseries: "40"
+
+victoriaLogs:
+  enabled: true
+  retention: 30d
+  resources:
+    requests:
+      cpu: 200m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+  storage:
+    size: 50Gi
+
+n9eEdge:
+  enabled: true
+  replicas: 2
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi

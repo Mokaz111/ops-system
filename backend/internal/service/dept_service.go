@@ -21,6 +21,7 @@ var (
 	ErrDeptNameRequired    = errors.New("dept_name required")
 	ErrInvalidParentID     = errors.New("invalid parent_id")
 	ErrParentSelf          = errors.New("parent cannot be self")
+	ErrParentCycle         = errors.New("parent would create a cycle")
 )
 
 // DepartmentTreeNode 部门树节点。
@@ -141,6 +142,9 @@ func (s *DepartmentService) Update(ctx context.Context, id uuid.UUID, req *Updat
 		if p == nil {
 			return nil, ErrParentNotFound
 		}
+		if s.wouldCreateCycle(ctx, id, pid) {
+			return nil, ErrParentCycle
+		}
 		parentPtr = &pid
 	}
 	d.ParentID = parentPtr
@@ -236,6 +240,25 @@ func toTreeNode(d model.Department) DepartmentTreeNode {
 		UpdatedAt:    d.UpdatedAt,
 		Children:     []DepartmentTreeNode{},
 	}
+}
+
+// wouldCreateCycle 检查将 id 的 parent 设为 newParent 是否会产生环路。
+// 从 newParent 向上遍历祖先链，若遇到 id 则说明会成环。
+func (s *DepartmentService) wouldCreateCycle(ctx context.Context, id, newParent uuid.UUID) bool {
+	visited := map[uuid.UUID]struct{}{id: {}}
+	cur := newParent
+	for i := 0; i < 100; i++ {
+		if _, seen := visited[cur]; seen {
+			return true
+		}
+		visited[cur] = struct{}{}
+		d, err := s.dept.GetByID(ctx, cur)
+		if err != nil || d == nil || d.ParentID == nil {
+			return false
+		}
+		cur = *d.ParentID
+	}
+	return true
 }
 
 // ListUsers 部门用户分页。

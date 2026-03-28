@@ -1,5 +1,26 @@
-# 租户侧 Grafana（若与平台 Grafana 分离部署时使用，占位）
+# 租户侧 Grafana（独享版租户独立 Grafana 实例）
 grafana:
-  enabled: false
+  enabled: true
+  replicas: 1
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
   persistence:
-    enabled: false
+    enabled: true
+    size: 2Gi
+    storageClassName: ""
+  service:
+    type: ClusterIP
+    port: 3000
+  grafana.ini:
+    server:
+      root_url: "%(protocol)s://%(domain)s:%(http_port)s/"
+    auth.anonymous:
+      enabled: false
+    security:
+      admin_user: admin
+      admin_password: "${GRAFANA_ADMIN_PASSWORD}"

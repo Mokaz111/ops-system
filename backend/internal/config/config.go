@@ -10,17 +10,23 @@ import (
 
 // Config 应用配置（对应 configs/config.yaml）。
 type Config struct {
-	Server      ServerConfig      `mapstructure:"server"`
-	Database    DatabaseConfig    `mapstructure:"database"`
-	Redis       RedisConfig       `mapstructure:"redis"`
-	Kubernetes  KubernetesConfig  `mapstructure:"kubernetes"`
-	Helm        HelmConfig         `mapstructure:"helm"`
+	Server        ServerConfig        `mapstructure:"server"`
+	Database      DatabaseConfig      `mapstructure:"database"`
+	Redis         RedisConfig         `mapstructure:"redis"`
+	Kubernetes    KubernetesConfig    `mapstructure:"kubernetes"`
+	Helm          HelmConfig          `mapstructure:"helm"`
 	Orchestration OrchestrationConfig `mapstructure:"orchestration"`
-	JWT         JWTConfig         `mapstructure:"jwt"`
-	RateLimit   RateLimitConfig   `mapstructure:"ratelimit"`
-	VM          VMConfig          `mapstructure:"vm"`
-	N9E         N9EConfig         `mapstructure:"n9e"`
-	Grafana     GrafanaConfig     `mapstructure:"grafana"`
+	JWT           JWTConfig           `mapstructure:"jwt"`
+	RateLimit     RateLimitConfig     `mapstructure:"ratelimit"`
+	CORS          CORSConfig          `mapstructure:"cors"`
+	VM            VMConfig            `mapstructure:"vm"`
+	N9E           N9EConfig           `mapstructure:"n9e"`
+	Grafana       GrafanaConfig       `mapstructure:"grafana"`
+}
+
+// CORSConfig 跨域策略。AllowedOrigins 为空时允许所有域名（开发模式）。
+type CORSConfig struct {
+	AllowedOrigins []string `mapstructure:"allowed_origins"`
 }
 
 type ServerConfig struct {

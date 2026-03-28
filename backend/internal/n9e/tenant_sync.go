@@ -2,13 +2,14 @@ package n9e
 
 import (
 	"context"
+	"fmt"
 
 	"ops-system/backend/internal/model"
 
 	"go.uber.org/zap"
 )
 
-// SyncTenantOnCreate 创建 N9E 团队并可选数据源；成功时写入 t.N9ETeamID。
+// SyncTenantOnCreate 创建 N9E 团队、同步管理员用户、注册数据源；成功时写入 t.N9ETeamID。
 func (c *Client) SyncTenantOnCreate(ctx context.Context, t *model.Tenant) error {
 	if c == nil || !c.Enabled() || t == nil {
 		return nil
@@ -19,6 +20,16 @@ func (c *Client) SyncTenantOnCreate(ctx context.Context, t *model.Tenant) error 
 		return err
 	}
 	t.N9ETeamID = teamID
+
+	adminUser := &N9EUser{
+		Username: fmt.Sprintf("tenant_%s", t.VMUserID),
+		Password: t.VMUserKey[:16],
+		Email:    fmt.Sprintf("%s@ops.internal", t.VMUserID),
+	}
+	if err := c.CreateUser(ctx, adminUser); err != nil {
+		c.log.Warn("n9e_create_user_failed", zap.String("tenant_id", t.ID.String()), zap.Error(err))
+	}
+
 	if err := c.CreatePrometheusDatasource(ctx, t); err != nil {
 		c.log.Warn("n9e_create_datasource_failed", zap.String("tenant_id", t.ID.String()), zap.Error(err))
 	}

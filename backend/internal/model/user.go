@@ -9,17 +9,18 @@ import (
 
 // User 平台用户。
 type User struct {
-	ID           uuid.UUID  `json:"id" gorm:"type:uuid;primaryKey"`
-	Username     string     `json:"username" gorm:"type:varchar(255);uniqueIndex;not null"`
-	PasswordHash string     `json:"-" gorm:"type:varchar(255);not null"`
-	Email        string     `json:"email" gorm:"type:varchar(255)"`
-	Phone        string     `json:"phone" gorm:"type:varchar(50)"`
-	DeptID       *uuid.UUID `json:"dept_id" gorm:"type:uuid;index"`
-	TenantID     *uuid.UUID `json:"tenant_id" gorm:"type:uuid;index"`
-	Role         string     `json:"role" gorm:"type:varchar(20);default:user"` // admin/user
-	Status       string     `json:"status" gorm:"type:varchar(20);default:active"`
-	CreatedAt    time.Time  `json:"created_at"`
-	UpdatedAt    time.Time  `json:"updated_at"`
+	ID           uuid.UUID      `json:"id" gorm:"type:uuid;primaryKey"`
+	Username     string         `json:"username" gorm:"type:varchar(255);uniqueIndex;not null"`
+	PasswordHash string         `json:"-" gorm:"type:varchar(255);not null"`
+	Email        string         `json:"email" gorm:"type:varchar(255)"`
+	Phone        string         `json:"phone" gorm:"type:varchar(50)"`
+	DeptID       *uuid.UUID     `json:"dept_id" gorm:"type:uuid;index"`
+	TenantID     *uuid.UUID     `json:"tenant_id" gorm:"type:uuid;index"`
+	Role         string         `json:"role" gorm:"type:varchar(20);default:user"` // admin/user
+	Status       string         `json:"status" gorm:"type:varchar(20);default:active"`
+	CreatedAt    time.Time      `json:"created_at"`
+	UpdatedAt    time.Time      `json:"updated_at"`
+	DeletedAt    gorm.DeletedAt `json:"-" gorm:"index"`
 }
 
 // TableName 表名。

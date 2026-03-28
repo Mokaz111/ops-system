@@ -28,7 +28,7 @@ func NewRouter(cfg *config.Config, log *zap.Logger, db *gorm.DB) *gin.Engine {
 	r := gin.New()
 	r.Use(gin.Recovery())
 	r.Use(middleware.RequestLogger(log))
-	r.Use(middleware.CORS())
+	r.Use(middleware.CORS(cfg.CORS.AllowedOrigins))
 
 	lim := middleware.NewIPRateLimiter(cfg.RateLimit.RequestsPerSecond, cfg.RateLimit.Burst)
 	r.Use(lim.RateLimit())

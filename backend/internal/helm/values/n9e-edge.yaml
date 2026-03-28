@@ -1,4 +1,22 @@
-# n9e-edge（占位）
+# n9e-edge 边缘采集与告警
 n9eEdge:
   enabled: true
   replicas: 1
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+  config:
+    heartbeat_interval: 15s
+    report_interval: 60s
+  service:
+    type: ClusterIP
+    port: 19000
+  env:
+    - name: N9E_CENTER_ADDR
+      value: ""
+    - name: N9E_EDGE_TOKEN
+      value: ""

@@ -168,7 +168,8 @@ func (h *DepartmentHandler) handleErr(c *gin.Context, err error) {
 		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, err.Error())
 	case errors.Is(err, service.ErrDeptNameRequired),
 		errors.Is(err, service.ErrInvalidParentID),
-		errors.Is(err, service.ErrParentSelf):
+		errors.Is(err, service.ErrParentSelf),
+		errors.Is(err, service.ErrParentCycle):
 		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, err.Error())
 	default:
 		response.Error(c, http.StatusInternalServerError, http.StatusInternalServerError, err.Error())

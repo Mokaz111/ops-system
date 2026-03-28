@@ -1,4 +1,19 @@
-# VictoriaLogs（占位）
+# VictoriaLogs 日志收集与查询
 victoriaLogs:
   enabled: true
   retention: 7d
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  storage:
+    size: 10Gi
+    storageClassName: ""
+  extraArgs:
+    search.maxConcurrentRequests: "4"
+  service:
+    type: ClusterIP
+    port: 9428

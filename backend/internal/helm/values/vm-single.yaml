@@ -1,6 +1,53 @@
-# 独享单节点版 VictoriaMetrics（占位，与 chart 实际 values 对齐后细化）
+# 独享单节点版 VictoriaMetrics
 tenant:
   mode: dedicated_single
+
 vm:
   single:
     replicaCount: 1
+    retentionPeriod: "30d"
+    resources:
+      requests:
+        cpu: 200m
+        memory: 512Mi
+      limits:
+        cpu: "2"
+        memory: 2Gi
+    storage:
+      size: 50Gi
+      storageClassName: ""
+    extraArgs:
+      dedup.minScrapeInterval: "30s"
+      search.maxUniqueTimeseries: "300000"
+      search.maxSamplesPerSeries: "30000000"
+
+  vmselect:
+    enabled: false
+  vminsert:
+    enabled: false
+  vmstorage:
+    enabled: false
+
+victoriaLogs:
+  enabled: true
+  retention: 14d
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  storage:
+    size: 10Gi
+
+n9eEdge:
+  enabled: true
+  replicas: 1
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi

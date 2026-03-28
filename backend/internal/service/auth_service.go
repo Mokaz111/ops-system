@@ -28,7 +28,7 @@ func NewAuthService(user *repository.UserRepository, jwtSecret string, expireHou
 func (s *AuthService) Login(ctx context.Context, username, password string) (token string, u *model.User, err error) {
 	u, err = s.user.GetByUsername(ctx, username)
 	if err != nil {
-		return "", nil, err
+		return "", nil, ErrInvalidCredentials
 	}
 	if u == nil || !utils.CheckPassword(u.PasswordHash, password) {
 		return "", nil, ErrInvalidCredentials
