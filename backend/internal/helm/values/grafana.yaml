@@ -1,0 +1,5 @@
+# 租户侧 Grafana（若与平台 Grafana 分离部署时使用，占位）
+grafana:
+  enabled: false
+  persistence:
+    enabled: false

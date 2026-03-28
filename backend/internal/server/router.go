@@ -72,7 +72,11 @@ func NewRouter(cfg *config.Config, log *zap.Logger, db *gorm.DB) *gin.Engine {
 			vmSync := vm.NewSyncService(&cfg.VM, log)
 			n9eClient := n9e.NewClient(&cfg.N9E, log)
 			grafanaClient := grafana.NewClient(&cfg.Grafana, log)
-			tenantSvc := service.NewTenantService(deptRepo, tenantRepo, instanceRepo, vmSync, n9eClient, grafanaClient)
+			orch, err := service.NewOrchestratorService(cfg, log)
+			if err != nil {
+				log.Fatal("orchestrator_init", zap.Error(err))
+			}
+			tenantSvc := service.NewTenantService(deptRepo, tenantRepo, instanceRepo, vmSync, n9eClient, grafanaClient, orch, log)
 			tenantH := handler.NewTenantHandler(tenantSvc)
 
 			api.POST("/auth/login", authH.Login)

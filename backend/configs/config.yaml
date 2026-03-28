@@ -28,6 +28,20 @@ helm:
       url: https://victoriametrics.github.io/helm-charts/
     - name: grafana
       url: https://grafana.github.io/helm-charts/
+  # 各模板主 chart（留空则仅创建命名空间/配额，不执行 helm install）
+  charts:
+    shared: ""
+    dedicated_single: ""
+    dedicated_cluster: ""
+    vl: ""
+    grafana: ""
+    n9e_edge: ""
+
+# 租户 K8s/Helm 编排（§2.6）；默认关闭
+orchestration:
+  enabled: false
+  namespace_prefix: "ops"
+  apply_network_policy: false
 
 jwt:
   secret: "${JWT_SECRET}"

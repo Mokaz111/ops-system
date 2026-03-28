@@ -13,8 +13,9 @@ type Config struct {
 	Server      ServerConfig      `mapstructure:"server"`
 	Database    DatabaseConfig    `mapstructure:"database"`
 	Redis       RedisConfig       `mapstructure:"redis"`
-	Kubernetes  KubernetesConfig `mapstructure:"kubernetes"`
-	Helm        HelmConfig        `mapstructure:"helm"`
+	Kubernetes  KubernetesConfig  `mapstructure:"kubernetes"`
+	Helm        HelmConfig         `mapstructure:"helm"`
+	Orchestration OrchestrationConfig `mapstructure:"orchestration"`
 	JWT         JWTConfig         `mapstructure:"jwt"`
 	RateLimit   RateLimitConfig   `mapstructure:"ratelimit"`
 	VM          VMConfig          `mapstructure:"vm"`
@@ -56,7 +57,27 @@ type HelmRepo struct {
 }
 
 type HelmConfig struct {
-	Repos []HelmRepo `mapstructure:"repos"`
+	Repos  []HelmRepo  `mapstructure:"repos"`
+	Charts HelmCharts  `mapstructure:"charts"`
+}
+
+// HelmCharts 各模板对应的 chart 引用（如 vm/victoria-metrics-single）；空则跳过 Helm 仅做命名空间/配额。
+type HelmCharts struct {
+	Shared           string `mapstructure:"shared"`
+	DedicatedSingle  string `mapstructure:"dedicated_single"`
+	DedicatedCluster string `mapstructure:"dedicated_cluster"`
+	VL               string `mapstructure:"vl"`
+	Grafana          string `mapstructure:"grafana"`
+	N9EEdge          string `mapstructure:"n9e_edge"`
+}
+
+// OrchestrationConfig Helm/K8s 租户编排（§2.6）。
+type OrchestrationConfig struct {
+	Enabled bool `mapstructure:"enabled"`
+	// NamespacePrefix 租户命名空间前缀，默认 ops，形如 ops-{uuid_compact}。
+	NamespacePrefix string `mapstructure:"namespace_prefix"`
+	// ApplyNetworkPolicy 为 true 时创建默认同命名空间互通 NetworkPolicy。
+	ApplyNetworkPolicy bool `mapstructure:"apply_network_policy"`
 }
 
 type JWTConfig struct {
@@ -177,6 +198,9 @@ func Load(configPath string) (*Config, error) {
 	if cfg.Grafana.HTTPTimeoutSeconds <= 0 {
 		cfg.Grafana.HTTPTimeoutSeconds = 30
 	}
+	if cfg.Orchestration.NamespacePrefix == "" {
+		cfg.Orchestration.NamespacePrefix = "ops"
+	}
 
 	return &cfg, nil
 }
@@ -193,4 +217,5 @@ func expandPlaceholders(cfg *Config) {
 	cfg.Grafana.APIKey = os.ExpandEnv(cfg.Grafana.APIKey)
 	cfg.Grafana.BaseURL = os.ExpandEnv(cfg.Grafana.BaseURL)
 	cfg.Grafana.PrometheusDatasourceURL = os.ExpandEnv(cfg.Grafana.PrometheusDatasourceURL)
+	cfg.Kubernetes.Kubeconfig = os.ExpandEnv(cfg.Kubernetes.Kubeconfig)
 }

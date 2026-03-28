@@ -14,6 +14,7 @@ import (
 	"ops-system/backend/pkg/utils"
 
 	"github.com/google/uuid"
+	"go.uber.org/zap"
 )
 
 var (
@@ -56,6 +57,8 @@ type TenantService struct {
 	vmSync *vm.SyncService
 	n9e      *n9e.Client
 	grafana  *grafana.Client
+	orch     *OrchestratorService
+	log      *zap.Logger
 }
 
 func NewTenantService(
@@ -65,8 +68,10 @@ func NewTenantService(
 	vmSync *vm.SyncService,
 	n9eClient *n9e.Client,
 	grafanaClient *grafana.Client,
+	orch *OrchestratorService,
+	log *zap.Logger,
 ) *TenantService {
-	return &TenantService{dept: dept, tenant: tenant, inst: inst, vmSync: vmSync, n9e: n9eClient, grafana: grafanaClient}
+	return &TenantService{dept: dept, tenant: tenant, inst: inst, vmSync: vmSync, n9e: n9eClient, grafana: grafanaClient, orch: orch, log: log}
 }
 
 // InsertURL 对外写入路径（vmauth /insert/{vmuser_id}）。
@@ -137,6 +142,11 @@ func (s *TenantService) Create(ctx context.Context, req *CreateTenantRequest) (*
 	if s.grafana != nil && s.grafana.Enabled() {
 		if err := s.grafana.SyncTenantOnCreate(ctx, t); err == nil {
 			_ = s.tenant.Update(ctx, t)
+		}
+	}
+	if s.orch != nil {
+		if err := s.orch.DeployTenant(ctx, t); err != nil && s.log != nil {
+			s.log.Warn("orchestrator_deploy_failed", zap.Error(err), zap.String("tenant_id", t.ID.String()))
 		}
 	}
 	return t, nil
@@ -261,6 +271,11 @@ func (s *TenantService) Delete(ctx context.Context, id uuid.UUID) error {
 	}
 	if s.vmSync != nil {
 		s.vmSync.OnTenantDeleted(ctx, t)
+	}
+	if s.orch != nil {
+		if err := s.orch.DeleteTenant(ctx, t); err != nil && s.log != nil {
+			s.log.Warn("orchestrator_delete_failed", zap.Error(err), zap.String("tenant_id", t.ID.String()))
+		}
 	}
 	return s.tenant.Delete(ctx, id)
 }

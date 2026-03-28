@@ -1,0 +1,4 @@
+# VictoriaLogs（占位）
+victoriaLogs:
+  enabled: true
+  retention: 7d

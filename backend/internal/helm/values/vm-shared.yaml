@@ -1,0 +1,7 @@
+# 共享版：与平台共享 VictoriaMetrics，租户侧多为 VL + n9e-edge（占位）
+tenant:
+  mode: shared
+victoriaLogs:
+  enabled: false
+n9eEdge:
+  enabled: false

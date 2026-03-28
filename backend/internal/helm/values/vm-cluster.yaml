@@ -1,0 +1,6 @@
+# 独享集群版 VM（占位）
+tenant:
+  mode: dedicated_cluster
+vm:
+  cluster:
+    replicationFactor: 2

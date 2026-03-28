@@ -1,0 +1,6 @@
+# 独享单节点版 VictoriaMetrics（占位，与 chart 实际 values 对齐后细化）
+tenant:
+  mode: dedicated_single
+vm:
+  single:
+    replicaCount: 1

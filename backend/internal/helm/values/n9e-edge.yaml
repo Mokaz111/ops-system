@@ -1,0 +1,4 @@
+# n9e-edge（占位）
+n9eEdge:
+  enabled: true
+  replicas: 1
