@@ -6,6 +6,7 @@ import (
 	"errors"
 	"strings"
 
+	"ops-system/backend/internal/grafana"
 	"ops-system/backend/internal/model"
 	"ops-system/backend/internal/n9e"
 	"ops-system/backend/internal/repository"
@@ -53,7 +54,8 @@ type TenantService struct {
 	tenant *repository.TenantRepository
 	inst   *repository.InstanceRepository
 	vmSync *vm.SyncService
-	n9e    *n9e.Client
+	n9e      *n9e.Client
+	grafana  *grafana.Client
 }
 
 func NewTenantService(
@@ -62,8 +64,9 @@ func NewTenantService(
 	inst *repository.InstanceRepository,
 	vmSync *vm.SyncService,
 	n9eClient *n9e.Client,
+	grafanaClient *grafana.Client,
 ) *TenantService {
-	return &TenantService{dept: dept, tenant: tenant, inst: inst, vmSync: vmSync, n9e: n9eClient}
+	return &TenantService{dept: dept, tenant: tenant, inst: inst, vmSync: vmSync, n9e: n9eClient, grafana: grafanaClient}
 }
 
 // InsertURL 对外写入路径（vmauth /insert/{vmuser_id}）。
@@ -128,6 +131,11 @@ func (s *TenantService) Create(ctx context.Context, req *CreateTenantRequest) (*
 	}
 	if s.n9e != nil && s.n9e.Enabled() {
 		if err := s.n9e.SyncTenantOnCreate(ctx, t); err == nil {
+			_ = s.tenant.Update(ctx, t)
+		}
+	}
+	if s.grafana != nil && s.grafana.Enabled() {
+		if err := s.grafana.SyncTenantOnCreate(ctx, t); err == nil {
 			_ = s.tenant.Update(ctx, t)
 		}
 	}
@@ -244,6 +252,9 @@ func (s *TenantService) Delete(ctx context.Context, id uuid.UUID) error {
 	}
 	if n > 0 {
 		return ErrTenantHasInstances
+	}
+	if s.grafana != nil {
+		s.grafana.SyncTenantOnDelete(ctx, t)
 	}
 	if s.n9e != nil {
 		s.n9e.SyncTenantOnDelete(ctx, t)

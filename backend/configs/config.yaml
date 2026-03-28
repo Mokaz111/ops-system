@@ -54,3 +54,12 @@ n9e:
   api_prefix: "/api/n9e"
   http_timeout_seconds: 20
   prometheus_datasource_url: ""
+
+# Grafana（§2.5）
+grafana:
+  enabled: false
+  base_url: "http://grafana.platform:3000"
+  api_key: "${GRAFANA_API_KEY}"
+  http_timeout_seconds: 30
+  prometheus_datasource_url: ""
+  org_name_prefix: ""

@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"ops-system/backend/internal/config"
+	"ops-system/backend/internal/grafana"
 	"ops-system/backend/internal/handler"
 	"ops-system/backend/internal/middleware"
 	"ops-system/backend/internal/n9e"
@@ -70,7 +71,8 @@ func NewRouter(cfg *config.Config, log *zap.Logger, db *gorm.DB) *gin.Engine {
 
 			vmSync := vm.NewSyncService(&cfg.VM, log)
 			n9eClient := n9e.NewClient(&cfg.N9E, log)
-			tenantSvc := service.NewTenantService(deptRepo, tenantRepo, instanceRepo, vmSync, n9eClient)
+			grafanaClient := grafana.NewClient(&cfg.Grafana, log)
+			tenantSvc := service.NewTenantService(deptRepo, tenantRepo, instanceRepo, vmSync, n9eClient, grafanaClient)
 			tenantH := handler.NewTenantHandler(tenantSvc)
 
 			api.POST("/auth/login", authH.Login)

@@ -19,6 +19,7 @@ type Config struct {
 	RateLimit   RateLimitConfig   `mapstructure:"ratelimit"`
 	VM          VMConfig          `mapstructure:"vm"`
 	N9E         N9EConfig         `mapstructure:"n9e"`
+	Grafana     GrafanaConfig     `mapstructure:"grafana"`
 }
 
 type ServerConfig struct {
@@ -96,6 +97,20 @@ type N9EConfig struct {
 	PrometheusDatasourceURL string `mapstructure:"prometheus_datasource_url"`
 }
 
+// GrafanaConfig Grafana（§2.5）。
+type GrafanaConfig struct {
+	Enabled bool `mapstructure:"enabled"`
+	// BaseURL 如 http://grafana.platform:3000
+	BaseURL string `mapstructure:"base_url"`
+	// APIKey 服务账号 API Key（Viewer/Editor/Admin 依实际权限）。
+	APIKey string `mapstructure:"api_key"`
+	HTTPTimeoutSeconds int `mapstructure:"http_timeout_seconds"`
+	// PrometheusDatasourceURL 租户组织内默认 Prometheus 数据源（如 VM select）。
+	PrometheusDatasourceURL string `mapstructure:"prometheus_datasource_url"`
+	// OrgNamePrefix 若非空，组织名 = 前缀 + vmuser_id，否则使用租户名。
+	OrgNamePrefix string `mapstructure:"org_name_prefix"`
+}
+
 // Load 从配置文件加载；支持环境变量覆盖（前缀 OPS_，例如 OPS_SERVER_PORT）。
 func Load(configPath string) (*Config, error) {
 	v := viper.New()
@@ -159,6 +174,9 @@ func Load(configPath string) (*Config, error) {
 	if cfg.N9E.HTTPTimeoutSeconds <= 0 {
 		cfg.N9E.HTTPTimeoutSeconds = 20
 	}
+	if cfg.Grafana.HTTPTimeoutSeconds <= 0 {
+		cfg.Grafana.HTTPTimeoutSeconds = 30
+	}
 
 	return &cfg, nil
 }
@@ -172,4 +190,7 @@ func expandPlaceholders(cfg *Config) {
 	cfg.N9E.Token = os.ExpandEnv(cfg.N9E.Token)
 	cfg.N9E.BaseURL = os.ExpandEnv(cfg.N9E.BaseURL)
 	cfg.N9E.PrometheusDatasourceURL = os.ExpandEnv(cfg.N9E.PrometheusDatasourceURL)
+	cfg.Grafana.APIKey = os.ExpandEnv(cfg.Grafana.APIKey)
+	cfg.Grafana.BaseURL = os.ExpandEnv(cfg.Grafana.BaseURL)
+	cfg.Grafana.PrometheusDatasourceURL = os.ExpandEnv(cfg.Grafana.PrometheusDatasourceURL)
 }
