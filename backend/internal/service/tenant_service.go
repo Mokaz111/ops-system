@@ -8,6 +8,7 @@ import (
 
 	"ops-system/backend/internal/model"
 	"ops-system/backend/internal/repository"
+	"ops-system/backend/internal/vm"
 	"ops-system/backend/pkg/utils"
 
 	"github.com/google/uuid"
@@ -50,14 +51,24 @@ type TenantService struct {
 	dept   *repository.DepartmentRepository
 	tenant *repository.TenantRepository
 	inst   *repository.InstanceRepository
+	vmSync *vm.SyncService
 }
 
 func NewTenantService(
 	dept *repository.DepartmentRepository,
 	tenant *repository.TenantRepository,
 	inst *repository.InstanceRepository,
+	vmSync *vm.SyncService,
 ) *TenantService {
-	return &TenantService{dept: dept, tenant: tenant, inst: inst}
+	return &TenantService{dept: dept, tenant: tenant, inst: inst, vmSync: vmSync}
+}
+
+// InsertURL 对外写入路径（vmauth /insert/{vmuser_id}）。
+func (s *TenantService) InsertURL(vmuserID string) string {
+	if s.vmSync == nil {
+		return ""
+	}
+	return s.vmSync.InsertURL(vmuserID)
 }
 
 // Create 创建租户：校验部门、部门唯一租户、生成 vmuser_id/key；K8s/N9E/Grafana 同步在后续阶段接入。
@@ -108,6 +119,9 @@ func (s *TenantService) Create(ctx context.Context, req *CreateTenantRequest) (*
 	}
 	if err := s.tenant.Create(ctx, t); err != nil {
 		return nil, err
+	}
+	if s.vmSync != nil {
+		s.vmSync.OnTenantCreated(ctx, t)
 	}
 	return t, nil
 }
@@ -222,6 +236,9 @@ func (s *TenantService) Delete(ctx context.Context, id uuid.UUID) error {
 	}
 	if n > 0 {
 		return ErrTenantHasInstances
+	}
+	if s.vmSync != nil {
+		s.vmSync.OnTenantDeleted(ctx, t)
 	}
 	return s.tenant.Delete(ctx, id)
 }

@@ -17,6 +17,7 @@ type Config struct {
 	Helm        HelmConfig        `mapstructure:"helm"`
 	JWT         JWTConfig         `mapstructure:"jwt"`
 	RateLimit   RateLimitConfig   `mapstructure:"ratelimit"`
+	VM          VMConfig          `mapstructure:"vm"`
 }
 
 type ServerConfig struct {
@@ -64,6 +65,18 @@ type JWTConfig struct {
 type RateLimitConfig struct {
 	RequestsPerSecond float64 `mapstructure:"requests_per_second"`
 	Burst             int     `mapstructure:"burst"`
+}
+
+// VMConfig VictoriaMetrics / vmauth 相关（§2.3）。
+type VMConfig struct {
+	// VMAuthBaseURL vmauth 对外 HTTP 根地址，用于拼接 remote_write 路径前缀。
+	VMAuthBaseURL string `mapstructure:"vmauth_base_url"`
+	// SyncEnabled 为 true 且配置了 Webhook 时，租户创建/删除会向 Webhook POST JSON。
+	SyncEnabled bool `mapstructure:"sync_enabled"`
+	// VMAuthWebhookURL 可选；接收租户 vmuser 同步事件（侧车或自定义服务）。
+	VMAuthWebhookURL string `mapstructure:"vmauth_webhook_url"`
+	// HTTPTimeoutSeconds Webhook 请求超时。
+	HTTPTimeoutSeconds int `mapstructure:"http_timeout_seconds"`
 }
 
 // Load 从配置文件加载；支持环境变量覆盖（前缀 OPS_，例如 OPS_SERVER_PORT）。
@@ -123,6 +136,9 @@ func Load(configPath string) (*Config, error) {
 	if cfg.Database.ConnMaxLifetimeMinutes <= 0 {
 		cfg.Database.ConnMaxLifetimeMinutes = 5
 	}
+	if cfg.VM.HTTPTimeoutSeconds <= 0 {
+		cfg.VM.HTTPTimeoutSeconds = 15
+	}
 
 	return &cfg, nil
 }
@@ -130,4 +146,6 @@ func Load(configPath string) (*Config, error) {
 func expandPlaceholders(cfg *Config) {
 	cfg.Database.Password = os.ExpandEnv(cfg.Database.Password)
 	cfg.JWT.Secret = os.ExpandEnv(cfg.JWT.Secret)
+	cfg.VM.VMAuthBaseURL = os.ExpandEnv(cfg.VM.VMAuthBaseURL)
+	cfg.VM.VMAuthWebhookURL = os.ExpandEnv(cfg.VM.VMAuthWebhookURL)
 }

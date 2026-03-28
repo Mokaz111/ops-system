@@ -8,6 +8,7 @@ import (
 	"ops-system/backend/internal/middleware"
 	"ops-system/backend/internal/repository"
 	"ops-system/backend/internal/service"
+	"ops-system/backend/internal/vm"
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
@@ -66,7 +67,8 @@ func NewRouter(cfg *config.Config, log *zap.Logger, db *gorm.DB) *gin.Engine {
 			deptSvc := service.NewDepartmentService(deptRepo, tenantRepo, userRepo)
 			deptH := handler.NewDepartmentHandler(deptSvc)
 
-			tenantSvc := service.NewTenantService(deptRepo, tenantRepo, instanceRepo)
+			vmSync := vm.NewSyncService(&cfg.VM, log)
+			tenantSvc := service.NewTenantService(deptRepo, tenantRepo, instanceRepo, vmSync)
 			tenantH := handler.NewTenantHandler(tenantSvc)
 
 			api.POST("/auth/login", authH.Login)

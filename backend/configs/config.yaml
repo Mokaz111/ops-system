@@ -36,3 +36,10 @@ jwt:
 ratelimit:
   requests_per_second: 100
   burst: 200
+
+# VictoriaMetrics vmauth（§2.3）：插入地址拼接；可选 Webhook 同步 vmuser
+vm:
+  vmauth_base_url: "http://vmauth.platform:8421"
+  sync_enabled: false
+  vmauth_webhook_url: ""
+  http_timeout_seconds: 15

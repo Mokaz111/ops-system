@@ -36,9 +36,10 @@ type tenantResp struct {
 	GrafanaOrgID int64     `json:"grafana_org_id"`
 	CreatedAt    time.Time `json:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at"`
+	InsertURL    string    `json:"insert_url,omitempty"`
 }
 
-func toTenantResp(t *model.Tenant, withKey bool) tenantResp {
+func (h *TenantHandler) toTenantResp(t *model.Tenant, withKey bool) tenantResp {
 	r := tenantResp{
 		ID:           t.ID,
 		TenantName:   t.TenantName,
@@ -51,6 +52,7 @@ func toTenantResp(t *model.Tenant, withKey bool) tenantResp {
 		GrafanaOrgID: t.GrafanaOrgID,
 		CreatedAt:    t.CreatedAt,
 		UpdatedAt:    t.UpdatedAt,
+		InsertURL:    h.svc.InsertURL(t.VMUserID),
 	}
 	if withKey {
 		r.VMUserKey = t.VMUserKey
@@ -92,7 +94,7 @@ func (h *TenantHandler) List(c *gin.Context) {
 	}
 	items := make([]tenantResp, 0, len(list))
 	for i := range list {
-		items = append(items, toTenantResp(&list[i], false))
+		items = append(items, h.toTenantResp(&list[i], false))
 	}
 	response.JSON(c, gin.H{
 		"items":     items,
@@ -119,7 +121,7 @@ func (h *TenantHandler) Create(c *gin.Context) {
 		h.handleErr(c, err)
 		return
 	}
-	response.JSON(c, toTenantResp(t, true))
+	response.JSON(c, h.toTenantResp(t, true))
 }
 
 // Get GET /api/v1/tenants/:id
@@ -134,7 +136,7 @@ func (h *TenantHandler) Get(c *gin.Context) {
 		h.handleErr(c, err)
 		return
 	}
-	response.JSON(c, toTenantResp(t, false))
+	response.JSON(c, h.toTenantResp(t, false))
 }
 
 type updateTenantBody struct {
@@ -166,7 +168,7 @@ func (h *TenantHandler) Update(c *gin.Context) {
 		h.handleErr(c, err)
 		return
 	}
-	response.JSON(c, toTenantResp(t, false))
+	response.JSON(c, h.toTenantResp(t, false))
 }
 
 // Delete DELETE /api/v1/tenants/:id
