@@ -1,0 +1,38 @@
+server:
+  host: "0.0.0.0"
+  port: 8080
+  mode: "debug"
+
+database:
+  host: "postgresql"
+  port: 5432
+  user: "postgres"
+  password: "${DB_PASSWORD}"
+  name: "monitoring"
+  sslmode: "disable"
+  max_open_conns: 25
+  max_idle_conns: 10
+  conn_max_lifetime_minutes: 5
+
+redis:
+  host: "redis"
+  port: 6379
+
+kubernetes:
+  incluster: false
+  kubeconfig: "/etc/kubernetes/admin.conf"
+
+helm:
+  repos:
+    - name: vm
+      url: https://victoriametrics.github.io/helm-charts/
+    - name: grafana
+      url: https://grafana.github.io/helm-charts/
+
+jwt:
+  secret: "${JWT_SECRET}"
+  expire_hours: 24
+
+ratelimit:
+  requests_per_second: 100
+  burst: 200
