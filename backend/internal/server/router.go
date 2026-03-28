@@ -58,13 +58,25 @@ func NewRouter(cfg *config.Config, log *zap.Logger, db *gorm.DB) *gin.Engine {
 			userRepo := repository.NewUserRepository(db)
 			instanceRepo := repository.NewInstanceRepository(db)
 
+			userSvc := service.NewUserService(userRepo)
+			authSvc := service.NewAuthService(userRepo, cfg.JWT.Secret, cfg.JWT.ExpireHours)
+			authH := handler.NewAuthHandler(authSvc, userSvc, cfg.JWT.Secret)
+			userH := handler.NewUserHandler(userSvc, cfg.JWT.Secret)
+
 			deptSvc := service.NewDepartmentService(deptRepo, tenantRepo, userRepo)
 			deptH := handler.NewDepartmentHandler(deptSvc)
 
 			tenantSvc := service.NewTenantService(deptRepo, tenantRepo, instanceRepo)
 			tenantH := handler.NewTenantHandler(tenantSvc)
 
-			dg := api.Group("/departments")
+			api.POST("/auth/login", authH.Login)
+			api.POST("/users/bootstrap", userH.Bootstrap)
+
+			protected := api.Group("")
+			protected.Use(middleware.JWTAuth(cfg.JWT.Secret))
+			protected.GET("/auth/me", authH.Me)
+
+			dg := protected.Group("/departments")
 			dg.GET("/tree", deptH.Tree)
 			dg.GET("", deptH.List)
 			dg.POST("", deptH.Create)
@@ -73,13 +85,20 @@ func NewRouter(cfg *config.Config, log *zap.Logger, db *gorm.DB) *gin.Engine {
 			dg.PUT("/:id", deptH.Update)
 			dg.DELETE("/:id", deptH.Delete)
 
-			tg := api.Group("/tenants")
+			tg := protected.Group("/tenants")
 			tg.GET("", tenantH.List)
 			tg.POST("", tenantH.Create)
 			tg.GET("/:id/metrics", tenantH.Metrics)
 			tg.GET("/:id", tenantH.Get)
 			tg.PUT("/:id", tenantH.Update)
 			tg.DELETE("/:id", tenantH.Delete)
+
+			ug := protected.Group("/users")
+			ug.GET("", userH.List)
+			ug.POST("", userH.Create)
+			ug.GET("/:id", userH.Get)
+			ug.PUT("/:id", userH.Update)
+			ug.DELETE("/:id", userH.Delete)
 		}
 	}
 
