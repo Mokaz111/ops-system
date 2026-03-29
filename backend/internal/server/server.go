@@ -7,8 +7,6 @@ import (
 	"time"
 
 	"ops-system/backend/internal/config"
-	"ops-system/backend/internal/n9e"
-	"ops-system/backend/internal/notify"
 
 	"go.uber.org/zap"
 	"gorm.io/gorm"
@@ -21,9 +19,9 @@ type Server struct {
 }
 
 // New 创建 HTTP 服务。
-func New(cfg *config.Config, log *zap.Logger, db *gorm.DB, n9eClient *n9e.Client, notifySvc *notify.NotifyService) (*Server, error) {
+func New(cfg *config.Config, log *zap.Logger, db *gorm.DB) (*Server, error) {
 	addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
-	handler := NewRouter(cfg, log, db, n9eClient, notifySvc)
+	handler := NewRouter(cfg, log, db)
 	s := &http.Server{
 		Addr:              addr,
 		Handler:           handler,

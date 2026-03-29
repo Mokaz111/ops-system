@@ -26,7 +26,7 @@ type Instance struct {
 
 // TableName 表名。
 func (Instance) TableName() string {
-	return "instances"
+	return "ops_instances"
 }
 
 // BeforeCreate 生成主键。

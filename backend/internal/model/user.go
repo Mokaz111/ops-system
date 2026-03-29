@@ -25,7 +25,7 @@ type User struct {
 
 // TableName 表名。
 func (User) TableName() string {
-	return "users"
+	return "ops_users"
 }
 
 // BeforeCreate 生成主键。

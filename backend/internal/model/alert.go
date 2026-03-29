@@ -27,7 +27,7 @@ type AlertRule struct {
 
 // TableName 表名。
 func (AlertRule) TableName() string {
-	return "alert_rules"
+	return "ops_alert_rules"
 }
 
 // BeforeCreate 生成主键。
@@ -57,7 +57,7 @@ type AlertEvent struct {
 
 // TableName 表名。
 func (AlertEvent) TableName() string {
-	return "alert_events"
+	return "ops_alert_events"
 }
 
 // BeforeCreate 生成主键。
@@ -83,7 +83,7 @@ type NotificationChannel struct {
 
 // TableName 表名。
 func (NotificationChannel) TableName() string {
-	return "notification_channels"
+	return "ops_notification_channels"
 }
 
 // BeforeCreate 生成主键。

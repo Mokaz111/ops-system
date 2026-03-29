@@ -26,7 +26,7 @@ type Tenant struct {
 
 // TableName 表名。
 func (Tenant) TableName() string {
-	return "tenants"
+	return "ops_tenants"
 }
 
 // BeforeCreate 生成主键。

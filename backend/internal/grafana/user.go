@@ -19,3 +19,21 @@ func (c *Client) AddOrgUser(ctx context.Context, orgID int64, u *OrgUser) error 
 	path := fmt.Sprintf("/api/orgs/%d/users", orgID)
 	return c.doJSON(ctx, "POST", path, u, 0, nil)
 }
+
+// RemoveOrgUser DELETE /api/orgs/:orgId/users/:userId
+func (c *Client) RemoveOrgUser(ctx context.Context, orgID, userID int64) error {
+	if !c.Enabled() || orgID <= 0 || userID <= 0 {
+		return nil
+	}
+	path := fmt.Sprintf("/api/orgs/%d/users/%d", orgID, userID)
+	return c.doJSON(ctx, "DELETE", path, nil, 0, nil)
+}
+
+// DeleteDatasource DELETE /api/datasources/:id（需在对应组织上下文中）。
+func (c *Client) DeleteDatasource(ctx context.Context, orgID, dsID int64) error {
+	if !c.Enabled() || dsID <= 0 {
+		return nil
+	}
+	path := fmt.Sprintf("/api/datasources/%d", dsID)
+	return c.doJSON(ctx, "DELETE", path, nil, orgID, nil)
+}

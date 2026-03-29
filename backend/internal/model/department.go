@@ -22,7 +22,7 @@ type Department struct {
 
 // TableName 表名。
 func (Department) TableName() string {
-	return "departments"
+	return "ops_departments"
 }
 
 // BeforeCreate 生成主键。

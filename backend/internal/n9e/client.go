@@ -87,6 +87,13 @@ func (c *Client) ensureToken(ctx context.Context) error {
 	return c.loginLocked(ctx)
 }
 
+func (c *Client) refreshToken(ctx context.Context) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.token = ""
+	_ = c.loginLocked(ctx)
+}
+
 func (c *Client) loginLocked(ctx context.Context) error {
 	u := c.base() + c.prefix + "/auth/login"
 	body := map[string]string{
@@ -153,8 +160,28 @@ func parseTokenFromDat(dat json.RawMessage) (string, error) {
 	return "", errors.New("no token in dat")
 }
 
-// RequestJSON 调用 N9E 接口并返回原始 dat。
+// RequestJSON 调用 N9E 接口并返回原始 dat。遇到认证失败自动刷新 token 重试一次。
 func (c *Client) RequestJSON(ctx context.Context, method, path string, body any) (json.RawMessage, error) {
+	dat, err := c.doRequest(ctx, method, path, body)
+	if err != nil && isAuthError(err) {
+		c.refreshToken(ctx)
+		return c.doRequest(ctx, method, path, body)
+	}
+	return dat, err
+}
+
+func isAuthError(err error) bool {
+	if err == nil {
+		return false
+	}
+	s := err.Error()
+	return strings.Contains(s, "密码错误") ||
+		strings.Contains(s, "unauthorized") ||
+		strings.Contains(s, "http 401") ||
+		strings.Contains(s, "token") && strings.Contains(s, "invalid")
+}
+
+func (c *Client) doRequest(ctx context.Context, method, path string, body any) (json.RawMessage, error) {
 	if err := c.ensureToken(ctx); err != nil {
 		return nil, err
 	}

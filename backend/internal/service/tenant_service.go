@@ -8,7 +8,6 @@ import (
 
 	"ops-system/backend/internal/grafana"
 	"ops-system/backend/internal/model"
-	"ops-system/backend/internal/n9e"
 	"ops-system/backend/internal/repository"
 	"ops-system/backend/internal/vm"
 	"ops-system/backend/pkg/utils"
@@ -28,20 +27,18 @@ var (
 )
 
 var allowedTemplateTypes = map[string]struct{}{
-	"shared":              {},
-	"dedicated_single":    {},
-	"dedicated_cluster":   {},
+	"shared":           {},
+	"dedicated_single": {},
+	"dedicated_cluster": {},
 }
 
-// CreateTenantRequest 创建租户（不含 VMuser Key 输出前的字段）。
 type CreateTenantRequest struct {
 	TenantName   string
 	DeptID       uuid.UUID
 	TemplateType string
-	QuotaConfig  string // JSON 字符串，可为空
+	QuotaConfig  string
 }
 
-// UpdateTenantRequest 更新租户（不可改 vmuser_id / vmuser_key / dept_id）。
 type UpdateTenantRequest struct {
 	TenantName   string
 	TemplateType string
@@ -49,16 +46,15 @@ type UpdateTenantRequest struct {
 	Status       string
 }
 
-// TenantService 租户业务。
+// TenantService 租户业务（不直接依赖 N9E，告警由 N9E 独立管理）。
 type TenantService struct {
-	dept   *repository.DepartmentRepository
-	tenant *repository.TenantRepository
-	inst   *repository.InstanceRepository
-	vmSync *vm.SyncService
-	n9e      *n9e.Client
-	grafana  *grafana.Client
-	orch     *OrchestratorService
-	log      *zap.Logger
+	dept    *repository.DepartmentRepository
+	tenant  *repository.TenantRepository
+	inst    *repository.InstanceRepository
+	vmSync  *vm.SyncService
+	grafana *grafana.Client
+	orch    *OrchestratorService
+	log     *zap.Logger
 }
 
 func NewTenantService(
@@ -66,15 +62,16 @@ func NewTenantService(
 	tenant *repository.TenantRepository,
 	inst *repository.InstanceRepository,
 	vmSync *vm.SyncService,
-	n9eClient *n9e.Client,
 	grafanaClient *grafana.Client,
 	orch *OrchestratorService,
 	log *zap.Logger,
 ) *TenantService {
-	return &TenantService{dept: dept, tenant: tenant, inst: inst, vmSync: vmSync, n9e: n9eClient, grafana: grafanaClient, orch: orch, log: log}
+	return &TenantService{
+		dept: dept, tenant: tenant, inst: inst,
+		vmSync: vmSync, grafana: grafanaClient, orch: orch, log: log,
+	}
 }
 
-// InsertURL 对外写入路径（vmauth /insert/{vmuser_id}）。
 func (s *TenantService) InsertURL(vmuserID string) string {
 	if s.vmSync == nil {
 		return ""
@@ -82,7 +79,7 @@ func (s *TenantService) InsertURL(vmuserID string) string {
 	return s.vmSync.InsertURL(vmuserID)
 }
 
-// Create 创建租户：校验部门、部门唯一租户、生成 vmuser_id/key；K8s/N9E/Grafana 同步在后续阶段接入。
+// Create 创建租户：校验 → 生成 vmuser → 落库 → VM 同步 → Grafana 组织 → K8s 编排。
 func (s *TenantService) Create(ctx context.Context, req *CreateTenantRequest) (*model.Tenant, error) {
 	if req.TenantName == "" {
 		return nil, ErrTenantNameRequired
@@ -136,13 +133,9 @@ func (s *TenantService) Create(ctx context.Context, req *CreateTenantRequest) (*
 	if err := s.tenant.Create(ctx, t); err != nil {
 		return nil, err
 	}
+
 	if s.vmSync != nil {
 		s.vmSync.OnTenantCreated(ctx, t)
-	}
-	if s.n9e != nil && s.n9e.Enabled() {
-		if err := s.n9e.SyncTenantOnCreate(ctx, t); err == nil {
-			_ = s.tenant.Update(ctx, t)
-		}
 	}
 	if s.grafana != nil && s.grafana.Enabled() {
 		if err := s.grafana.SyncTenantOnCreate(ctx, t); err == nil {
@@ -188,7 +181,6 @@ func (s *TenantService) allocVMUserID(ctx context.Context) (string, error) {
 	return "", errors.New("failed to allocate vmuser_id")
 }
 
-// Get 详情。
 func (s *TenantService) Get(ctx context.Context, id uuid.UUID) (*model.Tenant, error) {
 	t, err := s.tenant.GetByID(ctx, id)
 	if err != nil {
@@ -200,7 +192,6 @@ func (s *TenantService) Get(ctx context.Context, id uuid.UUID) (*model.Tenant, e
 	return t, nil
 }
 
-// List 分页筛选。
 func (s *TenantService) List(ctx context.Context, page, pageSize int, deptID *uuid.UUID, templateType, status, keyword string) ([]model.Tenant, int64, error) {
 	if page < 1 {
 		page = 1
@@ -219,7 +210,6 @@ func (s *TenantService) List(ctx context.Context, page, pageSize int, deptID *uu
 	})
 }
 
-// Update 更新。
 func (s *TenantService) Update(ctx context.Context, id uuid.UUID, req *UpdateTenantRequest) (*model.Tenant, error) {
 	t, err := s.tenant.GetByID(ctx, id)
 	if err != nil {
@@ -237,12 +227,13 @@ func (s *TenantService) Update(ctx context.Context, id uuid.UUID, req *UpdateTen
 	if err := validateQuotaJSON(req.QuotaConfig); err != nil {
 		return nil, err
 	}
-
 	t.TenantName = strings.TrimSpace(req.TenantName)
 	if req.TemplateType != "" {
 		t.TemplateType = req.TemplateType
 	}
-	t.QuotaConfig = req.QuotaConfig
+	if req.QuotaConfig != "" {
+		t.QuotaConfig = req.QuotaConfig
+	}
 	if req.Status != "" {
 		t.Status = req.Status
 	}
@@ -252,7 +243,7 @@ func (s *TenantService) Update(ctx context.Context, id uuid.UUID, req *UpdateTen
 	return t, nil
 }
 
-// Delete 删除（无实例挂载）。
+// Delete 删除租户（无实例挂载时）。
 func (s *TenantService) Delete(ctx context.Context, id uuid.UUID) error {
 	t, err := s.tenant.GetByID(ctx, id)
 	if err != nil {
@@ -271,9 +262,6 @@ func (s *TenantService) Delete(ctx context.Context, id uuid.UUID) error {
 	if s.grafana != nil {
 		s.grafana.SyncTenantOnDelete(ctx, t)
 	}
-	if s.n9e != nil {
-		s.n9e.SyncTenantOnDelete(ctx, t)
-	}
 	if s.vmSync != nil {
 		s.vmSync.OnTenantDeleted(ctx, t)
 	}
@@ -285,7 +273,6 @@ func (s *TenantService) Delete(ctx context.Context, id uuid.UUID) error {
 	return s.tenant.Delete(ctx, id)
 }
 
-// TenantMetrics 资源使用占位（后续对接 VictoriaMetrics / K8s metrics）。
 type TenantMetrics struct {
 	CPUUsagePercent    float64 `json:"cpu_usage_percent"`
 	MemoryUsagePercent float64 `json:"memory_usage_percent"`
@@ -294,7 +281,6 @@ type TenantMetrics struct {
 	Note               string  `json:"note"`
 }
 
-// GetMetrics 占位指标。
 func (s *TenantService) GetMetrics(ctx context.Context, id uuid.UUID) (*TenantMetrics, error) {
 	t, err := s.tenant.GetByID(ctx, id)
 	if err != nil {

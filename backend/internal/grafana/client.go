@@ -97,3 +97,8 @@ func (c *Client) doJSON(ctx context.Context, method, path string, body any, orgI
 	}
 	return nil
 }
+
+// DoJSON 公开方法，供 GrafanaService 调用。
+func (c *Client) DoJSON(ctx context.Context, method, path string, body any, orgID int64, out any) error {
+	return c.doJSON(ctx, method, path, body, orgID, out)
+}

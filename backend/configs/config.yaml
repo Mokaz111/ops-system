@@ -63,26 +63,16 @@ vm:
   vmauth_webhook_url: ""
   http_timeout_seconds: 15
 
-# 夜莺 N9E（§2.4）
+# 夜莺 N9E（独立部署，本平台不直接集成告警引擎）
 n9e:
   enabled: false
-  base_url: "http://n9e.platform:18000"
-  username: "${N9E_USERNAME}"
-  password: "${N9E_PASSWORD}"
+  base_url: ""
+  username: ""
+  password: ""
   token: ""
   api_prefix: "/api/n9e"
   http_timeout_seconds: 20
   prometheus_datasource_url: ""
-
-# 通知配置（§3.3）
-notification:
-  email:
-    enabled: false
-    smtp_host: ""
-    smtp_port: 587
-    username: "${SMTP_USERNAME}"
-    password: "${SMTP_PASSWORD}"
-    from: "ops@example.com"
 
 # Grafana（§2.5）
 grafana:
