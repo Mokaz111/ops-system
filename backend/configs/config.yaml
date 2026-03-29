@@ -4,11 +4,11 @@ server:
   mode: "debug"
 
 database:
-  host: "postgresql"
-  port: 5432
-  user: "postgres"
-  password: "${DB_PASSWORD}"
-  name: "monitoring"
+  host: "localhost"
+  port: 5433
+  user: "ops_admin"
+  password: "mokaz111"
+  name: "ops_system"
   sslmode: "disable"
   max_open_conns: 25
   max_idle_conns: 10
@@ -73,6 +73,16 @@ n9e:
   api_prefix: "/api/n9e"
   http_timeout_seconds: 20
   prometheus_datasource_url: ""
+
+# 通知配置（§3.3）
+notification:
+  email:
+    enabled: false
+    smtp_host: ""
+    smtp_port: 587
+    username: "${SMTP_USERNAME}"
+    password: "${SMTP_PASSWORD}"
+    from: "ops@example.com"
 
 # Grafana（§2.5）
 grafana:

@@ -9,8 +9,11 @@ import (
 	"time"
 
 	"ops-system/backend/internal/config"
+	"ops-system/backend/internal/n9e"
+	"ops-system/backend/internal/notify"
 	"ops-system/backend/internal/repository"
 	"ops-system/backend/internal/server"
+	"ops-system/backend/internal/worker"
 	"ops-system/backend/pkg/utils"
 
 	"go.uber.org/zap"
@@ -46,7 +49,28 @@ func main() {
 	}
 	log.Info("db_migrate_ok")
 
-	srv, err := server.New(cfg, log, db)
+	n9eClient := n9e.NewClient(&cfg.N9E, log)
+
+	notifySvc := notify.NewNotifyService(log)
+	notifySvc.Register(notify.NewWebhookSender())
+	notifySvc.Register(notify.NewSlackSender())
+	notifySvc.Register(notify.NewSMSSender(log))
+	notifySvc.Register(notify.NewDingtalkSender("", ""))
+	if cfg.Notification.Email.Enabled {
+		notifySvc.Register(notify.NewEmailSender(
+			cfg.Notification.Email.SMTPHost,
+			cfg.Notification.Email.SMTPPort,
+			cfg.Notification.Email.Username,
+			cfg.Notification.Email.Password,
+			cfg.Notification.Email.From,
+		))
+	}
+
+	wm := worker.NewManager(log)
+	wm.Start(context.Background(), cfg, db, n9eClient, notifySvc)
+	defer wm.Stop()
+
+	srv, err := server.New(cfg, log, db, n9eClient, notifySvc)
 	if err != nil {
 		log.Fatal(err.Error())
 	}

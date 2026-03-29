@@ -153,8 +153,8 @@ func parseTokenFromDat(dat json.RawMessage) (string, error) {
 	return "", errors.New("no token in dat")
 }
 
-// requestJSON 调用 N9E 接口并返回原始 dat。
-func (c *Client) requestJSON(ctx context.Context, method, path string, body any) (json.RawMessage, error) {
+// RequestJSON 调用 N9E 接口并返回原始 dat。
+func (c *Client) RequestJSON(ctx context.Context, method, path string, body any) (json.RawMessage, error) {
 	if err := c.ensureToken(ctx); err != nil {
 		return nil, err
 	}
@@ -205,7 +205,7 @@ func (c *Client) requestJSON(ctx context.Context, method, path string, body any)
 
 // doJSON POST/DELETE 等，自动带 Bearer，将 dat 解码到 out。
 func (c *Client) doJSON(ctx context.Context, method, path string, body any, out any) error {
-	dat, err := c.requestJSON(ctx, method, path, body)
+	dat, err := c.RequestJSON(ctx, method, path, body)
 	if err != nil {
 		return err
 	}

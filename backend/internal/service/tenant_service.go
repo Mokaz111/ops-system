@@ -119,13 +119,18 @@ func (s *TenantService) Create(ctx context.Context, req *CreateTenantRequest) (*
 		return nil, err
 	}
 
+	quotaCfg := strings.TrimSpace(req.QuotaConfig)
+	if quotaCfg == "" {
+		quotaCfg = "{}"
+	}
+
 	t := &model.Tenant{
 		TenantName:   strings.TrimSpace(req.TenantName),
 		DeptID:       req.DeptID,
 		VMUserID:     vmuserID,
 		VMUserKey:    vmKey,
 		TemplateType: req.TemplateType,
-		QuotaConfig:  req.QuotaConfig,
+		QuotaConfig:  quotaCfg,
 		Status:       "active",
 	}
 	if err := s.tenant.Create(ctx, t); err != nil {

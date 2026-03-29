@@ -8,6 +8,7 @@ import (
 	"ops-system/backend/internal/handler"
 	"ops-system/backend/internal/middleware"
 	"ops-system/backend/internal/n9e"
+	"ops-system/backend/internal/notify"
 	"ops-system/backend/internal/repository"
 	"ops-system/backend/internal/service"
 	"ops-system/backend/internal/vm"
@@ -18,7 +19,7 @@ import (
 )
 
 // NewRouter 注册路由与全局中间件。
-func NewRouter(cfg *config.Config, log *zap.Logger, db *gorm.DB) *gin.Engine {
+func NewRouter(cfg *config.Config, log *zap.Logger, db *gorm.DB, n9eClient *n9e.Client, notifySvc *notify.NotifyService) *gin.Engine {
 	if cfg.Server.Mode == "release" {
 		gin.SetMode(gin.ReleaseMode)
 	} else if cfg.Server.Mode == "test" {
@@ -40,7 +41,7 @@ func NewRouter(cfg *config.Config, log *zap.Logger, db *gorm.DB) *gin.Engine {
 	api := r.Group("/api/v1")
 	{
 		api.GET("/health", func(c *gin.Context) {
-			c.JSON(http.StatusOK, gin.H{"status": "ok", "version": "0.1.0"})
+			c.JSON(http.StatusOK, gin.H{"status": "ok", "version": "0.2.0"})
 		})
 		if db != nil {
 			api.GET("/health/db", func(c *gin.Context) {
@@ -60,6 +61,9 @@ func NewRouter(cfg *config.Config, log *zap.Logger, db *gorm.DB) *gin.Engine {
 			tenantRepo := repository.NewTenantRepository(db)
 			userRepo := repository.NewUserRepository(db)
 			instanceRepo := repository.NewInstanceRepository(db)
+			ruleRepo := repository.NewAlertRuleRepository(db)
+			eventRepo := repository.NewAlertEventRepository(db)
+			channelRepo := repository.NewNotificationChannelRepository(db)
 
 			userSvc := service.NewUserService(userRepo)
 			authSvc := service.NewAuthService(userRepo, cfg.JWT.Secret, cfg.JWT.ExpireHours)
@@ -70,7 +74,6 @@ func NewRouter(cfg *config.Config, log *zap.Logger, db *gorm.DB) *gin.Engine {
 			deptH := handler.NewDepartmentHandler(deptSvc)
 
 			vmSync := vm.NewSyncService(&cfg.VM, log)
-			n9eClient := n9e.NewClient(&cfg.N9E, log)
 			grafanaClient := grafana.NewClient(&cfg.Grafana, log)
 			orch, err := service.NewOrchestratorService(cfg, log)
 			if err != nil {
@@ -78,6 +81,15 @@ func NewRouter(cfg *config.Config, log *zap.Logger, db *gorm.DB) *gin.Engine {
 			}
 			tenantSvc := service.NewTenantService(deptRepo, tenantRepo, instanceRepo, vmSync, n9eClient, grafanaClient, orch, log)
 			tenantH := handler.NewTenantHandler(tenantSvc)
+
+			instanceSvc := service.NewInstanceService(instanceRepo, tenantRepo, orch, log)
+			scaleSvc := service.NewScaleService(nil, nil, instanceRepo, log)
+			instanceH := handler.NewInstanceHandler(instanceSvc, scaleSvc)
+
+			alertSvc := service.NewAlertService(ruleRepo, tenantRepo, n9eClient, log)
+			eventSvc := service.NewAlertEventService(eventRepo, ruleRepo, channelRepo, n9eClient, notifySvc, log)
+			channelSvc := service.NewNotificationChannelService(channelRepo, tenantRepo, log)
+			alertH := handler.NewAlertHandler(alertSvc, eventSvc, channelSvc)
 
 			api.POST("/auth/login", authH.Login)
 			api.POST("/users/bootstrap", userH.Bootstrap)
@@ -109,6 +121,32 @@ func NewRouter(cfg *config.Config, log *zap.Logger, db *gorm.DB) *gin.Engine {
 			ug.GET("/:id", userH.Get)
 			ug.PUT("/:id", userH.Update)
 			ug.DELETE("/:id", userH.Delete)
+
+			ig := protected.Group("/instances")
+			ig.GET("", instanceH.List)
+			ig.POST("", instanceH.Create)
+			ig.GET("/:id", instanceH.Get)
+			ig.PUT("/:id", instanceH.Update)
+			ig.DELETE("/:id", instanceH.Delete)
+			ig.POST("/:id/scale", instanceH.Scale)
+			ig.GET("/:id/metrics", instanceH.Metrics)
+
+			ag := protected.Group("/alerts")
+			ag.GET("/rules", alertH.ListRules)
+			ag.POST("/rules", alertH.CreateRule)
+			ag.PUT("/rules/:id", alertH.UpdateRule)
+			ag.DELETE("/rules/:id", alertH.DeleteRule)
+			ag.GET("/events", alertH.ListEvents)
+			ag.GET("/events/:id", alertH.GetEvent)
+			ag.PUT("/events/:id/ack", alertH.AckEvent)
+			ag.GET("/channels", alertH.ListChannels)
+			ag.POST("/channels", alertH.CreateChannel)
+			ag.PUT("/channels/:id", alertH.UpdateChannel)
+			ag.DELETE("/channels/:id", alertH.DeleteChannel)
+			ag.GET("/stats/summary", alertH.Summary)
+			ag.GET("/stats/trend", alertH.Trend)
+			ag.GET("/stats/by-level", alertH.StatsByLevel)
+			ag.GET("/stats/by-rule", alertH.StatsByRule)
 		}
 	}
 

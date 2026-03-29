@@ -159,6 +159,28 @@ func stringVal(m map[string]interface{}, key string) (string, bool) {
 	return strings.TrimSpace(s), ok && s != ""
 }
 
+// ScaleDeployment 修改 Deployment 副本数。
+func (c *Client) ScaleDeployment(ctx context.Context, namespace, name string, replicas int32) error {
+	deploy, err := c.cs.AppsV1().Deployments(namespace).Get(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		return err
+	}
+	deploy.Spec.Replicas = &replicas
+	_, err = c.cs.AppsV1().Deployments(namespace).Update(ctx, deploy, metav1.UpdateOptions{})
+	return err
+}
+
+// ResizePVC 修改 PVC 存储大小。
+func (c *Client) ResizePVC(ctx context.Context, namespace, name, newSize string) error {
+	pvc, err := c.cs.CoreV1().PersistentVolumeClaims(namespace).Get(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		return err
+	}
+	pvc.Spec.Resources.Requests[corev1.ResourceStorage] = resource.MustParse(newSize)
+	_, err = c.cs.CoreV1().PersistentVolumeClaims(namespace).Update(ctx, pvc, metav1.UpdateOptions{})
+	return err
+}
+
 // ApplyDefaultNetworkPolicy 同命名空间内 Pod 互通，默认拒绝来自其它命名空间入站（可按需收紧）。
 func (c *Client) ApplyDefaultNetworkPolicy(ctx context.Context, namespace string) error {
 	name := "ops-tenant-default"

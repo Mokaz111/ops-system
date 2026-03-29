@@ -63,7 +63,7 @@ func (r *TenantRepository) GetByDeptID(ctx context.Context, deptID uuid.UUID) (*
 // GetByVMUserID 按 VMuser 标识。
 func (r *TenantRepository) GetByVMUserID(ctx context.Context, vmuserID string) (*model.Tenant, error) {
 	var t model.Tenant
-	err := r.db.WithContext(ctx).Where("vmuser_id = ?", vmuserID).First(&t).Error
+	err := r.db.WithContext(ctx).Where("vm_user_id = ?", vmuserID).First(&t).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil

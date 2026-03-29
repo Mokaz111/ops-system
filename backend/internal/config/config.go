@@ -19,6 +19,7 @@ type Config struct {
 	JWT           JWTConfig           `mapstructure:"jwt"`
 	RateLimit     RateLimitConfig     `mapstructure:"ratelimit"`
 	CORS          CORSConfig          `mapstructure:"cors"`
+	Notification  NotificationConfig  `mapstructure:"notification"`
 	VM            VMConfig            `mapstructure:"vm"`
 	N9E           N9EConfig           `mapstructure:"n9e"`
 	Grafana       GrafanaConfig       `mapstructure:"grafana"`
@@ -94,6 +95,21 @@ type JWTConfig struct {
 type RateLimitConfig struct {
 	RequestsPerSecond float64 `mapstructure:"requests_per_second"`
 	Burst             int     `mapstructure:"burst"`
+}
+
+// NotificationConfig 通知渠道配置（§3.3）。
+type NotificationConfig struct {
+	Email EmailNotifyConfig `mapstructure:"email"`
+}
+
+// EmailNotifyConfig SMTP 邮件配置。
+type EmailNotifyConfig struct {
+	Enabled  bool   `mapstructure:"enabled"`
+	SMTPHost string `mapstructure:"smtp_host"`
+	SMTPPort int    `mapstructure:"smtp_port"`
+	Username string `mapstructure:"username"`
+	Password string `mapstructure:"password"`
+	From     string `mapstructure:"from"`
 }
 
 // VMConfig VictoriaMetrics / vmauth 相关（§2.3）。
@@ -224,4 +240,6 @@ func expandPlaceholders(cfg *Config) {
 	cfg.Grafana.BaseURL = os.ExpandEnv(cfg.Grafana.BaseURL)
 	cfg.Grafana.PrometheusDatasourceURL = os.ExpandEnv(cfg.Grafana.PrometheusDatasourceURL)
 	cfg.Kubernetes.Kubeconfig = os.ExpandEnv(cfg.Kubernetes.Kubeconfig)
+	cfg.Notification.Email.Username = os.ExpandEnv(cfg.Notification.Email.Username)
+	cfg.Notification.Email.Password = os.ExpandEnv(cfg.Notification.Email.Password)
 }

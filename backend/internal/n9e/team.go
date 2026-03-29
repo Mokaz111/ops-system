@@ -32,7 +32,7 @@ func (c *Client) CreateTeam(ctx context.Context, name, note string) (int64, erro
 		"name": name,
 		"note": note,
 	}
-	dat, err := c.requestJSON(ctx, "POST", c.prefix+"/busi-groups", body)
+	dat, err := c.RequestJSON(ctx, "POST", c.prefix+"/busi-groups", body)
 	if err != nil {
 		return 0, err
 	}
@@ -45,6 +45,6 @@ func (c *Client) DeleteTeam(ctx context.Context, teamID int64) error {
 		return nil
 	}
 	path := fmt.Sprintf("%s/busi-groups/%d", c.prefix, teamID)
-	_, err := c.requestJSON(ctx, "DELETE", path, nil)
+	_, err := c.RequestJSON(ctx, "DELETE", path, nil)
 	return err
 }

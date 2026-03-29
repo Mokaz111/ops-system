@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"ops-system/backend/internal/config"
+	"ops-system/backend/internal/n9e"
+	"ops-system/backend/internal/notify"
 
 	"go.uber.org/zap"
 	"gorm.io/gorm"
@@ -18,10 +20,10 @@ type Server struct {
 	log        *zap.Logger
 }
 
-// New 创建 HTTP 服务。db 可为 nil（仅用于测试）；生产环境应传入已连接的数据库。
-func New(cfg *config.Config, log *zap.Logger, db *gorm.DB) (*Server, error) {
+// New 创建 HTTP 服务。
+func New(cfg *config.Config, log *zap.Logger, db *gorm.DB, n9eClient *n9e.Client, notifySvc *notify.NotifyService) (*Server, error) {
 	addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
-	handler := NewRouter(cfg, log, db)
+	handler := NewRouter(cfg, log, db, n9eClient, notifySvc)
 	s := &http.Server{
 		Addr:              addr,
 		Handler:           handler,
