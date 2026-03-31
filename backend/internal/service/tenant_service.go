@@ -17,18 +17,20 @@ import (
 )
 
 var (
-	ErrTenantNotFound      = errors.New("tenant not found")
-	ErrTenantNameRequired  = errors.New("tenant_name required")
-	ErrDeptNotFound        = errors.New("department not found")
-	ErrDeptHasTenant       = errors.New("department already has a tenant")
-	ErrInvalidTemplateType = errors.New("invalid template_type")
-	ErrQuotaConfigNotJSON  = errors.New("quota_config must be valid JSON object")
-	ErrTenantHasInstances  = errors.New("tenant has instances")
+	ErrTenantNotFound          = errors.New("tenant not found")
+	ErrTenantNameRequired      = errors.New("tenant_name required")
+	ErrDeptNotFound            = errors.New("department not found")
+	ErrDeptHasTenant           = errors.New("department already has a tenant")
+	ErrInvalidTemplateType     = errors.New("invalid template_type")
+	ErrQuotaConfigNotJSON      = errors.New("quota_config must be valid JSON object")
+	ErrTenantHasInstances      = errors.New("tenant has instances")
+	ErrTenantProvisionFailed   = errors.New("tenant provisioning failed")
+	ErrTenantDeprovisionFailed = errors.New("tenant deprovision failed")
 )
 
 var allowedTemplateTypes = map[string]struct{}{
-	"shared":           {},
-	"dedicated_single": {},
+	"shared":            {},
+	"dedicated_single":  {},
 	"dedicated_cluster": {},
 }
 
@@ -79,7 +81,7 @@ func (s *TenantService) InsertURL(vmuserID string) string {
 	return s.vmSync.InsertURL(vmuserID)
 }
 
-// Create 创建租户：校验 → 生成 vmuser → 落库 → VM 同步 → Grafana 组织 → K8s 编排。
+// Create 创建租户：校验 → 生成 vmuser → 落库 → 外部系统编排。
 func (s *TenantService) Create(ctx context.Context, req *CreateTenantRequest) (*model.Tenant, error) {
 	if req.TenantName == "" {
 		return nil, ErrTenantNameRequired
@@ -128,24 +130,40 @@ func (s *TenantService) Create(ctx context.Context, req *CreateTenantRequest) (*
 		VMUserKey:    vmKey,
 		TemplateType: req.TemplateType,
 		QuotaConfig:  quotaCfg,
-		Status:       "active",
+		Status:       "provisioning",
 	}
 	if err := s.tenant.Create(ctx, t); err != nil {
 		return nil, err
 	}
 
 	if s.vmSync != nil {
-		s.vmSync.OnTenantCreated(ctx, t)
+		if err := s.vmSync.OnTenantCreated(ctx, t); err != nil {
+			s.markStatus(ctx, t, "provision_failed")
+			return nil, ErrTenantProvisionFailed
+		}
 	}
 	if s.grafana != nil && s.grafana.Enabled() {
-		if err := s.grafana.SyncTenantOnCreate(ctx, t); err == nil {
-			_ = s.tenant.Update(ctx, t)
+		if err := s.grafana.SyncTenantOnCreate(ctx, t); err != nil {
+			s.markStatus(ctx, t, "provision_failed")
+			return nil, ErrTenantProvisionFailed
+		}
+		if err := s.tenant.Update(ctx, t); err != nil {
+			s.markStatus(ctx, t, "provision_failed")
+			return nil, err
 		}
 	}
 	if s.orch != nil {
-		if err := s.orch.DeployTenant(ctx, t); err != nil && s.log != nil {
-			s.log.Warn("orchestrator_deploy_failed", zap.Error(err), zap.String("tenant_id", t.ID.String()))
+		if err := s.orch.DeployTenant(ctx, t); err != nil {
+			if s.log != nil {
+				s.log.Warn("orchestrator_deploy_failed", zap.Error(err), zap.String("tenant_id", t.ID.String()))
+			}
+			s.markStatus(ctx, t, "provision_failed")
+			return nil, ErrTenantProvisionFailed
 		}
+	}
+	t.Status = "active"
+	if err := s.tenant.Update(ctx, t); err != nil {
+		return nil, err
 	}
 	return t, nil
 }
@@ -259,18 +277,42 @@ func (s *TenantService) Delete(ctx context.Context, id uuid.UUID) error {
 	if n > 0 {
 		return ErrTenantHasInstances
 	}
+	t.Status = "deprovisioning"
+	if err := s.tenant.Update(ctx, t); err != nil {
+		return err
+	}
 	if s.grafana != nil {
-		s.grafana.SyncTenantOnDelete(ctx, t)
+		if err := s.grafana.SyncTenantOnDelete(ctx, t); err != nil {
+			s.markStatus(ctx, t, "deprovision_failed")
+			return ErrTenantDeprovisionFailed
+		}
 	}
 	if s.vmSync != nil {
-		s.vmSync.OnTenantDeleted(ctx, t)
+		if err := s.vmSync.OnTenantDeleted(ctx, t); err != nil {
+			s.markStatus(ctx, t, "deprovision_failed")
+			return ErrTenantDeprovisionFailed
+		}
 	}
 	if s.orch != nil {
-		if err := s.orch.DeleteTenant(ctx, t); err != nil && s.log != nil {
-			s.log.Warn("orchestrator_delete_failed", zap.Error(err), zap.String("tenant_id", t.ID.String()))
+		if err := s.orch.DeleteTenant(ctx, t); err != nil {
+			if s.log != nil {
+				s.log.Warn("orchestrator_delete_failed", zap.Error(err), zap.String("tenant_id", t.ID.String()))
+			}
+			s.markStatus(ctx, t, "deprovision_failed")
+			return ErrTenantDeprovisionFailed
 		}
 	}
 	return s.tenant.Delete(ctx, id)
+}
+
+func (s *TenantService) markStatus(ctx context.Context, t *model.Tenant, status string) {
+	if t == nil {
+		return
+	}
+	t.Status = status
+	if err := s.tenant.Update(ctx, t); err != nil && s.log != nil {
+		s.log.Warn("tenant_update_status_failed", zap.String("tenant_id", t.ID.String()), zap.String("status", status), zap.Error(err))
+	}
 }
 
 type TenantMetrics struct {

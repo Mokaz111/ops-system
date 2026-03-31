@@ -471,6 +471,6 @@ func (h *AlertHandler) handleErr(c *gin.Context, err error) {
 	case errors.Is(err, service.ErrEventAlreadyAcked):
 		response.Error(c, http.StatusConflict, http.StatusConflict, err.Error())
 	default:
-		response.Error(c, http.StatusInternalServerError, http.StatusInternalServerError, err.Error())
+		response.Error(c, http.StatusInternalServerError, http.StatusInternalServerError, "internal server error")
 	}
 }

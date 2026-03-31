@@ -60,13 +60,13 @@ type syncPayload struct {
 	QuotaConfig string `json:"quota_config,omitempty"`
 }
 
-// OnTenantCreated 租户落库成功后调用（失败仅打日志，不回滚租户）。
-func (s *SyncService) OnTenantCreated(ctx context.Context, t *model.Tenant) {
+// OnTenantCreated 租户落库成功后调用。
+func (s *SyncService) OnTenantCreated(ctx context.Context, t *model.Tenant) error {
 	if s == nil || t == nil {
-		return
+		return nil
 	}
 	if !s.cfg.SyncEnabled || s.cfg.VMAuthWebhookURL == "" {
-		return
+		return nil
 	}
 	body := syncPayload{
 		Event:       "tenant.created",
@@ -78,18 +78,19 @@ func (s *SyncService) OnTenantCreated(ctx context.Context, t *model.Tenant) {
 	}
 	if err := s.postWebhook(ctx, body); err != nil {
 		s.log.Warn("vm_sync_tenant_created_failed", zap.String("tenant_id", t.ID.String()), zap.Error(err))
-		return
+		return err
 	}
 	s.log.Info("vm_sync_tenant_created_ok", zap.String("tenant_id", t.ID.String()), zap.String("vmuser_id", t.VMUserID))
+	return nil
 }
 
 // OnTenantDeleted 删除租户前调用。
-func (s *SyncService) OnTenantDeleted(ctx context.Context, t *model.Tenant) {
+func (s *SyncService) OnTenantDeleted(ctx context.Context, t *model.Tenant) error {
 	if s == nil || t == nil {
-		return
+		return nil
 	}
 	if !s.cfg.SyncEnabled || s.cfg.VMAuthWebhookURL == "" {
-		return
+		return nil
 	}
 	body := syncPayload{
 		Event:      "tenant.deleted",
@@ -99,9 +100,10 @@ func (s *SyncService) OnTenantDeleted(ctx context.Context, t *model.Tenant) {
 	}
 	if err := s.postWebhook(ctx, body); err != nil {
 		s.log.Warn("vm_sync_tenant_deleted_failed", zap.String("tenant_id", t.ID.String()), zap.Error(err))
-		return
+		return err
 	}
 	s.log.Info("vm_sync_tenant_deleted_ok", zap.String("tenant_id", t.ID.String()), zap.String("vmuser_id", t.VMUserID))
+	return nil
 }
 
 func (s *SyncService) postWebhook(ctx context.Context, body syncPayload) error {

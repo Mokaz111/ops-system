@@ -221,6 +221,6 @@ func (h *GrafanaHandler) handleErr(c *gin.Context, err error) {
 	case errors.Is(err, service.ErrTenantNotFound):
 		response.Error(c, http.StatusNotFound, http.StatusNotFound, err.Error())
 	default:
-		response.Error(c, http.StatusInternalServerError, http.StatusInternalServerError, err.Error())
+		response.Error(c, http.StatusInternalServerError, http.StatusInternalServerError, "internal server error")
 	}
 }

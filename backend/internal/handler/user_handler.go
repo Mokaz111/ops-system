@@ -232,6 +232,6 @@ func (h *UserHandler) handleErr(c *gin.Context, err error) {
 	case errors.Is(err, service.ErrInvalidPagination):
 		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, err.Error())
 	default:
-		response.Error(c, http.StatusInternalServerError, http.StatusInternalServerError, err.Error())
+		response.Error(c, http.StatusInternalServerError, http.StatusInternalServerError, "internal server error")
 	}
 }

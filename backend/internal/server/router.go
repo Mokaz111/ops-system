@@ -7,6 +7,8 @@ import (
 	"ops-system/backend/internal/grafana"
 	"ops-system/backend/internal/handler"
 	"ops-system/backend/internal/middleware"
+	"ops-system/backend/internal/n9e"
+	"ops-system/backend/internal/notify"
 	"ops-system/backend/internal/repository"
 	"ops-system/backend/internal/service"
 	"ops-system/backend/internal/vm"
@@ -49,7 +51,7 @@ func NewRouter(cfg *config.Config, log *zap.Logger, db *gorm.DB) *gin.Engine {
 					return
 				}
 				if err := sqlDB.PingContext(c.Request.Context()); err != nil {
-					c.JSON(http.StatusServiceUnavailable, gin.H{"status": "error", "database": err.Error()})
+					c.JSON(http.StatusServiceUnavailable, gin.H{"status": "error", "database": "unavailable"})
 					return
 				}
 				c.JSON(http.StatusOK, gin.H{"status": "ok", "database": "postgresql"})
@@ -59,6 +61,9 @@ func NewRouter(cfg *config.Config, log *zap.Logger, db *gorm.DB) *gin.Engine {
 			tenantRepo := repository.NewTenantRepository(db)
 			userRepo := repository.NewUserRepository(db)
 			instanceRepo := repository.NewInstanceRepository(db)
+			alertRepo := repository.NewAlertRuleRepository(db)
+			alertEventRepo := repository.NewAlertEventRepository(db)
+			channelRepo := repository.NewNotificationChannelRepository(db)
 
 			userSvc := service.NewUserService(userRepo)
 			authSvc := service.NewAuthService(userRepo, cfg.JWT.Secret, cfg.JWT.ExpireHours)
@@ -83,6 +88,12 @@ func NewRouter(cfg *config.Config, log *zap.Logger, db *gorm.DB) *gin.Engine {
 
 			grafanaSvc := service.NewGrafanaService(grafanaClient, tenantRepo, log)
 			grafanaH := handler.NewGrafanaHandler(grafanaSvc)
+			n9eClient := n9e.NewClient(&cfg.N9E, log)
+			notifySvc := notify.NewNotifyService(log)
+			alertSvc := service.NewAlertService(alertRepo, tenantRepo, n9eClient, log)
+			alertEventSvc := service.NewAlertEventService(alertEventRepo, alertRepo, channelRepo, n9eClient, notifySvc, log)
+			channelSvc := service.NewNotificationChannelService(channelRepo, tenantRepo, log)
+			alertH := handler.NewAlertHandler(alertSvc, alertEventSvc, channelSvc)
 
 			api.POST("/auth/login", authH.Login)
 			api.POST("/users/bootstrap", userH.Bootstrap)
@@ -116,6 +127,17 @@ func NewRouter(cfg *config.Config, log *zap.Logger, db *gorm.DB) *gin.Engine {
 			gg.GET("/:id/users", grafanaH.ListOrgUsers)
 			gg.GET("/:id/datasources", grafanaH.ListDatasources)
 
+			ag := protected.Group("/alerts")
+			ag.GET("/rules", alertH.ListRules)
+			ag.GET("/events", alertH.ListEvents)
+			ag.GET("/events/:id", alertH.GetEvent)
+			ag.PUT("/events/:id/ack", alertH.AckEvent)
+			ag.GET("/channels", alertH.ListChannels)
+			ag.GET("/stats/summary", alertH.Summary)
+			ag.GET("/stats/trend", alertH.Trend)
+			ag.GET("/stats/by-level", alertH.StatsByLevel)
+			ag.GET("/stats/by-rule", alertH.StatsByRule)
+
 			admin := protected.Group("")
 			admin.Use(middleware.RequireRole("admin"))
 
@@ -148,6 +170,14 @@ func NewRouter(cfg *config.Config, log *zap.Logger, db *gorm.DB) *gin.Engine {
 			adminGG.POST("/:id/datasources", grafanaH.CreateDatasource)
 			adminGG.DELETE("/:id/datasources/:dsId", grafanaH.DeleteDatasource)
 			adminGG.POST("/:id/dashboards/import", grafanaH.ImportDashboard)
+
+			adminAG := admin.Group("/alerts")
+			adminAG.POST("/rules", alertH.CreateRule)
+			adminAG.PUT("/rules/:id", alertH.UpdateRule)
+			adminAG.DELETE("/rules/:id", alertH.DeleteRule)
+			adminAG.POST("/channels", alertH.CreateChannel)
+			adminAG.PUT("/channels/:id", alertH.UpdateChannel)
+			adminAG.DELETE("/channels/:id", alertH.DeleteChannel)
 		}
 	}
 

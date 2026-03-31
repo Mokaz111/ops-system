@@ -216,7 +216,10 @@ func (h *TenantHandler) handleErr(c *gin.Context, err error) {
 		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, err.Error())
 	case errors.Is(err, service.ErrInvalidPagination):
 		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, err.Error())
+	case errors.Is(err, service.ErrTenantProvisionFailed),
+		errors.Is(err, service.ErrTenantDeprovisionFailed):
+		response.Error(c, http.StatusServiceUnavailable, http.StatusServiceUnavailable, "tenant orchestration failed, please retry")
 	default:
-		response.Error(c, http.StatusInternalServerError, http.StatusInternalServerError, err.Error())
+		response.Error(c, http.StatusInternalServerError, http.StatusInternalServerError, "internal server error")
 	}
 }

@@ -196,6 +196,9 @@ func Load(configPath string) (*Config, error) {
 	if strings.TrimSpace(cfg.JWT.Secret) == "" {
 		return nil, fmt.Errorf("jwt.secret is required; set OPS_JWT_SECRET or jwt.secret")
 	}
+	if cfg.Server.Mode == "release" && len(cfg.CORS.AllowedOrigins) == 0 {
+		return nil, fmt.Errorf("cors.allowed_origins is required in release mode")
+	}
 	if cfg.RateLimit.RequestsPerSecond <= 0 {
 		cfg.RateLimit.RequestsPerSecond = 100
 	}

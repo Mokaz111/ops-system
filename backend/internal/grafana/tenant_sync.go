@@ -26,16 +26,20 @@ func (c *Client) SyncTenantOnCreate(ctx context.Context, t *model.Tenant) error 
 	t.GrafanaOrgID = orgID
 	if err := c.CreatePrometheusDatasource(ctx, orgID, t); err != nil {
 		c.log.Warn("grafana_create_datasource_failed", zap.String("tenant_id", t.ID.String()), zap.Error(err))
+		_ = c.DeleteOrg(ctx, orgID)
+		return err
 	}
 	return nil
 }
 
 // SyncTenantOnDelete 删除 Grafana 组织。
-func (c *Client) SyncTenantOnDelete(ctx context.Context, t *model.Tenant) {
+func (c *Client) SyncTenantOnDelete(ctx context.Context, t *model.Tenant) error {
 	if c == nil || !c.Enabled() || t == nil || t.GrafanaOrgID <= 0 {
-		return
+		return nil
 	}
 	if err := c.DeleteOrg(ctx, t.GrafanaOrgID); err != nil {
 		c.log.Warn("grafana_delete_org_failed", zap.String("tenant_id", t.ID.String()), zap.Int64("grafana_org_id", t.GrafanaOrgID), zap.Error(err))
+		return err
 	}
+	return nil
 }

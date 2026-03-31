@@ -39,7 +39,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 			response.Error(c, http.StatusUnauthorized, http.StatusUnauthorized, err.Error())
 			return
 		}
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, err.Error())
+		response.Error(c, http.StatusInternalServerError, http.StatusInternalServerError, "internal server error")
 		return
 	}
 	response.JSON(c, gin.H{
@@ -65,7 +65,7 @@ func (h *AuthHandler) Me(c *gin.Context) {
 			response.Error(c, http.StatusNotFound, http.StatusNotFound, err.Error())
 			return
 		}
-		response.Error(c, http.StatusInternalServerError, http.StatusInternalServerError, err.Error())
+		response.Error(c, http.StatusInternalServerError, http.StatusInternalServerError, "internal server error")
 		return
 	}
 	response.JSON(c, toUserPublic(u))
