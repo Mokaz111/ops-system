@@ -3,7 +3,6 @@ package handler
 import (
 	"errors"
 	"net/http"
-	"strconv"
 	"time"
 
 	"ops-system/backend/internal/model"
@@ -18,10 +17,11 @@ import (
 type InstanceHandler struct {
 	svc      *service.InstanceService
 	scaleSvc *service.ScaleService
+	userSvc  *service.UserService
 }
 
-func NewInstanceHandler(svc *service.InstanceService, scaleSvc *service.ScaleService) *InstanceHandler {
-	return &InstanceHandler{svc: svc, scaleSvc: scaleSvc}
+func NewInstanceHandler(svc *service.InstanceService, scaleSvc *service.ScaleService, userSvc *service.UserService) *InstanceHandler {
+	return &InstanceHandler{svc: svc, scaleSvc: scaleSvc, userSvc: userSvc}
 }
 
 type instanceResp struct {
@@ -66,13 +66,22 @@ type createInstanceBody struct {
 
 // List GET /api/v1/instances
 func (h *InstanceHandler) List(c *gin.Context) {
-	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-	ps, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
-	if ps < 1 {
-		ps = 20
+	page, ps, ok := parsePageAndSize(c, 20)
+	if !ok {
+		return
 	}
 	var tenantID *uuid.UUID
-	if s := c.Query("tenant_id"); s != "" {
+	if !isAdmin(c) {
+		u, ok := currentUser(c, h.userSvc)
+		if !ok {
+			return
+		}
+		if u.TenantID == nil {
+			response.Error(c, http.StatusForbidden, http.StatusForbidden, "forbidden")
+			return
+		}
+		tenantID = u.TenantID
+	} else if s := c.Query("tenant_id"); s != "" {
 		id, err := uuid.Parse(s)
 		if err != nil {
 			response.Error(c, http.StatusBadRequest, http.StatusBadRequest, "invalid tenant_id")
@@ -133,6 +142,16 @@ func (h *InstanceHandler) Get(c *gin.Context) {
 	if err != nil {
 		h.handleErr(c, err)
 		return
+	}
+	if !isAdmin(c) {
+		u, ok := currentUser(c, h.userSvc)
+		if !ok {
+			return
+		}
+		if u.TenantID == nil || *u.TenantID != inst.TenantID {
+			response.Error(c, http.StatusForbidden, http.StatusForbidden, "forbidden")
+			return
+		}
 	}
 	response.JSON(c, toInstanceResp(inst))
 }
@@ -221,6 +240,22 @@ func (h *InstanceHandler) Metrics(c *gin.Context) {
 		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, "invalid id")
 		return
 	}
+	if !isAdmin(c) {
+		u, ok := currentUser(c, h.userSvc)
+		if !ok {
+			return
+		}
+		inst, err := h.svc.Get(c.Request.Context(), id)
+		if err != nil {
+			h.handleErr(c, err)
+			return
+		}
+		if u.TenantID == nil || *u.TenantID != inst.TenantID {
+			response.Error(c, http.StatusForbidden, http.StatusForbidden, "forbidden")
+			return
+		}
+	}
+
 	m, err := h.svc.GetMetrics(c.Request.Context(), id)
 	if err != nil {
 		h.handleErr(c, err)
@@ -241,7 +276,9 @@ func (h *InstanceHandler) handleErr(c *gin.Context, err error) {
 		errors.Is(err, service.ErrInvalidInstanceType):
 		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, err.Error())
 	case errors.Is(err, service.ErrInvalidScaleType),
-		errors.Is(err, service.ErrScaleNotSupported):
+		errors.Is(err, service.ErrScaleNotSupported),
+		errors.Is(err, service.ErrScaleManagedByPlatform),
+		errors.Is(err, service.ErrScaleTypeNotAllowed):
 		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, err.Error())
 	case errors.Is(err, service.ErrInvalidPagination):
 		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, err.Error())

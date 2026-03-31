@@ -1,9 +1,38 @@
+import { useEffect, useState } from 'react';
 import { Box, Card, CardContent, Typography, Divider, TextField, Button, Grid } from '@mui/material';
+import { useSnackbar } from 'notistack';
 import PageHeader from '../../components/common/PageHeader';
 import { useAuthStore } from '../../stores/useAuthStore';
+import { userAPI } from '../../api/user';
 
 export default function SettingsPage() {
-  const { user } = useAuthStore();
+  const { enqueueSnackbar } = useSnackbar();
+  const { user, setUser } = useAuthStore();
+  const [email, setEmail] = useState('');
+  const [phone, setPhone] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    setEmail(user?.email || '');
+    setPhone(user?.phone || '');
+  }, [user]);
+
+  const handleSave = async () => {
+    if (!user?.id) {
+      enqueueSnackbar('当前用户信息无效', { variant: 'error' });
+      return;
+    }
+    setSaving(true);
+    try {
+      const { data: res } = await userAPI.update(user.id, { email, phone });
+      setUser(res.data);
+      enqueueSnackbar('个人信息已更新', { variant: 'success' });
+    } catch {
+      enqueueSnackbar('保存失败，请稍后重试', { variant: 'error' });
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
     <Box>
@@ -16,10 +45,11 @@ export default function SettingsPage() {
               <Typography variant="subtitle1" sx={{ mb: 2 }}>个人信息</Typography>
               <Divider sx={{ mb: 2 }} />
               <TextField fullWidth label="用户名" value={user?.username || ''} disabled sx={{ mb: 2 }} />
-              <TextField fullWidth label="显示名" value={user?.display_name || ''} sx={{ mb: 2 }} />
-              <TextField fullWidth label="邮箱" value={user?.email || ''} sx={{ mb: 2 }} />
-              <TextField fullWidth label="手机号" value={user?.phone || ''} sx={{ mb: 2 }} />
-              <Button variant="contained">保存修改</Button>
+              <TextField fullWidth label="邮箱" value={email} onChange={(e) => setEmail(e.target.value)} sx={{ mb: 2 }} />
+              <TextField fullWidth label="手机号" value={phone} onChange={(e) => setPhone(e.target.value)} sx={{ mb: 2 }} />
+              <Button variant="contained" onClick={handleSave} disabled={saving}>
+                {saving ? '保存中...' : '保存修改'}
+              </Button>
             </CardContent>
           </Card>
         </Grid>

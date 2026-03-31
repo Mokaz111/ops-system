@@ -12,6 +12,7 @@ const GrafanaPage = lazy(() => import('./pages/Grafana'));
 const AlertPage = lazy(() => import('./pages/Alert'));
 const UserPage = lazy(() => import('./pages/User'));
 const SettingsPage = lazy(() => import('./pages/Settings'));
+const PlatformScalingPage = lazy(() => import('./pages/PlatformScaling'));
 
 function Lazy({ children }: { children: React.ReactNode }) {
   return <Suspense fallback={<LoadingScreen />}>{children}</Suspense>;
@@ -47,6 +48,7 @@ export const router = createBrowserRouter([
       { path: 'alerts', element: <Lazy><AlertPage /></Lazy> },
       { path: 'users', element: <Lazy><UserPage /></Lazy> },
       { path: 'settings', element: <Lazy><SettingsPage /></Lazy> },
+      { path: 'platform-scaling', element: <Lazy><PlatformScalingPage /></Lazy> },
     ],
   },
   { path: '*', element: <Navigate to="/dashboard" replace /> },

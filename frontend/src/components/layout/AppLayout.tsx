@@ -1,11 +1,18 @@
+import { useEffect } from 'react';
 import { Box, Toolbar } from '@mui/material';
 import { Outlet } from 'react-router-dom';
 import Sidebar, { DRAWER_WIDTH } from './Sidebar';
 import TopBar from './TopBar';
 import { useAppStore } from '../../stores/useAppStore';
+import { useAuthStore } from '../../stores/useAuthStore';
 
 export default function AppLayout() {
   const { sidebarOpen, toggleSidebar } = useAppStore();
+  const fetchMe = useAuthStore((s) => s.fetchMe);
+
+  useEffect(() => {
+    fetchMe();
+  }, [fetchMe]);
 
   return (
     <Box sx={{ display: 'flex', minHeight: '100vh' }}>

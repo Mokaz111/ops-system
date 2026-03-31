@@ -2,7 +2,7 @@ import api from './index';
 import type {
   ApiResponse,
   CreateTenantRequest,
-  MetricsData,
+  TenantMetrics,
   PaginatedResponse,
   PaginationParams,
   Tenant,
@@ -25,5 +25,5 @@ export const tenantAPI = {
     api.delete<ApiResponse<null>>(`/tenants/${id}`),
 
   metrics: (id: string) =>
-    api.get<ApiResponse<MetricsData>>(`/tenants/${id}/metrics`),
+    api.get<ApiResponse<TenantMetrics>>(`/tenants/${id}/metrics`),
 };

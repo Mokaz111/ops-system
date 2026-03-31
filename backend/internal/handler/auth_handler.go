@@ -30,7 +30,7 @@ type loginBody struct {
 func (h *AuthHandler) Login(c *gin.Context) {
 	var body loginBody
 	if err := c.ShouldBindJSON(&body); err != nil {
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, err.Error())
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, "invalid request body")
 		return
 	}
 	token, u, err := h.authSvc.Login(c.Request.Context(), body.Username, body.Password)

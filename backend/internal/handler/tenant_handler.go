@@ -3,7 +3,6 @@ package handler
 import (
 	"errors"
 	"net/http"
-	"strconv"
 	"time"
 
 	"ops-system/backend/internal/model"
@@ -16,11 +15,12 @@ import (
 
 // TenantHandler 租户 HTTP。
 type TenantHandler struct {
-	svc *service.TenantService
+	svc     *service.TenantService
+	userSvc *service.UserService
 }
 
-func NewTenantHandler(svc *service.TenantService) *TenantHandler {
-	return &TenantHandler{svc: svc}
+func NewTenantHandler(svc *service.TenantService, userSvc *service.UserService) *TenantHandler {
+	return &TenantHandler{svc: svc, userSvc: userSvc}
 }
 
 type tenantResp struct {
@@ -69,11 +69,34 @@ type createTenantBody struct {
 
 // List GET /api/v1/tenants
 func (h *TenantHandler) List(c *gin.Context) {
-	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-	ps, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
-	if ps < 1 {
-		ps = 20
+	page, ps, ok := parsePageAndSize(c, 20)
+	if !ok {
+		return
 	}
+
+	if !isAdmin(c) {
+		u, ok := currentUser(c, h.userSvc)
+		if !ok {
+			return
+		}
+		if u.TenantID == nil {
+			response.Error(c, http.StatusForbidden, http.StatusForbidden, "forbidden")
+			return
+		}
+		t, err := h.svc.Get(c.Request.Context(), *u.TenantID)
+		if err != nil {
+			h.handleErr(c, err)
+			return
+		}
+		response.JSON(c, gin.H{
+			"items":     []tenantResp{h.toTenantResp(t, false)},
+			"total":     1,
+			"page":      page,
+			"page_size": ps,
+		})
+		return
+	}
+
 	var deptID *uuid.UUID
 	if s := c.Query("dept_id"); s != "" {
 		id, err := uuid.Parse(s)
@@ -131,6 +154,17 @@ func (h *TenantHandler) Get(c *gin.Context) {
 		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, "invalid id")
 		return
 	}
+	if !isAdmin(c) {
+		u, ok := currentUser(c, h.userSvc)
+		if !ok {
+			return
+		}
+		if u.TenantID == nil || *u.TenantID != id {
+			response.Error(c, http.StatusForbidden, http.StatusForbidden, "forbidden")
+			return
+		}
+	}
+
 	t, err := h.svc.Get(c.Request.Context(), id)
 	if err != nil {
 		h.handleErr(c, err)
@@ -192,6 +226,17 @@ func (h *TenantHandler) Metrics(c *gin.Context) {
 		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, "invalid id")
 		return
 	}
+	if !isAdmin(c) {
+		u, ok := currentUser(c, h.userSvc)
+		if !ok {
+			return
+		}
+		if u.TenantID == nil || *u.TenantID != id {
+			response.Error(c, http.StatusForbidden, http.StatusForbidden, "forbidden")
+			return
+		}
+	}
+
 	m, err := h.svc.GetMetrics(c.Request.Context(), id)
 	if err != nil {
 		h.handleErr(c, err)

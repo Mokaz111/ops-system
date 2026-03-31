@@ -18,6 +18,7 @@ import NotificationsOutlinedIcon from '@mui/icons-material/NotificationsOutlined
 import PeopleOutlinedIcon from '@mui/icons-material/PeopleOutlined';
 import SettingsOutlinedIcon from '@mui/icons-material/SettingsOutlined';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
+import SettingsEthernetOutlinedIcon from '@mui/icons-material/SettingsEthernetOutlined';
 
 const DRAWER_WIDTH = 256;
 
@@ -32,6 +33,7 @@ const menuItems = [
   { key: 'alerts', label: '告警引擎', icon: <NotificationsOutlinedIcon />, path: '/alerts', external: true },
   { type: 'divider' as const },
   { key: 'users', label: '用户管理', icon: <PeopleOutlinedIcon />, path: '/users' },
+  { key: 'platform-scaling', label: '平台扩容', icon: <SettingsEthernetOutlinedIcon />, path: '/platform-scaling' },
   { key: 'settings', label: '系统设置', icon: <SettingsOutlinedIcon />, path: '/settings' },
 ];
 

@@ -69,6 +69,7 @@ func AutoMigrate(db *gorm.DB) error {
 		&model.Tenant{},
 		&model.User{},
 		&model.Instance{},
+		&model.PlatformScaleAudit{},
 	)
 }
 

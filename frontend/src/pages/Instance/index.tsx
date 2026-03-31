@@ -2,7 +2,6 @@ import { useCallback, useEffect, useState } from 'react';
 import {
   Box,
   Card,
-  CardContent,
   Chip,
   Dialog,
   DialogActions,
@@ -29,7 +28,6 @@ import {
   Typography,
 } from '@mui/material';
 import SearchIcon from '@mui/icons-material/Search';
-import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
 import DeleteOutlinedIcon from '@mui/icons-material/DeleteOutlined';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import ScaleIcon from '@mui/icons-material/TuneOutlined';
@@ -41,7 +39,7 @@ import ConfirmDialog from '../../components/common/ConfirmDialog';
 import EmptyState from '../../components/common/EmptyState';
 import LoadingScreen from '../../components/common/LoadingScreen';
 import { instanceAPI } from '../../api/instance';
-import type { Instance, InstanceSpec } from '../../types/api';
+import type { Instance, InstanceMetrics, InstanceSpec } from '../../types/api';
 
 const typeLabels: Record<string, { label: string; color: 'primary' | 'secondary' | 'success' | 'warning' }> = {
   metrics: { label: 'Metrics', color: 'primary' },
@@ -69,6 +67,10 @@ function ResourceBar({ label, used, total, unit }: { label: string; used: number
   );
 }
 
+function isInstanceLevelScalable(inst: Instance): boolean {
+  return inst.status === 'running' && inst.instance_type !== 'visual' && inst.template_type === 'dedicated_single';
+}
+
 export default function InstancePage() {
   const { enqueueSnackbar } = useSnackbar();
   const [instances, setInstances] = useState<Instance[]>([]);
@@ -83,6 +85,8 @@ export default function InstancePage() {
   const [createOpen, setCreateOpen] = useState(false);
   const [deleteDialog, setDeleteDialog] = useState<{ open: boolean; instance?: Instance }>({ open: false });
   const [detailDialog, setDetailDialog] = useState<{ open: boolean; instance?: Instance }>({ open: false });
+  const [detailMetrics, setDetailMetrics] = useState<InstanceMetrics | null>(null);
+  const [detailMetricsLoading, setDetailMetricsLoading] = useState(false);
   const [scaleDialog, setScaleDialog] = useState<{ open: boolean; instance?: Instance }>({ open: false });
   const [saving, setSaving] = useState(false);
 
@@ -90,7 +94,13 @@ export default function InstancePage() {
     tenant_id: '', instance_name: '', instance_type: 'metrics', template_type: 'dedicated_single',
     cpu: '2', memory: '4', storage: '50', retention: '15',
   });
-  const [scaleForm, setScaleForm] = useState({ cpu: 2, memory: 4, storage: 50 });
+  const [scaleForm, setScaleForm] = useState({
+    scale_type: 'vertical' as 'horizontal' | 'vertical' | 'storage',
+    replicas: 1,
+    cpu: 2,
+    memory: 4,
+    storage: 50,
+  });
 
   const fetchInstances = useCallback(async () => {
     setLoading(true);
@@ -135,12 +145,19 @@ export default function InstancePage() {
     if (!scaleDialog.instance) return;
     setSaving(true);
     try {
-      await instanceAPI.scale(scaleDialog.instance.id, scaleForm);
-      enqueueSnackbar('扩容请求已提交', { variant: 'success' });
+      const payload = {
+        scale_type: scaleForm.scale_type,
+        replicas: scaleForm.scale_type === 'horizontal' ? Math.max(1, scaleForm.replicas) : undefined,
+        cpu: scaleForm.scale_type === 'vertical' ? String(scaleForm.cpu) : undefined,
+        memory: scaleForm.scale_type === 'vertical' ? `${scaleForm.memory}Gi` : undefined,
+        storage: scaleForm.scale_type === 'storage' ? `${scaleForm.storage}Gi` : undefined,
+      };
+      await instanceAPI.scale(scaleDialog.instance.id, payload);
+      enqueueSnackbar('伸缩请求已提交', { variant: 'success' });
       setScaleDialog({ open: false });
       fetchInstances();
     } catch {
-      enqueueSnackbar('扩容失败', { variant: 'error' });
+      enqueueSnackbar('伸缩失败', { variant: 'error' });
     } finally {
       setSaving(false);
     }
@@ -155,6 +172,20 @@ export default function InstancePage() {
       fetchInstances();
     } catch {
       enqueueSnackbar('删除失败', { variant: 'error' });
+    }
+  };
+
+  const openDetail = async (inst: Instance) => {
+    setDetailDialog({ open: true, instance: inst });
+    setDetailMetrics(null);
+    setDetailMetricsLoading(true);
+    try {
+      const { data: res } = await instanceAPI.metrics(inst.id);
+      setDetailMetrics(res.data || null);
+    } catch {
+      enqueueSnackbar('获取实例指标失败', { variant: 'warning' });
+    } finally {
+      setDetailMetricsLoading(false);
     }
   };
 
@@ -236,7 +267,7 @@ export default function InstancePage() {
                       <TableCell sx={{ color: 'text.secondary', fontSize: '0.8125rem' }}>{new Date(inst.created_at).toLocaleDateString()}</TableCell>
                       <TableCell align="right">
                         <Tooltip title="详情">
-                          <IconButton size="small" onClick={() => setDetailDialog({ open: true, instance: inst })}>
+                          <IconButton size="small" onClick={() => openDetail(inst)} aria-label="查看实例详情">
                             <InfoOutlinedIcon fontSize="small" />
                           </IconButton>
                         </Tooltip>
@@ -247,15 +278,29 @@ export default function InstancePage() {
                             </IconButton>
                           </Tooltip>
                         )}
-                        {inst.status === 'running' && inst.instance_type !== 'visual' && (
-                          <Tooltip title="扩容">
+                        {isInstanceLevelScalable(inst) ? (
+                          <Tooltip title="伸缩">
                             <IconButton size="small" onClick={() => {
                               const s = parseSpec(inst.spec);
-                              setScaleForm({ cpu: s.cpu, memory: s.memory, storage: s.storage });
+                              setScaleForm({
+                                scale_type: 'vertical',
+                                replicas: s.replicas || 1,
+                                cpu: s.cpu || 1,
+                                memory: s.memory || 1,
+                                storage: s.storage || 1,
+                              });
                               setScaleDialog({ open: true, instance: inst });
                             }}>
                               <ScaleIcon fontSize="small" />
                             </IconButton>
+                          </Tooltip>
+                        ) : (
+                          <Tooltip title="共享版/独享集群版由平台管理员在集群层扩容">
+                            <span>
+                              <IconButton size="small" disabled aria-label="该模板不支持实例级伸缩">
+                                <ScaleIcon fontSize="small" />
+                              </IconButton>
+                            </span>
                           </Tooltip>
                         )}
                         <Tooltip title="删除">
@@ -360,9 +405,39 @@ export default function InstancePage() {
               </Grid>
               <Card variant="outlined" sx={{ p: 2, mb: 2 }}>
                 <Typography variant="subtitle2" sx={{ mb: 1.5 }}>资源使用</Typography>
-                <ResourceBar label="CPU" used={Math.round(spec.cpu * 0.6)} total={spec.cpu} unit="Core" />
-                <ResourceBar label="内存" used={Math.round(spec.memory * 0.52)} total={spec.memory} unit="GiB" />
-                <ResourceBar label="存储" used={Math.round(spec.storage * 0.64)} total={spec.storage} unit="GiB" />
+                {detailMetricsLoading ? (
+                  <LinearProgress />
+                ) : detailMetrics ? (
+                  <>
+                    <ResourceBar
+                      label="CPU"
+                      used={Math.round(spec.cpu * (detailMetrics.cpu_usage_percent || 0) / 100)}
+                      total={spec.cpu}
+                      unit="Core"
+                    />
+                    <ResourceBar
+                      label="内存"
+                      used={Math.round(spec.memory * (detailMetrics.memory_usage_percent || 0) / 100)}
+                      total={spec.memory}
+                      unit="GiB"
+                    />
+                    <ResourceBar
+                      label="存储"
+                      used={Math.round(spec.storage * (detailMetrics.disk_usage_percent || 0) / 100)}
+                      total={spec.storage}
+                      unit="GiB"
+                    />
+                    {detailMetrics.note && (
+                      <Typography variant="caption" color="text.secondary">
+                        {detailMetrics.note}
+                      </Typography>
+                    )}
+                  </>
+                ) : (
+                  <Typography variant="body2" color="text.secondary">
+                    暂无监控数据
+                  </Typography>
+                )}
               </Card>
               {inst.url && (
                 <Box>
@@ -380,15 +455,32 @@ export default function InstancePage() {
 
       {/* Scale dialog */}
       <Dialog open={scaleDialog.open} onClose={() => setScaleDialog({ open: false })} maxWidth="xs" fullWidth>
-        <DialogTitle>实例扩容 - {scaleDialog.instance?.instance_name}</DialogTitle>
+        <DialogTitle>实例伸缩 - {scaleDialog.instance?.instance_name}</DialogTitle>
         <DialogContent sx={{ pt: '16px !important' }}>
-          <TextField fullWidth size="small" label="CPU (核)" type="number" value={scaleForm.cpu} onChange={(e) => setScaleForm({ ...scaleForm, cpu: parseInt(e.target.value) || 0 })} sx={{ mb: 2 }} />
-          <TextField fullWidth size="small" label="内存 (GB)" type="number" value={scaleForm.memory} onChange={(e) => setScaleForm({ ...scaleForm, memory: parseInt(e.target.value) || 0 })} sx={{ mb: 2 }} />
-          <TextField fullWidth size="small" label="存储 (GB)" type="number" value={scaleForm.storage} onChange={(e) => setScaleForm({ ...scaleForm, storage: parseInt(e.target.value) || 0 })} />
+          <FormControl fullWidth size="small" sx={{ mb: 2 }}>
+            <InputLabel>伸缩类型</InputLabel>
+            <Select
+              value={scaleForm.scale_type}
+              label="伸缩类型"
+              onChange={(e) => setScaleForm({ ...scaleForm, scale_type: e.target.value as 'horizontal' | 'vertical' | 'storage' })}
+            >
+              <MenuItem value="vertical">垂直伸缩（CPU/内存）</MenuItem>
+              <MenuItem value="storage">存储扩容</MenuItem>
+            </Select>
+          </FormControl>
+          {scaleForm.scale_type === 'vertical' && (
+            <>
+              <TextField fullWidth size="small" label="CPU (核)" type="number" value={scaleForm.cpu} onChange={(e) => setScaleForm({ ...scaleForm, cpu: parseInt(e.target.value, 10) || 1 })} sx={{ mb: 2 }} />
+              <TextField fullWidth size="small" label="内存 (Gi)" type="number" value={scaleForm.memory} onChange={(e) => setScaleForm({ ...scaleForm, memory: parseInt(e.target.value, 10) || 1 })} />
+            </>
+          )}
+          {scaleForm.scale_type === 'storage' && (
+            <TextField fullWidth size="small" label="存储 (Gi)" type="number" value={scaleForm.storage} onChange={(e) => setScaleForm({ ...scaleForm, storage: parseInt(e.target.value, 10) || 1 })} />
+          )}
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2 }}>
           <Button onClick={() => setScaleDialog({ open: false })}>取消</Button>
-          <Button variant="contained" onClick={handleScale} disabled={saving}>{saving ? '提交中...' : '确认扩容'}</Button>
+          <Button variant="contained" onClick={handleScale} disabled={saving}>{saving ? '提交中...' : '确认伸缩'}</Button>
         </DialogActions>
       </Dialog>
 

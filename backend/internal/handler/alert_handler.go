@@ -3,7 +3,6 @@ package handler
 import (
 	"errors"
 	"net/http"
-	"strconv"
 	"time"
 
 	"ops-system/backend/internal/service"
@@ -18,14 +17,16 @@ type AlertHandler struct {
 	alertSvc   *service.AlertService
 	eventSvc   *service.AlertEventService
 	channelSvc *service.NotificationChannelService
+	userSvc    *service.UserService
 }
 
 func NewAlertHandler(
 	alertSvc *service.AlertService,
 	eventSvc *service.AlertEventService,
 	channelSvc *service.NotificationChannelService,
+	userSvc *service.UserService,
 ) *AlertHandler {
-	return &AlertHandler{alertSvc: alertSvc, eventSvc: eventSvc, channelSvc: channelSvc}
+	return &AlertHandler{alertSvc: alertSvc, eventSvc: eventSvc, channelSvc: channelSvc, userSvc: userSvc}
 }
 
 // ── Alert Rules ──
@@ -55,13 +56,22 @@ type updateAlertRuleBody struct {
 
 // ListRules GET /api/v1/alerts/rules
 func (h *AlertHandler) ListRules(c *gin.Context) {
-	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-	ps, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
-	if ps < 1 {
-		ps = 20
+	page, ps, ok := parsePageAndSize(c, 20)
+	if !ok {
+		return
 	}
 	var tenantID *uuid.UUID
-	if s := c.Query("tenant_id"); s != "" {
+	if !isAdmin(c) {
+		u, ok := currentUser(c, h.userSvc)
+		if !ok {
+			return
+		}
+		if u.TenantID == nil {
+			response.Error(c, http.StatusForbidden, http.StatusForbidden, "forbidden")
+			return
+		}
+		tenantID = u.TenantID
+	} else if s := c.Query("tenant_id"); s != "" {
 		id, err := uuid.Parse(s)
 		if err != nil {
 			response.Error(c, http.StatusBadRequest, http.StatusBadRequest, "invalid tenant_id")
@@ -158,13 +168,22 @@ func (h *AlertHandler) DeleteRule(c *gin.Context) {
 
 // ListEvents GET /api/v1/alerts/events
 func (h *AlertHandler) ListEvents(c *gin.Context) {
-	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-	ps, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
-	if ps < 1 {
-		ps = 20
+	page, ps, ok := parsePageAndSize(c, 20)
+	if !ok {
+		return
 	}
 	var tenantID *uuid.UUID
-	if s := c.Query("tenant_id"); s != "" {
+	if !isAdmin(c) {
+		u, ok := currentUser(c, h.userSvc)
+		if !ok {
+			return
+		}
+		if u.TenantID == nil {
+			response.Error(c, http.StatusForbidden, http.StatusForbidden, "forbidden")
+			return
+		}
+		tenantID = u.TenantID
+	} else if s := c.Query("tenant_id"); s != "" {
 		id, err := uuid.Parse(s)
 		if err != nil {
 			response.Error(c, http.StatusBadRequest, http.StatusBadRequest, "invalid tenant_id")
@@ -226,6 +245,16 @@ func (h *AlertHandler) GetEvent(c *gin.Context) {
 		h.handleErr(c, err)
 		return
 	}
+	if !isAdmin(c) {
+		u, ok := currentUser(c, h.userSvc)
+		if !ok {
+			return
+		}
+		if u.TenantID == nil || *u.TenantID != event.TenantID {
+			response.Error(c, http.StatusForbidden, http.StatusForbidden, "forbidden")
+			return
+		}
+	}
 	response.JSON(c, event)
 }
 
@@ -241,6 +270,22 @@ func (h *AlertHandler) AckEvent(c *gin.Context) {
 		response.Error(c, http.StatusUnauthorized, http.StatusUnauthorized, "unauthorized")
 		return
 	}
+	if !isAdmin(c) {
+		u, ok := currentUser(c, h.userSvc)
+		if !ok {
+			return
+		}
+		event, err := h.eventSvc.GetEvent(c.Request.Context(), eventID)
+		if err != nil {
+			h.handleErr(c, err)
+			return
+		}
+		if u.TenantID == nil || *u.TenantID != event.TenantID {
+			response.Error(c, http.StatusForbidden, http.StatusForbidden, "forbidden")
+			return
+		}
+	}
+
 	event, err := h.eventSvc.AckEvent(c.Request.Context(), eventID, userID)
 	if err != nil {
 		h.handleErr(c, err)
@@ -268,13 +313,22 @@ type updateChannelBody struct {
 
 // ListChannels GET /api/v1/alerts/channels
 func (h *AlertHandler) ListChannels(c *gin.Context) {
-	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-	ps, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
-	if ps < 1 {
-		ps = 20
+	page, ps, ok := parsePageAndSize(c, 20)
+	if !ok {
+		return
 	}
 	var tenantID *uuid.UUID
-	if s := c.Query("tenant_id"); s != "" {
+	if !isAdmin(c) {
+		u, ok := currentUser(c, h.userSvc)
+		if !ok {
+			return
+		}
+		if u.TenantID == nil {
+			response.Error(c, http.StatusForbidden, http.StatusForbidden, "forbidden")
+			return
+		}
+		tenantID = u.TenantID
+	} else if s := c.Query("tenant_id"); s != "" {
 		id, err := uuid.Parse(s)
 		if err != nil {
 			response.Error(c, http.StatusBadRequest, http.StatusBadRequest, "invalid tenant_id")
@@ -362,10 +416,24 @@ func (h *AlertHandler) DeleteChannel(c *gin.Context) {
 
 // Summary GET /api/v1/alerts/stats/summary
 func (h *AlertHandler) Summary(c *gin.Context) {
-	tenantID, err := uuid.Parse(c.Query("tenant_id"))
-	if err != nil {
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, "invalid tenant_id")
-		return
+	var tenantID uuid.UUID
+	if !isAdmin(c) {
+		u, ok := currentUser(c, h.userSvc)
+		if !ok {
+			return
+		}
+		if u.TenantID == nil {
+			response.Error(c, http.StatusForbidden, http.StatusForbidden, "forbidden")
+			return
+		}
+		tenantID = *u.TenantID
+	} else {
+		id, err := uuid.Parse(c.Query("tenant_id"))
+		if err != nil {
+			response.Error(c, http.StatusBadRequest, http.StatusBadRequest, "invalid tenant_id")
+			return
+		}
+		tenantID = id
 	}
 	summary, err := h.eventSvc.Summary(c.Request.Context(), tenantID)
 	if err != nil {
@@ -377,10 +445,24 @@ func (h *AlertHandler) Summary(c *gin.Context) {
 
 // Trend GET /api/v1/alerts/stats/trend
 func (h *AlertHandler) Trend(c *gin.Context) {
-	tenantID, err := uuid.Parse(c.Query("tenant_id"))
-	if err != nil {
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, "invalid tenant_id")
-		return
+	var tenantID uuid.UUID
+	if !isAdmin(c) {
+		u, ok := currentUser(c, h.userSvc)
+		if !ok {
+			return
+		}
+		if u.TenantID == nil {
+			response.Error(c, http.StatusForbidden, http.StatusForbidden, "forbidden")
+			return
+		}
+		tenantID = *u.TenantID
+	} else {
+		id, err := uuid.Parse(c.Query("tenant_id"))
+		if err != nil {
+			response.Error(c, http.StatusBadRequest, http.StatusBadRequest, "invalid tenant_id")
+			return
+		}
+		tenantID = id
 	}
 	start, end, ok := h.parseTimeRange(c)
 	if !ok {
@@ -398,10 +480,24 @@ func (h *AlertHandler) Trend(c *gin.Context) {
 
 // StatsByLevel GET /api/v1/alerts/stats/by-level
 func (h *AlertHandler) StatsByLevel(c *gin.Context) {
-	tenantID, err := uuid.Parse(c.Query("tenant_id"))
-	if err != nil {
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, "invalid tenant_id")
-		return
+	var tenantID uuid.UUID
+	if !isAdmin(c) {
+		u, ok := currentUser(c, h.userSvc)
+		if !ok {
+			return
+		}
+		if u.TenantID == nil {
+			response.Error(c, http.StatusForbidden, http.StatusForbidden, "forbidden")
+			return
+		}
+		tenantID = *u.TenantID
+	} else {
+		id, err := uuid.Parse(c.Query("tenant_id"))
+		if err != nil {
+			response.Error(c, http.StatusBadRequest, http.StatusBadRequest, "invalid tenant_id")
+			return
+		}
+		tenantID = id
 	}
 	start, end, ok := h.parseTimeRange(c)
 	if !ok {
@@ -417,18 +513,32 @@ func (h *AlertHandler) StatsByLevel(c *gin.Context) {
 
 // StatsByRule GET /api/v1/alerts/stats/by-rule
 func (h *AlertHandler) StatsByRule(c *gin.Context) {
-	tenantID, err := uuid.Parse(c.Query("tenant_id"))
-	if err != nil {
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, "invalid tenant_id")
-		return
+	var tenantID uuid.UUID
+	if !isAdmin(c) {
+		u, ok := currentUser(c, h.userSvc)
+		if !ok {
+			return
+		}
+		if u.TenantID == nil {
+			response.Error(c, http.StatusForbidden, http.StatusForbidden, "forbidden")
+			return
+		}
+		tenantID = *u.TenantID
+	} else {
+		id, err := uuid.Parse(c.Query("tenant_id"))
+		if err != nil {
+			response.Error(c, http.StatusBadRequest, http.StatusBadRequest, "invalid tenant_id")
+			return
+		}
+		tenantID = id
 	}
 	start, end, ok := h.parseTimeRange(c)
 	if !ok {
 		return
 	}
-	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "10"))
-	if limit < 1 {
-		limit = 10
+	limit, ok := parsePositiveIntQuery(c, "limit", "10")
+	if !ok {
+		return
 	}
 	data, err := h.eventSvc.StatsByRule(c.Request.Context(), tenantID, start, end, limit)
 	if err != nil {

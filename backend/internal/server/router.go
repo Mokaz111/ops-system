@@ -1,11 +1,17 @@
 package server
 
 import (
+	"context"
+	"fmt"
 	"net/http"
+	"strings"
 
 	"ops-system/backend/internal/config"
 	"ops-system/backend/internal/grafana"
 	"ops-system/backend/internal/handler"
+	"ops-system/backend/internal/helm"
+	"ops-system/backend/internal/idempotency"
+	"ops-system/backend/internal/k8s"
 	"ops-system/backend/internal/middleware"
 	"ops-system/backend/internal/n9e"
 	"ops-system/backend/internal/notify"
@@ -64,6 +70,7 @@ func NewRouter(cfg *config.Config, log *zap.Logger, db *gorm.DB) *gin.Engine {
 			alertRepo := repository.NewAlertRuleRepository(db)
 			alertEventRepo := repository.NewAlertEventRepository(db)
 			channelRepo := repository.NewNotificationChannelRepository(db)
+			platformAuditRepo := repository.NewPlatformScaleAuditRepository(db)
 
 			userSvc := service.NewUserService(userRepo)
 			authSvc := service.NewAuthService(userRepo, cfg.JWT.Secret, cfg.JWT.ExpireHours)
@@ -80,11 +87,42 @@ func NewRouter(cfg *config.Config, log *zap.Logger, db *gorm.DB) *gin.Engine {
 				log.Fatal("orchestrator_init", zap.Error(err))
 			}
 			tenantSvc := service.NewTenantService(deptRepo, tenantRepo, instanceRepo, vmSync, grafanaClient, orch, log)
-			tenantH := handler.NewTenantHandler(tenantSvc)
+			tenantH := handler.NewTenantHandler(tenantSvc, userSvc)
 
 			instanceSvc := service.NewInstanceService(instanceRepo, tenantRepo, orch, log)
-			scaleSvc := service.NewScaleService(nil, nil, instanceRepo, log)
-			instanceH := handler.NewInstanceHandler(instanceSvc, scaleSvc)
+			var (
+				helmClient *helm.Client
+				k8sClient  *k8s.Client
+			)
+			if cfg.Kubernetes.InCluster || strings.TrimSpace(cfg.Kubernetes.Kubeconfig) != "" {
+				hc, herr := helm.NewClient(cfg.Kubernetes.Kubeconfig)
+				if herr != nil {
+					log.Warn("scale_helm_client_init_failed", zap.Error(herr))
+				} else {
+					helmClient = hc
+				}
+				kc, kerr := k8s.NewClient(cfg.Kubernetes.Kubeconfig, cfg.Kubernetes.InCluster)
+				if kerr != nil {
+					log.Warn("scale_k8s_client_init_failed", zap.Error(kerr))
+				} else {
+					k8sClient = kc
+				}
+			}
+			scaleSvc := service.NewScaleService(helmClient, k8sClient, instanceRepo, log)
+			instanceH := handler.NewInstanceHandler(instanceSvc, scaleSvc, userSvc)
+			k8sOps := service.NewK8sResourceOperator(k8sClient, log)
+			platformScaleSvc := service.NewPlatformScaleService(k8sOps)
+			var idemStore idempotency.Store
+			redisAddr := fmt.Sprintf("%s:%d", cfg.Redis.Host, cfg.Redis.Port)
+			if cfg.Redis.Host != "" && cfg.Redis.Port > 0 {
+				redisStore := idempotency.NewRedisStore(redisAddr)
+				if err := redisStore.Ping(context.Background()); err != nil {
+					log.Warn("platform_idempotency_redis_unavailable", zap.String("addr", redisAddr), zap.Error(err))
+				} else {
+					idemStore = redisStore
+				}
+			}
+			platformH := handler.NewPlatformHandler(platformScaleSvc, log, idemStore, platformAuditRepo)
 
 			grafanaSvc := service.NewGrafanaService(grafanaClient, tenantRepo, log)
 			grafanaH := handler.NewGrafanaHandler(grafanaSvc)
@@ -93,7 +131,7 @@ func NewRouter(cfg *config.Config, log *zap.Logger, db *gorm.DB) *gin.Engine {
 			alertSvc := service.NewAlertService(alertRepo, tenantRepo, n9eClient, log)
 			alertEventSvc := service.NewAlertEventService(alertEventRepo, alertRepo, channelRepo, n9eClient, notifySvc, log)
 			channelSvc := service.NewNotificationChannelService(channelRepo, tenantRepo, log)
-			alertH := handler.NewAlertHandler(alertSvc, alertEventSvc, channelSvc)
+			alertH := handler.NewAlertHandler(alertSvc, alertEventSvc, channelSvc, userSvc)
 
 			api.POST("/auth/login", authH.Login)
 			api.POST("/users/bootstrap", userH.Bootstrap)
@@ -116,6 +154,7 @@ func NewRouter(cfg *config.Config, log *zap.Logger, db *gorm.DB) *gin.Engine {
 			ug := protected.Group("/users")
 			ug.GET("", userH.List)
 			ug.GET("/:id", userH.Get)
+			ug.PUT("/:id", userH.Update)
 
 			ig := protected.Group("/instances")
 			ig.GET("", instanceH.List)
@@ -153,7 +192,6 @@ func NewRouter(cfg *config.Config, log *zap.Logger, db *gorm.DB) *gin.Engine {
 
 			adminUG := admin.Group("/users")
 			adminUG.POST("", userH.Create)
-			adminUG.PUT("/:id", userH.Update)
 			adminUG.DELETE("/:id", userH.Delete)
 
 			adminIG := admin.Group("/instances")
@@ -178,6 +216,11 @@ func NewRouter(cfg *config.Config, log *zap.Logger, db *gorm.DB) *gin.Engine {
 			adminAG.POST("/channels", alertH.CreateChannel)
 			adminAG.PUT("/channels/:id", alertH.UpdateChannel)
 			adminAG.DELETE("/channels/:id", alertH.DeleteChannel)
+
+			adminPG := admin.Group("/platform/scaling")
+			adminPG.GET("/audits", platformH.ListAudits)
+			adminPG.GET("/vmcluster/targets", platformH.ListVMClusterTargets)
+			adminPG.POST("/vmcluster", platformH.ScaleVMCluster)
 		}
 	}
 

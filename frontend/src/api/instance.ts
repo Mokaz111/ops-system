@@ -2,8 +2,8 @@ import api from './index';
 import type {
   ApiResponse,
   CreateInstanceRequest,
+  InstanceMetrics,
   Instance,
-  MetricsData,
   PaginatedResponse,
   PaginationParams,
   ScaleInstanceRequest,
@@ -29,5 +29,5 @@ export const instanceAPI = {
     api.post<ApiResponse<Instance>>(`/instances/${id}/scale`, data),
 
   metrics: (id: string) =>
-    api.get<ApiResponse<MetricsData>>(`/instances/${id}/metrics`),
+    api.get<ApiResponse<InstanceMetrics>>(`/instances/${id}/metrics`),
 };

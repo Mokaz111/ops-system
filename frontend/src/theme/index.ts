@@ -1,4 +1,5 @@
 import { createTheme } from '@mui/material/styles';
+import type { Shadows } from '@mui/material/styles';
 import { colors } from './colors';
 
 const theme = createTheme({
@@ -41,7 +42,7 @@ const theme = createTheme({
     '0 2px 3px 0 rgba(60,64,67,0.3), 0 6px 10px 4px rgba(60,64,67,0.15)',
     '0 4px 4px 0 rgba(60,64,67,0.3), 0 8px 12px 6px rgba(60,64,67,0.15)',
     ...Array(19).fill('0 4px 4px 0 rgba(60,64,67,0.3), 0 8px 12px 6px rgba(60,64,67,0.15)'),
-  ] as any,
+  ] as unknown as Shadows,
   components: {
     MuiCssBaseline: {
       styleOverrides: {
@@ -119,10 +120,6 @@ const theme = createTheme({
     MuiChip: {
       styleOverrides: {
         root: { fontWeight: 500, fontSize: '0.75rem' },
-        filledSuccess: { backgroundColor: '#e6f4ea', color: '#137333' },
-        filledError: { backgroundColor: '#fce8e6', color: '#b3261e' },
-        filledWarning: { backgroundColor: '#fef7e0', color: '#e37400' },
-        filledInfo: { backgroundColor: '#e8f0fe', color: '#1a73e8' },
       },
     },
     MuiTextField: {

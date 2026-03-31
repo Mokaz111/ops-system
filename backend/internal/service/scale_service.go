@@ -16,9 +16,11 @@ import (
 )
 
 var (
-	ErrScaleInstanceNotFound = errors.New("instance not found for scaling")
-	ErrInvalidScaleType      = errors.New("invalid scale_type")
-	ErrScaleNotSupported     = errors.New("scale operation not supported for this instance")
+	ErrScaleInstanceNotFound  = errors.New("instance not found for scaling")
+	ErrInvalidScaleType       = errors.New("invalid scale_type")
+	ErrScaleNotSupported      = errors.New("scale operation not supported for this instance")
+	ErrScaleManagedByPlatform = errors.New("shared/dedicated_cluster instances must be scaled at platform level")
+	ErrScaleTypeNotAllowed    = errors.New("scale_type not allowed for this template_type")
 )
 
 // ScaleRequest 伸缩请求。
@@ -61,6 +63,9 @@ func (s *ScaleService) Scale(ctx context.Context, instanceID uuid.UUID, req *Sca
 	if inst == nil {
 		return ErrScaleInstanceNotFound
 	}
+	if err := validateScalePolicy(inst, req); err != nil {
+		return err
+	}
 
 	switch req.ScaleType {
 	case "horizontal":
@@ -74,7 +79,24 @@ func (s *ScaleService) Scale(ctx context.Context, instanceID uuid.UUID, req *Sca
 	}
 }
 
+func validateScalePolicy(inst *model.Instance, req *ScaleRequest) error {
+	switch inst.TemplateType {
+	case "shared", "dedicated_cluster":
+		// 策略A：共享版与独享集群版的容量由平台级管理员在集群层统一处理。
+		return ErrScaleManagedByPlatform
+	case "dedicated_single":
+		// 单节点模板只允许垂直与存储扩容，不允许水平扩容。
+		if req.ScaleType == "horizontal" {
+			return ErrScaleTypeNotAllowed
+		}
+	}
+	return nil
+}
+
 func (s *ScaleService) scaleHorizontal(ctx context.Context, inst *model.Instance, req *ScaleRequest) error {
+	if s.k8sClient == nil {
+		return ErrScaleNotSupported
+	}
 	if inst.Namespace == "" {
 		return ErrScaleNotSupported
 	}
@@ -92,6 +114,9 @@ func (s *ScaleService) scaleHorizontal(ctx context.Context, inst *model.Instance
 }
 
 func (s *ScaleService) scaleVertical(ctx context.Context, inst *model.Instance, req *ScaleRequest) error {
+	if s.helmClient == nil {
+		return ErrScaleNotSupported
+	}
 	if inst.ReleaseName == "" || inst.Namespace == "" {
 		return ErrScaleNotSupported
 	}
@@ -121,6 +146,9 @@ func (s *ScaleService) scaleVertical(ctx context.Context, inst *model.Instance, 
 }
 
 func (s *ScaleService) scaleStorage(ctx context.Context, inst *model.Instance, req *ScaleRequest) error {
+	if s.k8sClient == nil {
+		return ErrScaleNotSupported
+	}
 	if inst.Namespace == "" {
 		return ErrScaleNotSupported
 	}

@@ -44,6 +44,14 @@ const roleLabels: Record<string, { label: string; color: 'primary' | 'secondary'
 
 export default function UserPage() {
   const { enqueueSnackbar } = useSnackbar();
+  type UserForm = {
+    username: string;
+    display_name: string;
+    email: string;
+    phone: string;
+    role: User['role'];
+    password: string;
+  };
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [total, setTotal] = useState(0);
@@ -54,7 +62,7 @@ export default function UserPage() {
   const [deleteDialog, setDeleteDialog] = useState<{ open: boolean; user?: User }>({ open: false });
   const [editingId, setEditingId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const [form, setForm] = useState({ username: '', display_name: '', email: '', phone: '', role: 'viewer', password: '' });
+  const [form, setForm] = useState<UserForm>({ username: '', display_name: '', email: '', phone: '', role: 'viewer', password: '' });
 
   const fetchUsers = useCallback(async () => {
     setLoading(true);
@@ -75,8 +83,13 @@ export default function UserPage() {
     setSaving(true);
     try {
       if (editingId) {
-        const { password, ...rest } = form;
-        await userAPI.update(editingId, rest);
+        await userAPI.update(editingId, {
+          username: form.username,
+          display_name: form.display_name,
+          email: form.email,
+          phone: form.phone,
+          role: form.role,
+        });
         enqueueSnackbar('用户更新成功', { variant: 'success' });
       } else {
         await userAPI.create(form);
@@ -197,7 +210,7 @@ export default function UserPage() {
           )}
           <FormControl fullWidth size="small">
             <InputLabel>角色</InputLabel>
-            <Select value={form.role} label="角色" onChange={(e) => setForm({ ...form, role: e.target.value })}>
+            <Select value={form.role} label="角色" onChange={(e) => setForm({ ...form, role: e.target.value as User['role'] })}>
               <MenuItem value="admin">管理员</MenuItem>
               <MenuItem value="operator">运维</MenuItem>
               <MenuItem value="viewer">只读</MenuItem>

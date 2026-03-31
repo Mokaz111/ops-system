@@ -109,9 +109,10 @@ export interface CreateInstanceRequest {
 }
 
 export interface ScaleInstanceRequest {
-  cpu?: number;
-  memory?: number;
-  storage?: number;
+  scale_type: 'horizontal' | 'vertical' | 'storage';
+  cpu?: string;
+  memory?: string;
+  storage?: string;
   replicas?: number;
 }
 
@@ -138,10 +139,60 @@ export interface GrafanaDatasource {
   isDefault: boolean;
 }
 
-export interface MetricsData {
-  cpu_usage: number;
-  memory_usage: number;
-  storage_usage: number;
-  ingestion_rate: number;
+export interface TenantMetrics {
+  cpu_usage_percent: number;
+  memory_usage_percent: number;
   series_count: number;
+  ingest_qps: number;
+  note?: string;
+}
+
+export interface InstanceMetrics {
+  cpu_usage_percent: number;
+  memory_usage_percent: number;
+  disk_usage_percent: number;
+  note?: string;
+}
+
+export type PlatformScaleScope = 'shared_metrics' | 'dedicated_metrics';
+
+export interface PlatformScaleVMClusterRequest {
+  target_id: string;
+  dry_run?: boolean;
+  vmselect_replicas?: number;
+  vminsert_replicas?: number;
+  vmstorage_replicas?: number;
+  storage_size?: string;
+}
+
+export interface PlatformScaleVMClusterPlan {
+  target_id: string;
+  scope: PlatformScaleScope;
+  namespace: string;
+  name: string;
+  dry_run: boolean;
+  resource: string;
+  spec_patch: Record<string, unknown>;
+}
+
+export interface PlatformScaleTarget {
+  id: string;
+  scope: PlatformScaleScope;
+  namespace: string;
+  name: string;
+  display_name: string;
+}
+
+export interface PlatformScaleAuditItem {
+  id: string;
+  user_id: string;
+  username: string;
+  role: string;
+  client_ip: string;
+  target_id: string;
+  dry_run: boolean;
+  status: 'success' | 'failed' | 'replayed';
+  spec_patch: string;
+  error_message: string;
+  created_at: string;
 }

@@ -31,7 +31,6 @@ import {
   TableHead,
   TableRow,
 } from '@mui/material';
-import AddIcon from '@mui/icons-material/Add';
 import DeleteOutlinedIcon from '@mui/icons-material/DeleteOutlined';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import PersonAddOutlinedIcon from '@mui/icons-material/PersonAddOutlined';
@@ -77,7 +76,7 @@ export default function GrafanaPage() {
     }
   }, [enqueueSnackbar, selectedOrg]);
 
-  useEffect(() => { fetchOrgs(); }, []);
+  useEffect(() => { fetchOrgs(); }, [fetchOrgs]);
 
   const fetchOrgDetails = useCallback(async () => {
     if (!selectedOrg) return;

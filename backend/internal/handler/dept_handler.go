@@ -3,7 +3,6 @@ package handler
 import (
 	"errors"
 	"net/http"
-	"strconv"
 
 	"ops-system/backend/internal/service"
 	"ops-system/backend/pkg/response"
@@ -31,10 +30,9 @@ type createDepartmentBody struct {
 
 // List GET /api/v1/departments
 func (h *DepartmentHandler) List(c *gin.Context) {
-	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-	ps, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
-	if ps < 1 {
-		ps = 20
+	page, ps, ok := parsePageAndSize(c, 20)
+	if !ok {
+		return
 	}
 	list, total, err := h.svc.List(c.Request.Context(), page, ps)
 	if err != nil {
@@ -136,10 +134,9 @@ func (h *DepartmentHandler) ListUsers(c *gin.Context) {
 		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, "invalid id")
 		return
 	}
-	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-	ps, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
-	if ps < 1 {
-		ps = 20
+	page, ps, ok := parsePageAndSize(c, 20)
+	if !ok {
+		return
 	}
 	list, total, err := h.svc.ListUsers(c.Request.Context(), id, page, ps)
 	if err != nil {

@@ -8,8 +8,13 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
@@ -17,7 +22,8 @@ import (
 
 // Client 租户命名空间与配额、网络策略。
 type Client struct {
-	cs kubernetes.Interface
+	cs  kubernetes.Interface
+	dyn dynamic.Interface
 }
 
 // NewClient 构建 client-go；inCluster 为 true 时使用 Pod 内 ServiceAccount。
@@ -39,7 +45,11 @@ func NewClient(kubeconfig string, inCluster bool) (*Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Client{cs: cs}, nil
+	dc, err := dynamic.NewForConfig(cfg)
+	if err != nil {
+		return nil, err
+	}
+	return &Client{cs: cs, dyn: dc}, nil
 }
 
 // EnsureNamespace 创建命名空间（已存在则忽略）。
@@ -168,6 +178,55 @@ func (c *Client) ScaleDeployment(ctx context.Context, namespace, name string, re
 	deploy.Spec.Replicas = &replicas
 	_, err = c.cs.AppsV1().Deployments(namespace).Update(ctx, deploy, metav1.UpdateOptions{})
 	return err
+}
+
+// PatchCustomResourceSpec 以 MergePatch 方式更新 CR 的 spec 字段。
+func (c *Client) PatchCustomResourceSpec(
+	ctx context.Context,
+	group, version, resource, namespace, name string,
+	spec map[string]interface{},
+) error {
+	if c.dyn == nil {
+		return fmt.Errorf("dynamic kubernetes client is not configured")
+	}
+	patchBody := map[string]interface{}{"spec": spec}
+	raw, err := json.Marshal(patchBody)
+	if err != nil {
+		return err
+	}
+	gvr := schema.GroupVersionResource{
+		Group:    group,
+		Version:  version,
+		Resource: resource,
+	}
+	_, err = c.dyn.Resource(gvr).Namespace(namespace).Patch(ctx, name, types.MergePatchType, raw, metav1.PatchOptions{})
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+// GetCustomResource 返回任意 CR 的内容。
+func (c *Client) GetCustomResource(
+	ctx context.Context,
+	group, version, resource, namespace, name string,
+) (*unstructured.Unstructured, error) {
+	if c.dyn == nil {
+		return nil, fmt.Errorf("dynamic kubernetes client is not configured")
+	}
+	gvr := schema.GroupVersionResource{
+		Group:    group,
+		Version:  version,
+		Resource: resource,
+	}
+	obj, err := c.dyn.Resource(gvr).Namespace(namespace).Get(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return obj, nil
 }
 
 // ResizePVC 修改 PVC 存储大小。

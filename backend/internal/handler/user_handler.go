@@ -3,7 +3,6 @@ package handler
 import (
 	"errors"
 	"net/http"
-	"strconv"
 
 	"ops-system/backend/internal/service"
 	"ops-system/backend/pkg/response"
@@ -76,10 +75,28 @@ func (h *UserHandler) Bootstrap(c *gin.Context) {
 
 // List GET /api/v1/users
 func (h *UserHandler) List(c *gin.Context) {
-	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-	ps, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
-	if ps < 1 {
-		ps = 20
+	page, ps, ok := parsePageAndSize(c, 20)
+	if !ok {
+		return
+	}
+	if !isAdmin(c) {
+		callerID, ok := userIDFromContext(c)
+		if !ok {
+			response.Error(c, http.StatusUnauthorized, http.StatusUnauthorized, "unauthorized")
+			return
+		}
+		u, err := h.userSvc.Get(c.Request.Context(), callerID)
+		if err != nil {
+			h.handleErr(c, err)
+			return
+		}
+		response.JSON(c, gin.H{
+			"items":     []userPublic{toUserPublic(u)},
+			"total":     1,
+			"page":      page,
+			"page_size": ps,
+		})
+		return
 	}
 	var deptID, tenantID *uuid.UUID
 	if s := c.Query("dept_id"); s != "" {
@@ -153,6 +170,13 @@ func (h *UserHandler) Get(c *gin.Context) {
 	if err != nil {
 		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, "invalid id")
 		return
+	}
+	if h.jwtSecret != "" && !isAdmin(c) {
+		caller, ok := userIDFromContext(c)
+		if !ok || caller != id {
+			response.Error(c, http.StatusForbidden, http.StatusForbidden, "forbidden")
+			return
+		}
 	}
 	u, err := h.userSvc.Get(c.Request.Context(), id)
 	if err != nil {

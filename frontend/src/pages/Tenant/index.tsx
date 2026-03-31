@@ -165,14 +165,22 @@ export default function TenantPage() {
                     <TableCell><StatusChip status={t.status} /></TableCell>
                     <TableCell sx={{ color: 'text.secondary', fontSize: '0.8125rem' }}>{new Date(t.created_at).toLocaleDateString()}</TableCell>
                     <TableCell align="right">
-                      <Tooltip title="查看详情">
-                        <IconButton size="small"><VisibilityOutlinedIcon fontSize="small" /></IconButton>
+                      <Tooltip title="详情功能开发中">
+                        <span>
+                          <IconButton size="small" disabled aria-label="租户详情（开发中）">
+                            <VisibilityOutlinedIcon fontSize="small" />
+                          </IconButton>
+                        </span>
                       </Tooltip>
                       <Tooltip title="编辑">
-                        <IconButton size="small" onClick={() => openEdit(t)}><EditOutlinedIcon fontSize="small" /></IconButton>
+                        <IconButton size="small" onClick={() => openEdit(t)} aria-label="编辑租户">
+                          <EditOutlinedIcon fontSize="small" />
+                        </IconButton>
                       </Tooltip>
                       <Tooltip title="删除">
-                        <IconButton size="small" color="error" onClick={() => setDeleteDialog({ open: true, tenant: t })}><DeleteOutlinedIcon fontSize="small" /></IconButton>
+                        <IconButton size="small" color="error" onClick={() => setDeleteDialog({ open: true, tenant: t })} aria-label="删除租户">
+                          <DeleteOutlinedIcon fontSize="small" />
+                        </IconButton>
                       </Tooltip>
                     </TableCell>
                   </TableRow>

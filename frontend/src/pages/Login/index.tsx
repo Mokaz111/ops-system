@@ -5,8 +5,6 @@ import {
   Button,
   Card,
   CardContent,
-  Checkbox,
-  FormControlLabel,
   IconButton,
   InputAdornment,
   TextField,
@@ -23,7 +21,6 @@ export default function LoginPage() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [remember, setRemember] = useState(false);
   const [error, setError] = useState('');
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -32,8 +29,9 @@ export default function LoginPage() {
     try {
       await login(username, password);
       navigate('/dashboard', { replace: true });
-    } catch (err: any) {
-      setError(err.message || '登录失败');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : '登录失败';
+      setError(message);
     }
   };
 
@@ -100,17 +98,17 @@ export default function LoginPage() {
               InputProps={{
                 endAdornment: (
                   <InputAdornment position="end">
-                    <IconButton onClick={() => setShowPassword(!showPassword)} edge="end" size="small">
+                    <IconButton
+                      onClick={() => setShowPassword(!showPassword)}
+                      edge="end"
+                      size="small"
+                      aria-label={showPassword ? '隐藏密码' : '显示密码'}
+                    >
                       {showPassword ? <VisibilityOffIcon /> : <VisibilityIcon />}
                     </IconButton>
                   </InputAdornment>
                 ),
               }}
-            />
-            <FormControlLabel
-              control={<Checkbox checked={remember} onChange={(e) => setRemember(e.target.checked)} size="small" />}
-              label={<Typography variant="body2">记住登录</Typography>}
-              sx={{ mb: 2 }}
             />
             <Button type="submit" variant="contained" fullWidth size="large" disabled={loading} sx={{ py: 1.2 }}>
               {loading ? '登录中...' : '登录'}
