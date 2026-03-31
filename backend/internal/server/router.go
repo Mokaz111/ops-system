@@ -112,6 +112,7 @@ func NewRouter(cfg *config.Config, log *zap.Logger, db *gorm.DB) *gin.Engine {
 			instanceH := handler.NewInstanceHandler(instanceSvc, scaleSvc, userSvc)
 			k8sOps := service.NewK8sResourceOperator(k8sClient, log)
 			platformScaleSvc := service.NewPlatformScaleService(k8sOps)
+			platformBootstrapSvc := service.NewPlatformBootstrapService(helmClient)
 			var idemStore idempotency.Store
 			redisAddr := fmt.Sprintf("%s:%d", cfg.Redis.Host, cfg.Redis.Port)
 			if cfg.Redis.Host != "" && cfg.Redis.Port > 0 {
@@ -122,7 +123,7 @@ func NewRouter(cfg *config.Config, log *zap.Logger, db *gorm.DB) *gin.Engine {
 					idemStore = redisStore
 				}
 			}
-			platformH := handler.NewPlatformHandler(platformScaleSvc, log, idemStore, platformAuditRepo)
+			platformH := handler.NewPlatformHandler(platformScaleSvc, platformBootstrapSvc, log, idemStore, platformAuditRepo)
 
 			grafanaSvc := service.NewGrafanaService(grafanaClient, tenantRepo, log)
 			grafanaH := handler.NewGrafanaHandler(grafanaSvc)
@@ -218,6 +219,7 @@ func NewRouter(cfg *config.Config, log *zap.Logger, db *gorm.DB) *gin.Engine {
 			adminAG.DELETE("/channels/:id", alertH.DeleteChannel)
 
 			adminPG := admin.Group("/platform/scaling")
+			adminPG.POST("/bootstrap/shared/init", platformH.InitSharedCluster)
 			adminPG.GET("/audits", platformH.ListAudits)
 			adminPG.GET("/vmcluster/targets", platformH.ListVMClusterTargets)
 			adminPG.POST("/vmcluster", platformH.ScaleVMCluster)

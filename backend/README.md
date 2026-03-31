@@ -47,6 +47,7 @@ make tidy
 
 ## 平台扩容相关接口（admin）
 
+- `POST /api/v1/platform/scaling/bootstrap/shared/init`
 - `GET /api/v1/platform/scaling/vmcluster/targets`
 - `POST /api/v1/platform/scaling/vmcluster`
 - `GET /api/v1/platform/scaling/audits`

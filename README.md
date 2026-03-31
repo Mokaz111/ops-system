@@ -60,6 +60,7 @@ npm run dev
 - 告警集成：`/alerts`
 - Grafana 管理：`/grafana/orgs`
 - 平台扩容（admin）：`/platform/scaling/vmcluster/targets`、`/platform/scaling/vmcluster`
+- 共享集群初始化（admin）：`/platform/scaling/bootstrap/shared/init`
 - 平台扩容审计（admin）：`/platform/scaling/audits`
 
 ## 平台扩容审计查询
@@ -73,6 +74,14 @@ npm run dev
 - `status`：`success` / `failed` / `replayed`
 - `operator`：操作者用户名模糊查询
 - `start_time`, `end_time`：RFC3339
+
+## 共享集群初始化（admin）
+
+`POST /api/v1/platform/scaling/bootstrap/shared/init`
+
+- 用于平台启动后由管理员手动初始化全局共享监控栈
+- 使用 Helm Chart：`vm/victoria-metrics-k8s-stack`
+- 支持 `dry_run` 预览，默认目标为 `monitoring/vm-shared-stack`
 
 ## 目录结构
 

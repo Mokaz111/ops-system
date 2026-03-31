@@ -3,6 +3,8 @@ import type {
   ApiResponse,
   PaginatedResponse,
   PlatformScaleAuditItem,
+  PlatformInitSharedClusterPlan,
+  PlatformInitSharedClusterRequest,
   PlatformScaleTarget,
   PlatformScaleVMClusterPlan,
   PlatformScaleVMClusterRequest,
@@ -22,6 +24,9 @@ export const platformAPI = {
     end_time?: string;
   }) =>
     api.get<ApiResponse<PaginatedResponse<PlatformScaleAuditItem>>>('/platform/scaling/audits', { params }),
+
+  initSharedCluster: (data: PlatformInitSharedClusterRequest) =>
+    api.post<ApiResponse<PlatformInitSharedClusterPlan>>('/platform/scaling/bootstrap/shared/init', data),
 
   scaleVMCluster: (data: PlatformScaleVMClusterRequest, opts?: { idempotencyKey?: string }) =>
     api.post<ApiResponse<PlatformScaleVMClusterPlan>>('/platform/scaling/vmcluster', data, {

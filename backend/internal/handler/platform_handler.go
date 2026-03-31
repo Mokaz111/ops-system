@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -20,19 +21,27 @@ import (
 )
 
 type PlatformHandler struct {
-	scaleSvc *service.PlatformScaleService
-	log      *zap.Logger
-	idem     idempotency.Store
-	audit    *repository.PlatformScaleAuditRepository
+	scaleSvc     *service.PlatformScaleService
+	bootstrapSvc *service.PlatformBootstrapService
+	log          *zap.Logger
+	idem         idempotency.Store
+	audit        *repository.PlatformScaleAuditRepository
 }
 
 func NewPlatformHandler(
 	scaleSvc *service.PlatformScaleService,
+	bootstrapSvc *service.PlatformBootstrapService,
 	log *zap.Logger,
 	idemStore idempotency.Store,
 	auditRepo *repository.PlatformScaleAuditRepository,
 ) *PlatformHandler {
-	return &PlatformHandler{scaleSvc: scaleSvc, log: log, idem: idemStore, audit: auditRepo}
+	return &PlatformHandler{
+		scaleSvc:     scaleSvc,
+		bootstrapSvc: bootstrapSvc,
+		log:          log,
+		idem:         idemStore,
+		audit:        auditRepo,
+	}
 }
 
 type scaleVMClusterBody struct {
@@ -42,6 +51,46 @@ type scaleVMClusterBody struct {
 	VMInsertReplicas  *int32 `json:"vminsert_replicas"`
 	VMStorageReplicas *int32 `json:"vmstorage_replicas"`
 	StorageSize       string `json:"storage_size"`
+}
+
+type initSharedClusterBody struct {
+	DryRun      bool   `json:"dry_run"`
+	Namespace   string `json:"namespace"`
+	ReleaseName string `json:"release_name"`
+}
+
+// InitSharedCluster POST /api/v1/platform/scaling/bootstrap/shared/init
+func (h *PlatformHandler) InitSharedCluster(c *gin.Context) {
+	if h.bootstrapSvc == nil {
+		response.Error(c, http.StatusServiceUnavailable, http.StatusServiceUnavailable, "platform bootstrap service not configured")
+		return
+	}
+	var body initSharedClusterBody
+	if err := c.ShouldBindJSON(&body); err != nil && !errors.Is(err, io.EOF) {
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	plan, err := h.bootstrapSvc.InitSharedVMStack(c.Request.Context(), &service.InitSharedClusterRequest{
+		DryRun:      body.DryRun,
+		Namespace:   body.Namespace,
+		ReleaseName: body.ReleaseName,
+	})
+	if err != nil {
+		if h.log != nil {
+			h.log.Warn("platform_init_shared_cluster_failed",
+				zap.String("user_id", c.GetString(middleware.ContextUserIDKey)),
+				zap.String("username", c.GetString(middleware.ContextUsernameKey)),
+				zap.String("role", c.GetString(middleware.ContextRoleKey)),
+				zap.String("client_ip", c.ClientIP()),
+				zap.Error(err),
+			)
+		}
+		h.writeAudit(c, "shared-cluster-bootstrap", body.DryRun, "failed", nil, err.Error())
+		h.handleErr(c, err)
+		return
+	}
+	h.writeAudit(c, "shared-cluster-bootstrap", body.DryRun, "success", plan.Values, "")
+	response.JSON(c, plan)
 }
 
 // ListAudits GET /api/v1/platform/scaling/audits
@@ -241,12 +290,16 @@ func (h *PlatformHandler) handleErr(c *gin.Context, err error) {
 	switch {
 	case errors.Is(err, service.ErrK8sOperatorNotConfigured):
 		response.Error(c, http.StatusServiceUnavailable, http.StatusServiceUnavailable, err.Error())
+	case errors.Is(err, service.ErrHelmOperatorNotConfigured):
+		response.Error(c, http.StatusServiceUnavailable, http.StatusServiceUnavailable, err.Error())
 	case errors.Is(err, service.ErrInvalidPlatformScope),
 		errors.Is(err, service.ErrPlatformTargetRequired),
 		errors.Is(err, service.ErrPlatformTargetNotFound),
 		errors.Is(err, service.ErrPlatformScaleNoop),
 		errors.Is(err, service.ErrInvalidReplicas),
-		errors.Is(err, service.ErrInvalidStorageSize):
+		errors.Is(err, service.ErrInvalidStorageSize),
+		errors.Is(err, service.ErrInvalidNamespace),
+		errors.Is(err, service.ErrInvalidReleaseName):
 		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, err.Error())
 	default:
 		response.Error(c, http.StatusInternalServerError, http.StatusInternalServerError, "internal server error")

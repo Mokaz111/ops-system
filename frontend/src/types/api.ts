@@ -196,3 +196,18 @@ export interface PlatformScaleAuditItem {
   error_message: string;
   created_at: string;
 }
+
+export interface PlatformInitSharedClusterRequest {
+  dry_run?: boolean;
+  namespace?: string;
+  release_name?: string;
+}
+
+export interface PlatformInitSharedClusterPlan {
+  dry_run: boolean;
+  namespace: string;
+  release_name: string;
+  chart: string;
+  action: string;
+  values: Record<string, unknown>;
+}
