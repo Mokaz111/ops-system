@@ -10,6 +10,8 @@ import (
 	"gorm.io/gorm"
 )
 
+var ErrFirstUserAlreadyExists = errors.New("first user already exists")
+
 // UserRepository 用户持久化。
 type UserRepository struct {
 	db *gorm.DB
@@ -111,4 +113,22 @@ func (r *UserRepository) Count(ctx context.Context) (int64, error) {
 	var n int64
 	err := r.db.WithContext(ctx).Model(&model.User{}).Count(&n).Error
 	return n, err
+}
+
+// CreateFirstUser 原子创建首个用户（并发安全）。
+func (r *UserRepository) CreateFirstUser(ctx context.Context, u *model.User) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// PostgreSQL 表级锁，避免并发 bootstrap 同时通过空表检查。
+		if err := tx.Exec("LOCK TABLE ops_users IN SHARE ROW EXCLUSIVE MODE").Error; err != nil {
+			return err
+		}
+		var n int64
+		if err := tx.Model(&model.User{}).Count(&n).Error; err != nil {
+			return err
+		}
+		if n > 0 {
+			return ErrFirstUserAlreadyExists
+		}
+		return tx.Create(u).Error
+	})
 }

@@ -13,11 +13,14 @@ const ContextUserIDKey = "user_id"
 const ContextUsernameKey = "username"
 const ContextRoleKey = "role"
 
-// JWTAuth 校验 Bearer Token。secret 为空时不拦截（开发模式）。
+// JWTAuth 校验 Bearer Token。
 func JWTAuth(secret string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if secret == "" {
-			c.Next()
+			c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{
+				"code":    http.StatusInternalServerError,
+				"message": "authentication is not configured",
+			})
 			return
 		}
 		h := c.GetHeader("Authorization")
@@ -34,6 +37,20 @@ func JWTAuth(secret string) gin.HandlerFunc {
 		c.Set(ContextUserIDKey, claims.Subject)
 		c.Set(ContextUsernameKey, claims.Username)
 		c.Set(ContextRoleKey, claims.Role)
+		c.Next()
+	}
+}
+
+// RequireRole 要求当前登录用户具备指定角色。
+func RequireRole(role string) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if c.GetString(ContextRoleKey) != role {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{
+				"code":    http.StatusForbidden,
+				"message": "forbidden",
+			})
+			return
+		}
 		c.Next()
 	}
 }

@@ -54,18 +54,38 @@ func NewUserService(user *repository.UserRepository) *UserService {
 
 // Bootstrap 首个管理员（仅当用户表为空）。
 func (s *UserService) Bootstrap(ctx context.Context, req *CreateUserRequest) (*model.User, error) {
-	n, err := s.user.Count(ctx)
-	if err != nil {
-		return nil, err
+	req.Username = strings.TrimSpace(req.Username)
+	if req.Username == "" {
+		return nil, ErrUsernameRequired
 	}
-	if n > 0 {
-		return nil, ErrBootstrapNotAllowed
+	if len(req.Password) < 6 {
+		return nil, ErrPasswordTooShort
 	}
 	req.Role = "admin"
 	if req.Status == "" {
 		req.Status = "active"
 	}
-	return s.create(ctx, req)
+	hash, err := utils.HashPassword(req.Password)
+	if err != nil {
+		return nil, err
+	}
+	u := &model.User{
+		Username:     req.Username,
+		PasswordHash: hash,
+		Email:        strings.TrimSpace(req.Email),
+		Phone:        strings.TrimSpace(req.Phone),
+		DeptID:       req.DeptID,
+		TenantID:     req.TenantID,
+		Role:         req.Role,
+		Status:       req.Status,
+	}
+	if err := s.user.CreateFirstUser(ctx, u); err != nil {
+		if errors.Is(err, repository.ErrFirstUserAlreadyExists) {
+			return nil, ErrBootstrapNotAllowed
+		}
+		return nil, err
+	}
+	return u, nil
 }
 
 // Create 创建用户（调用方负责鉴权）。

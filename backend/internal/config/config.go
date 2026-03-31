@@ -37,15 +37,15 @@ type ServerConfig struct {
 }
 
 type DatabaseConfig struct {
-	Host                    string `mapstructure:"host"`
-	Port                    int    `mapstructure:"port"`
-	User                    string `mapstructure:"user"`
-	Password                string `mapstructure:"password"`
-	Name                    string `mapstructure:"name"`
-	SSLMode                 string `mapstructure:"sslmode"`
-	MaxOpenConns            int    `mapstructure:"max_open_conns"`
-	MaxIdleConns            int    `mapstructure:"max_idle_conns"`
-	ConnMaxLifetimeMinutes  int    `mapstructure:"conn_max_lifetime_minutes"`
+	Host                   string `mapstructure:"host"`
+	Port                   int    `mapstructure:"port"`
+	User                   string `mapstructure:"user"`
+	Password               string `mapstructure:"password"`
+	Name                   string `mapstructure:"name"`
+	SSLMode                string `mapstructure:"sslmode"`
+	MaxOpenConns           int    `mapstructure:"max_open_conns"`
+	MaxIdleConns           int    `mapstructure:"max_idle_conns"`
+	ConnMaxLifetimeMinutes int    `mapstructure:"conn_max_lifetime_minutes"`
 }
 
 type RedisConfig struct {
@@ -64,8 +64,8 @@ type HelmRepo struct {
 }
 
 type HelmConfig struct {
-	Repos  []HelmRepo  `mapstructure:"repos"`
-	Charts HelmCharts  `mapstructure:"charts"`
+	Repos  []HelmRepo `mapstructure:"repos"`
+	Charts HelmCharts `mapstructure:"charts"`
 }
 
 // HelmCharts 各模板对应的 chart 引用（如 vm/victoria-metrics-single）；空则跳过 Helm 仅做命名空间/配额。
@@ -88,8 +88,8 @@ type OrchestrationConfig struct {
 }
 
 type JWTConfig struct {
-	Secret       string `mapstructure:"secret"`
-	ExpireHours  int    `mapstructure:"expire_hours"`
+	Secret      string `mapstructure:"secret"`
+	ExpireHours int    `mapstructure:"expire_hours"`
 }
 
 type RateLimitConfig struct {
@@ -134,8 +134,8 @@ type N9EConfig struct {
 	Password string `mapstructure:"password"`
 	Token    string `mapstructure:"token"`
 	// APIPrefix 夜莺 API 前缀，默认 /api/n9e。
-	APIPrefix string `mapstructure:"api_prefix"`
-	HTTPTimeoutSeconds int `mapstructure:"http_timeout_seconds"`
+	APIPrefix          string `mapstructure:"api_prefix"`
+	HTTPTimeoutSeconds int    `mapstructure:"http_timeout_seconds"`
 	// PrometheusDatasourceURL 写入 N9E 的 Prometheus 类数据源地址（如 VM select）。
 	PrometheusDatasourceURL string `mapstructure:"prometheus_datasource_url"`
 }
@@ -146,8 +146,8 @@ type GrafanaConfig struct {
 	// BaseURL 如 http://grafana.platform:3000
 	BaseURL string `mapstructure:"base_url"`
 	// APIKey 服务账号 API Key（Viewer/Editor/Admin 依实际权限）。
-	APIKey string `mapstructure:"api_key"`
-	HTTPTimeoutSeconds int `mapstructure:"http_timeout_seconds"`
+	APIKey             string `mapstructure:"api_key"`
+	HTTPTimeoutSeconds int    `mapstructure:"http_timeout_seconds"`
 	// PrometheusDatasourceURL 租户组织内默认 Prometheus 数据源（如 VM select）。
 	PrometheusDatasourceURL string `mapstructure:"prometheus_datasource_url"`
 	// OrgNamePrefix 若非空，组织名 = 前缀 + vmuser_id，否则使用租户名。
@@ -192,6 +192,9 @@ func Load(configPath string) (*Config, error) {
 	}
 	if cfg.JWT.ExpireHours == 0 {
 		cfg.JWT.ExpireHours = 24
+	}
+	if strings.TrimSpace(cfg.JWT.Secret) == "" {
+		return nil, fmt.Errorf("jwt.secret is required; set OPS_JWT_SECRET or jwt.secret")
 	}
 	if cfg.RateLimit.RequestsPerSecond <= 0 {
 		cfg.RateLimit.RequestsPerSecond = 100
