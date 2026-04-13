@@ -4,10 +4,10 @@ server:
   mode: "debug"
 
 database:
-  host: "localhost"
-  port: 5433
+  host: "1.12.58.22"
+  port: 5432
   user: "ops_admin"
-  password: "${DB_PASSWORD}"
+  password: "ops_admin"
   name: "ops_system"
   sslmode: "disable"
   max_open_conns: 25
@@ -15,7 +15,7 @@ database:
   conn_max_lifetime_minutes: 5
 
 redis:
-  host: "redis"
+  host: "1.12.58.22"
   port: 6379
 
 kubernetes:
@@ -43,8 +43,9 @@ orchestration:
   namespace_prefix: "ops"
   apply_network_policy: false
 
+# JWT 配置${JWT_SECRET}"
 jwt:
-  secret: "${JWT_SECRET}"
+  secret: "ops_secret"
   expire_hours: 24
 
 ratelimit:
@@ -58,9 +59,9 @@ cors:
 
 # VictoriaMetrics vmauth（§2.3）：插入地址拼接；可选 Webhook 同步 vmuser
 vm:
-  vmauth_base_url: "http://vmauth.platform:8421"
+  vmauth_base_url: "http://1.12.58.22:31990"
   sync_enabled: false
-  vmauth_webhook_url: ""
+  vmauth_webhook_url: "http://1.12.58.22:8080/api/v1/vm/sync"
   http_timeout_seconds: 15
 
 # 夜莺 N9E（独立部署，本平台不直接集成告警引擎）
@@ -76,9 +77,9 @@ n9e:
 
 # Grafana（§2.5）
 grafana:
-  enabled: false
-  base_url: "http://grafana.platform:3000"
-  api_key: "${GRAFANA_API_KEY}"
+  enabled: true
+  base_url: "http://1.12.58.22:30771"
+  api_key: ""
   http_timeout_seconds: 30
   prometheus_datasource_url: ""
   org_name_prefix: ""

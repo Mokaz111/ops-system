@@ -9,6 +9,10 @@ import {
   DialogTitle,
   IconButton,
   InputAdornment,
+  FormControl,
+  InputLabel,
+  MenuItem,
+  Select,
   Table,
   TableBody,
   TableCell,
@@ -40,6 +44,10 @@ export default function DepartmentPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState({ dept_name: '', parent_id: '' });
   const [saving, setSaving] = useState(false);
+  const deptNameById = departments.reduce<Record<string, string>>((acc, dept) => {
+    acc[dept.id] = dept.dept_name;
+    return acc;
+  }, {});
 
   const fetchDepartments = useCallback(async () => {
     setLoading(true);
@@ -108,9 +116,10 @@ export default function DepartmentPage() {
 
       <Card>
         <TableContainer>
-          <Table>
+          <Table size="small">
             <TableHead>
               <TableRow>
+                <TableCell>部门ID</TableCell>
                 <TableCell>部门名称</TableCell>
                 <TableCell>上级部门</TableCell>
                 <TableCell>状态</TableCell>
@@ -120,11 +129,16 @@ export default function DepartmentPage() {
             </TableHead>
             <TableBody>
               {departments.length === 0 ? (
-                <TableRow><TableCell colSpan={5}><EmptyState title="暂无部门" /></TableCell></TableRow>
+                <TableRow><TableCell colSpan={6}><EmptyState title="暂无部门" /></TableCell></TableRow>
               ) : departments.map((d) => (
                 <TableRow key={d.id}>
+                  <TableCell sx={{ fontFamily: 'monospace', fontSize: '0.75rem', color: 'text.secondary' }}>
+                    {d.id}
+                  </TableCell>
                   <TableCell sx={{ fontWeight: 500 }}>{d.dept_name}</TableCell>
-                  <TableCell sx={{ color: 'text.secondary' }}>{d.parent_id || '-'}</TableCell>
+                  <TableCell sx={{ color: 'text.secondary' }}>
+                    {d.parent_id ? (deptNameById[d.parent_id] || '-') : '-'}
+                  </TableCell>
                   <TableCell><StatusChip status={d.status || 'active'} /></TableCell>
                   <TableCell sx={{ color: 'text.secondary', fontSize: '0.8125rem' }}>{new Date(d.created_at).toLocaleDateString()}</TableCell>
                   <TableCell align="right">
@@ -150,7 +164,23 @@ export default function DepartmentPage() {
         <DialogTitle>{editingId ? '编辑部门' : '新建部门'}</DialogTitle>
         <DialogContent sx={{ pt: '16px !important' }}>
           <TextField fullWidth label="部门名称" value={form.dept_name} onChange={(e) => setForm({ ...form, dept_name: e.target.value })} sx={{ mb: 2.5 }} required />
-          <TextField fullWidth label="上级部门 ID (可选)" value={form.parent_id} onChange={(e) => setForm({ ...form, parent_id: e.target.value })} />
+          <FormControl fullWidth size="small">
+            <InputLabel>上级部门（可选）</InputLabel>
+            <Select
+              value={form.parent_id}
+              label="上级部门（可选）"
+              onChange={(e) => setForm({ ...form, parent_id: e.target.value })}
+            >
+              <MenuItem value="">无（作为顶级部门）</MenuItem>
+              {departments
+                .filter((dept) => dept.id !== editingId)
+                .map((dept) => (
+                  <MenuItem key={dept.id} value={dept.id}>
+                    {dept.dept_name}
+                  </MenuItem>
+                ))}
+            </Select>
+          </FormControl>
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2 }}>
           <Button onClick={() => setDialogOpen(false)}>取消</Button>

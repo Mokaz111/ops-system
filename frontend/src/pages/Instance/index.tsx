@@ -1,19 +1,19 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Box,
+  Button,
   Card,
   Chip,
   Dialog,
   DialogActions,
   DialogContent,
   DialogTitle,
-  Button,
   FormControl,
   Grid,
   IconButton,
   InputAdornment,
   InputLabel,
-  LinearProgress,
   MenuItem,
   Select,
   Table,
@@ -38,8 +38,10 @@ import StatusChip from '../../components/common/StatusChip';
 import ConfirmDialog from '../../components/common/ConfirmDialog';
 import EmptyState from '../../components/common/EmptyState';
 import LoadingScreen from '../../components/common/LoadingScreen';
+import FilterToolbar from '../../components/common/FilterToolbar';
+import DataTableCard from '../../components/common/DataTableCard';
 import { instanceAPI } from '../../api/instance';
-import type { Instance, InstanceMetrics, InstanceSpec } from '../../types/api';
+import type { Instance, InstanceSpec } from '../../types/api';
 
 const typeLabels: Record<string, { label: string; color: 'primary' | 'secondary' | 'success' | 'warning' }> = {
   metrics: { label: 'Metrics', color: 'primary' },
@@ -49,29 +51,34 @@ const typeLabels: Record<string, { label: string; color: 'primary' | 'secondary'
 };
 
 function parseSpec(spec: string): InstanceSpec {
-  try { return JSON.parse(spec); }
-  catch { return { cpu: 0, memory: 0, storage: 0, retention: 0 }; }
-}
-
-function ResourceBar({ label, used, total, unit }: { label: string; used: number; total: number; unit: string }) {
-  const pct = total > 0 ? Math.min((used / total) * 100, 100) : 0;
-  const color = pct > 85 ? 'error' : pct > 60 ? 'warning' : 'primary';
-  return (
-    <Box sx={{ mb: 1.5 }}>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
-        <Typography variant="body2" color="text.secondary">{label}</Typography>
-        <Typography variant="body2">{used} / {total} {unit} ({pct.toFixed(0)}%)</Typography>
-      </Box>
-      <LinearProgress variant="determinate" value={pct} color={color} sx={{ height: 6, borderRadius: 3 }} />
-    </Box>
-  );
+  try {
+    return JSON.parse(spec);
+  } catch {
+    return { cpu: 0, memory: 0, storage: 0, retention: 0 };
+  }
 }
 
 function isInstanceLevelScalable(inst: Instance): boolean {
   return inst.status === 'running' && inst.instance_type !== 'visual' && inst.template_type === 'dedicated_single';
 }
 
+const typeFilterItems = [
+  { key: '', label: '全部' },
+  { key: 'metrics', label: 'Metrics' },
+  { key: 'logs', label: 'Logs' },
+  { key: 'visual', label: 'Grafana' },
+];
+
+const statusFilterItems = [
+  { key: '', label: '全部状态' },
+  { key: 'running', label: '运行中' },
+  { key: 'creating', label: '创建中' },
+  { key: 'stopped', label: '已停止' },
+  { key: 'error', label: '异常' },
+];
+
 export default function InstancePage() {
+  const navigate = useNavigate();
   const { enqueueSnackbar } = useSnackbar();
   const [instances, setInstances] = useState<Instance[]>([]);
   const [loading, setLoading] = useState(true);
@@ -84,15 +91,18 @@ export default function InstancePage() {
 
   const [createOpen, setCreateOpen] = useState(false);
   const [deleteDialog, setDeleteDialog] = useState<{ open: boolean; instance?: Instance }>({ open: false });
-  const [detailDialog, setDetailDialog] = useState<{ open: boolean; instance?: Instance }>({ open: false });
-  const [detailMetrics, setDetailMetrics] = useState<InstanceMetrics | null>(null);
-  const [detailMetricsLoading, setDetailMetricsLoading] = useState(false);
   const [scaleDialog, setScaleDialog] = useState<{ open: boolean; instance?: Instance }>({ open: false });
   const [saving, setSaving] = useState(false);
 
   const [createForm, setCreateForm] = useState({
-    tenant_id: '', instance_name: '', instance_type: 'metrics', template_type: 'dedicated_single',
-    cpu: '2', memory: '4', storage: '50', retention: '15',
+    tenant_id: '',
+    instance_name: '',
+    instance_type: 'metrics',
+    template_type: 'dedicated_single',
+    cpu: '2',
+    memory: '4',
+    storage: '50',
+    retention: '15',
   });
   const [scaleForm, setScaleForm] = useState({
     scale_type: 'vertical' as 'horizontal' | 'vertical' | 'storage',
@@ -106,8 +116,11 @@ export default function InstancePage() {
     setLoading(true);
     try {
       const { data: res } = await instanceAPI.list({
-        page: page + 1, page_size: pageSize, search,
-        instance_type: typeFilter || undefined, status: statusFilter || undefined,
+        page: page + 1,
+        page_size: pageSize,
+        search,
+        instance_type: typeFilter || undefined,
+        status: statusFilter || undefined,
       });
       setInstances(res.data?.items || []);
       setTotal(res.data?.total || 0);
@@ -118,18 +131,45 @@ export default function InstancePage() {
     }
   }, [page, pageSize, search, typeFilter, statusFilter, enqueueSnackbar]);
 
-  useEffect(() => { fetchInstances(); }, [fetchInstances]);
+  useEffect(() => {
+    fetchInstances();
+  }, [fetchInstances]);
+
+  const statusStats = useMemo(() => {
+    return instances.reduce(
+      (acc, item) => {
+        acc.total += 1;
+        if (item.status === 'running') acc.running += 1;
+        if (item.status === 'creating') acc.creating += 1;
+        if (item.status === 'error') acc.error += 1;
+        return acc;
+      },
+      { total: 0, running: 0, creating: 0, error: 0 },
+    );
+  }, [instances]);
+
+  const typeStats = useMemo(() => {
+    return instances.reduce<Record<string, number>>((acc, item) => {
+      acc[item.instance_type] = (acc[item.instance_type] || 0) + 1;
+      return acc;
+    }, {});
+  }, [instances]);
 
   const handleCreate = async () => {
     setSaving(true);
     try {
       const spec = JSON.stringify({
-        cpu: parseInt(createForm.cpu), memory: parseInt(createForm.memory),
-        storage: parseInt(createForm.storage), retention: parseInt(createForm.retention),
+        cpu: parseInt(createForm.cpu, 10),
+        memory: parseInt(createForm.memory, 10),
+        storage: parseInt(createForm.storage, 10),
+        retention: parseInt(createForm.retention, 10),
       });
       await instanceAPI.create({
-        tenant_id: createForm.tenant_id, instance_name: createForm.instance_name,
-        instance_type: createForm.instance_type, template_type: createForm.template_type, spec,
+        tenant_id: createForm.tenant_id,
+        instance_name: createForm.instance_name,
+        instance_type: createForm.instance_type,
+        template_type: createForm.template_type,
+        spec,
       });
       enqueueSnackbar('实例创建成功', { variant: 'success' });
       setCreateOpen(false);
@@ -175,61 +215,132 @@ export default function InstancePage() {
     }
   };
 
-  const openDetail = async (inst: Instance) => {
-    setDetailDialog({ open: true, instance: inst });
-    setDetailMetrics(null);
-    setDetailMetricsLoading(true);
-    try {
-      const { data: res } = await instanceAPI.metrics(inst.id);
-      setDetailMetrics(res.data || null);
-    } catch {
-      enqueueSnackbar('获取实例指标失败', { variant: 'warning' });
-    } finally {
-      setDetailMetricsLoading(false);
-    }
-  };
-
   if (loading && instances.length === 0) return <LoadingScreen />;
 
   return (
     <Box>
-      <PageHeader title="实例管理" subtitle="管理 VM 实例的完整生命周期：创建、扩容、停止、销毁" actionLabel="创建实例" onAction={() => setCreateOpen(true)} />
+      <PageHeader
+        title="实例管理"
+        subtitle="统一管理实例生命周期，提供详情、监控、伸缩与删除操作"
+        actionLabel="创建实例"
+        onAction={() => setCreateOpen(true)}
+      />
 
       <Card sx={{ mb: 2 }}>
-        <Box sx={{ p: 2, display: 'flex', gap: 2, flexWrap: 'wrap' }}>
-          <TextField
-            placeholder="搜索实例..."
-            size="small"
-            value={search}
-            onChange={(e) => { setSearch(e.target.value); setPage(0); }}
-            InputProps={{ startAdornment: <InputAdornment position="start"><SearchIcon sx={{ color: 'text.disabled' }} /></InputAdornment> }}
-            sx={{ width: 240 }}
-          />
-          <FormControl size="small" sx={{ minWidth: 120 }}>
-            <InputLabel>类型</InputLabel>
-            <Select value={typeFilter} label="类型" onChange={(e) => { setTypeFilter(e.target.value); setPage(0); }}>
-              <MenuItem value="">全部</MenuItem>
-              <MenuItem value="metrics">Metrics</MenuItem>
-              <MenuItem value="logs">Logs</MenuItem>
-              <MenuItem value="visual">Grafana</MenuItem>
-            </Select>
-          </FormControl>
-          <FormControl size="small" sx={{ minWidth: 120 }}>
-            <InputLabel>状态</InputLabel>
-            <Select value={statusFilter} label="状态" onChange={(e) => { setStatusFilter(e.target.value); setPage(0); }}>
-              <MenuItem value="">全部</MenuItem>
-              <MenuItem value="running">运行中</MenuItem>
-              <MenuItem value="creating">创建中</MenuItem>
-              <MenuItem value="stopped">已停止</MenuItem>
-              <MenuItem value="error">异常</MenuItem>
-            </Select>
-          </FormControl>
+        <Box sx={{ p: 2 }}>
+          <Typography variant="subtitle2" sx={{ mb: 1.5 }}>接入数据概览（当前页）</Typography>
+          <Grid container spacing={1.5} sx={{ mb: 2 }}>
+            <Grid size={{ xs: 6, md: 3 }}>
+              <Card variant="outlined" sx={{ p: 1.5 }}>
+                <Typography variant="caption" color="text.secondary">实例总数</Typography>
+                <Typography variant="h6">{statusStats.total}</Typography>
+              </Card>
+            </Grid>
+            <Grid size={{ xs: 6, md: 3 }}>
+              <Card variant="outlined" sx={{ p: 1.5 }}>
+                <Typography variant="caption" color="text.secondary">运行中</Typography>
+                <Typography variant="h6" color="success.main">{statusStats.running}</Typography>
+              </Card>
+            </Grid>
+            <Grid size={{ xs: 6, md: 3 }}>
+              <Card variant="outlined" sx={{ p: 1.5 }}>
+                <Typography variant="caption" color="text.secondary">创建中</Typography>
+                <Typography variant="h6" color="warning.main">{statusStats.creating}</Typography>
+              </Card>
+            </Grid>
+            <Grid size={{ xs: 6, md: 3 }}>
+              <Card variant="outlined" sx={{ p: 1.5 }}>
+                <Typography variant="caption" color="text.secondary">异常</Typography>
+                <Typography variant="h6" color="error.main">{statusStats.error}</Typography>
+              </Card>
+            </Grid>
+          </Grid>
+          <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+            {typeFilterItems.map((item) => (
+              <Chip
+                key={item.key || 'all'}
+                label={`${item.label} (${item.key ? (typeStats[item.key] || 0) : statusStats.total})`}
+                color={typeFilter === item.key ? 'primary' : 'default'}
+                variant={typeFilter === item.key ? 'filled' : 'outlined'}
+                onClick={() => {
+                  setTypeFilter(item.key);
+                  setPage(0);
+                }}
+              />
+            ))}
+          </Box>
         </Box>
       </Card>
 
-      <Card>
+      <FilterToolbar>
+        <TextField
+          placeholder="搜索实例名称..."
+          size="small"
+          value={search}
+          onChange={(e) => {
+            setSearch(e.target.value);
+            setPage(0);
+          }}
+          InputProps={{
+            startAdornment: (
+              <InputAdornment position="start">
+                <SearchIcon sx={{ color: 'text.disabled' }} />
+              </InputAdornment>
+            ),
+          }}
+          sx={{ width: 280 }}
+        />
+        <FormControl size="small" sx={{ minWidth: 140 }}>
+          <InputLabel>类型</InputLabel>
+          <Select
+            value={typeFilter}
+            label="类型"
+            onChange={(e) => {
+              setTypeFilter(e.target.value);
+              setPage(0);
+            }}
+          >
+            {typeFilterItems.map((item) => (
+              <MenuItem key={item.key || 'all'} value={item.key}>{item.label}</MenuItem>
+            ))}
+          </Select>
+        </FormControl>
+        <FormControl size="small" sx={{ minWidth: 140 }}>
+          <InputLabel>状态</InputLabel>
+          <Select
+            value={statusFilter}
+            label="状态"
+            onChange={(e) => {
+              setStatusFilter(e.target.value);
+              setPage(0);
+            }}
+          >
+            {statusFilterItems.map((item) => (
+              <MenuItem key={item.key || 'all'} value={item.key}>{item.label}</MenuItem>
+            ))}
+          </Select>
+        </FormControl>
+      </FilterToolbar>
+
+      <DataTableCard
+        pagination={total > 0 ? (
+          <TablePagination
+            component="div"
+            count={total}
+            page={page}
+            onPageChange={(_, nextPage) => setPage(nextPage)}
+            rowsPerPage={pageSize}
+            onRowsPerPageChange={(e) => {
+              setPageSize(parseInt(e.target.value, 10));
+              setPage(0);
+            }}
+            rowsPerPageOptions={[10, 20, 50]}
+            labelRowsPerPage="每页行数"
+          />
+        ) : null}
+      >
         <TableContainer>
-          <Table>
+          <Table size="small">
             <TableHead>
               <TableRow>
                 <TableCell>实例名称</TableCell>
@@ -252,11 +363,17 @@ export default function InstancePage() {
               ) : (
                 instances.map((inst) => {
                   const spec = parseSpec(inst.spec);
+                  const typeMeta = typeLabels[inst.instance_type];
                   return (
                     <TableRow key={inst.id}>
                       <TableCell sx={{ fontWeight: 500 }}>{inst.instance_name}</TableCell>
                       <TableCell>
-                        <Chip label={typeLabels[inst.instance_type]?.label || inst.instance_type} size="small" color={typeLabels[inst.instance_type]?.color || 'default'} variant="outlined" />
+                        <Chip
+                          label={typeMeta?.label || inst.instance_type}
+                          size="small"
+                          color={typeMeta?.color || 'default'}
+                          variant="outlined"
+                        />
                       </TableCell>
                       <TableCell sx={{ fontSize: '0.8125rem' }}>{inst.template_type}</TableCell>
                       <TableCell sx={{ fontFamily: 'monospace', fontSize: '0.8125rem' }}>
@@ -264,33 +381,42 @@ export default function InstancePage() {
                       </TableCell>
                       <TableCell sx={{ fontSize: '0.8125rem', color: 'text.secondary' }}>{inst.namespace || '-'}</TableCell>
                       <TableCell><StatusChip status={inst.status} /></TableCell>
-                      <TableCell sx={{ color: 'text.secondary', fontSize: '0.8125rem' }}>{new Date(inst.created_at).toLocaleDateString()}</TableCell>
+                      <TableCell sx={{ color: 'text.secondary', fontSize: '0.8125rem' }}>
+                        {new Date(inst.created_at).toLocaleDateString()}
+                      </TableCell>
                       <TableCell align="right">
                         <Tooltip title="详情">
-                          <IconButton size="small" onClick={() => openDetail(inst)} aria-label="查看实例详情">
+                          <IconButton size="small" onClick={() => navigate(`/instances/${inst.id}`)} aria-label="查看实例详情">
                             <InfoOutlinedIcon fontSize="small" />
                           </IconButton>
                         </Tooltip>
-                        {inst.instance_type === 'visual' && inst.url && (
-                          <Tooltip title="打开 Grafana">
-                            <IconButton size="small" onClick={() => window.open(inst.url, '_blank')}>
+                        <Tooltip title={inst.url ? '打开监控' : '暂无监控地址'}>
+                          <span>
+                            <IconButton
+                              size="small"
+                              disabled={!inst.url}
+                              onClick={() => inst.url && window.open(inst.url, '_blank')}
+                            >
                               <OpenInNewIcon fontSize="small" />
                             </IconButton>
-                          </Tooltip>
-                        )}
+                          </span>
+                        </Tooltip>
                         {isInstanceLevelScalable(inst) ? (
                           <Tooltip title="伸缩">
-                            <IconButton size="small" onClick={() => {
-                              const s = parseSpec(inst.spec);
-                              setScaleForm({
-                                scale_type: 'vertical',
-                                replicas: s.replicas || 1,
-                                cpu: s.cpu || 1,
-                                memory: s.memory || 1,
-                                storage: s.storage || 1,
-                              });
-                              setScaleDialog({ open: true, instance: inst });
-                            }}>
+                            <IconButton
+                              size="small"
+                              onClick={() => {
+                                const s = parseSpec(inst.spec);
+                                setScaleForm({
+                                  scale_type: 'vertical',
+                                  replicas: s.replicas || 1,
+                                  cpu: s.cpu || 1,
+                                  memory: s.memory || 1,
+                                  storage: s.storage || 1,
+                                });
+                                setScaleDialog({ open: true, instance: inst });
+                              }}
+                            >
                               <ScaleIcon fontSize="small" />
                             </IconButton>
                           </Tooltip>
@@ -304,7 +430,11 @@ export default function InstancePage() {
                           </Tooltip>
                         )}
                         <Tooltip title="删除">
-                          <IconButton size="small" color="error" onClick={() => setDeleteDialog({ open: true, instance: inst })}>
+                          <IconButton
+                            size="small"
+                            color="error"
+                            onClick={() => setDeleteDialog({ open: true, instance: inst })}
+                          >
                             <DeleteOutlinedIcon fontSize="small" />
                           </IconButton>
                         </Tooltip>
@@ -316,26 +446,37 @@ export default function InstancePage() {
             </TableBody>
           </Table>
         </TableContainer>
-        {total > 0 && (
-          <TablePagination
-            component="div" count={total} page={page} onPageChange={(_, p) => setPage(p)}
-            rowsPerPage={pageSize} onRowsPerPageChange={(e) => { setPageSize(parseInt(e.target.value)); setPage(0); }}
-            rowsPerPageOptions={[10, 20, 50]} labelRowsPerPage="每页行数"
-          />
-        )}
-      </Card>
+      </DataTableCard>
 
-      {/* Create dialog */}
       <Dialog open={createOpen} onClose={() => setCreateOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle>创建实例</DialogTitle>
         <DialogContent sx={{ pt: '16px !important' }}>
-          <TextField fullWidth label="租户 ID" value={createForm.tenant_id} onChange={(e) => setCreateForm({ ...createForm, tenant_id: e.target.value })} sx={{ mb: 2.5 }} required helperText="关联租户的 UUID" />
-          <TextField fullWidth label="实例名称" value={createForm.instance_name} onChange={(e) => setCreateForm({ ...createForm, instance_name: e.target.value })} sx={{ mb: 2.5 }} required />
+          <TextField
+            fullWidth
+            label="租户 ID"
+            value={createForm.tenant_id}
+            onChange={(e) => setCreateForm({ ...createForm, tenant_id: e.target.value })}
+            sx={{ mb: 2.5 }}
+            required
+            helperText="关联租户的 UUID"
+          />
+          <TextField
+            fullWidth
+            label="实例名称"
+            value={createForm.instance_name}
+            onChange={(e) => setCreateForm({ ...createForm, instance_name: e.target.value })}
+            sx={{ mb: 2.5 }}
+            required
+          />
           <Grid container spacing={2} sx={{ mb: 2.5 }}>
             <Grid size={{ xs: 6 }}>
               <FormControl fullWidth size="small">
                 <InputLabel>实例类型</InputLabel>
-                <Select value={createForm.instance_type} label="实例类型" onChange={(e) => setCreateForm({ ...createForm, instance_type: e.target.value })}>
+                <Select
+                  value={createForm.instance_type}
+                  label="实例类型"
+                  onChange={(e) => setCreateForm({ ...createForm, instance_type: e.target.value })}
+                >
                   <MenuItem value="metrics">Metrics (VictoriaMetrics)</MenuItem>
                   <MenuItem value="logs">Logs (VictoriaLogs)</MenuItem>
                   <MenuItem value="visual">Grafana</MenuItem>
@@ -345,7 +486,11 @@ export default function InstancePage() {
             <Grid size={{ xs: 6 }}>
               <FormControl fullWidth size="small">
                 <InputLabel>模板类型</InputLabel>
-                <Select value={createForm.template_type} label="模板类型" onChange={(e) => setCreateForm({ ...createForm, template_type: e.target.value })}>
+                <Select
+                  value={createForm.template_type}
+                  label="模板类型"
+                  onChange={(e) => setCreateForm({ ...createForm, template_type: e.target.value })}
+                >
                   <MenuItem value="shared">共享版</MenuItem>
                   <MenuItem value="dedicated_single">独享单节点</MenuItem>
                   <MenuItem value="dedicated_cluster">独享集群</MenuItem>
@@ -356,104 +501,59 @@ export default function InstancePage() {
           <Typography variant="subtitle2" sx={{ mb: 1.5, color: 'text.secondary' }}>资源配置</Typography>
           <Grid container spacing={2}>
             <Grid size={{ xs: 3 }}>
-              <TextField fullWidth size="small" label="CPU (核)" type="number" value={createForm.cpu} onChange={(e) => setCreateForm({ ...createForm, cpu: e.target.value })} />
+              <TextField
+                fullWidth
+                size="small"
+                label="CPU (核)"
+                type="number"
+                value={createForm.cpu}
+                onChange={(e) => setCreateForm({ ...createForm, cpu: e.target.value })}
+              />
             </Grid>
             <Grid size={{ xs: 3 }}>
-              <TextField fullWidth size="small" label="内存 (GB)" type="number" value={createForm.memory} onChange={(e) => setCreateForm({ ...createForm, memory: e.target.value })} />
+              <TextField
+                fullWidth
+                size="small"
+                label="内存 (GB)"
+                type="number"
+                value={createForm.memory}
+                onChange={(e) => setCreateForm({ ...createForm, memory: e.target.value })}
+              />
             </Grid>
             <Grid size={{ xs: 3 }}>
-              <TextField fullWidth size="small" label="存储 (GB)" type="number" value={createForm.storage} onChange={(e) => setCreateForm({ ...createForm, storage: e.target.value })} />
+              <TextField
+                fullWidth
+                size="small"
+                label="存储 (GB)"
+                type="number"
+                value={createForm.storage}
+                onChange={(e) => setCreateForm({ ...createForm, storage: e.target.value })}
+              />
             </Grid>
             <Grid size={{ xs: 3 }}>
-              <TextField fullWidth size="small" label="保留 (天)" type="number" value={createForm.retention} onChange={(e) => setCreateForm({ ...createForm, retention: e.target.value })} />
+              <TextField
+                fullWidth
+                size="small"
+                label="保留 (天)"
+                type="number"
+                value={createForm.retention}
+                onChange={(e) => setCreateForm({ ...createForm, retention: e.target.value })}
+              />
             </Grid>
           </Grid>
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2 }}>
           <Button onClick={() => setCreateOpen(false)}>取消</Button>
-          <Button variant="contained" onClick={handleCreate} disabled={saving || !createForm.tenant_id || !createForm.instance_name}>
+          <Button
+            variant="contained"
+            onClick={handleCreate}
+            disabled={saving || !createForm.tenant_id || !createForm.instance_name}
+          >
             {saving ? '创建中...' : '创建'}
           </Button>
         </DialogActions>
       </Dialog>
 
-      {/* Detail dialog */}
-      <Dialog open={detailDialog.open} onClose={() => setDetailDialog({ open: false })} maxWidth="sm" fullWidth>
-        <DialogTitle>实例详情</DialogTitle>
-        {detailDialog.instance && (() => {
-          const inst = detailDialog.instance;
-          const spec = parseSpec(inst.spec);
-          return (
-            <DialogContent>
-              <Box sx={{ mb: 2 }}>
-                <Typography variant="body2" color="text.secondary">实例名称</Typography>
-                <Typography variant="body1" sx={{ fontWeight: 500 }}>{inst.instance_name}</Typography>
-              </Box>
-              <Grid container spacing={2} sx={{ mb: 2 }}>
-                <Grid size={{ xs: 4 }}>
-                  <Typography variant="body2" color="text.secondary">类型</Typography>
-                  <Chip label={typeLabels[inst.instance_type]?.label} size="small" color={typeLabels[inst.instance_type]?.color} />
-                </Grid>
-                <Grid size={{ xs: 4 }}>
-                  <Typography variant="body2" color="text.secondary">状态</Typography>
-                  <StatusChip status={inst.status} />
-                </Grid>
-                <Grid size={{ xs: 4 }}>
-                  <Typography variant="body2" color="text.secondary">命名空间</Typography>
-                  <Typography variant="body2">{inst.namespace || '-'}</Typography>
-                </Grid>
-              </Grid>
-              <Card variant="outlined" sx={{ p: 2, mb: 2 }}>
-                <Typography variant="subtitle2" sx={{ mb: 1.5 }}>资源使用</Typography>
-                {detailMetricsLoading ? (
-                  <LinearProgress />
-                ) : detailMetrics ? (
-                  <>
-                    <ResourceBar
-                      label="CPU"
-                      used={Math.round(spec.cpu * (detailMetrics.cpu_usage_percent || 0) / 100)}
-                      total={spec.cpu}
-                      unit="Core"
-                    />
-                    <ResourceBar
-                      label="内存"
-                      used={Math.round(spec.memory * (detailMetrics.memory_usage_percent || 0) / 100)}
-                      total={spec.memory}
-                      unit="GiB"
-                    />
-                    <ResourceBar
-                      label="存储"
-                      used={Math.round(spec.storage * (detailMetrics.disk_usage_percent || 0) / 100)}
-                      total={spec.storage}
-                      unit="GiB"
-                    />
-                    {detailMetrics.note && (
-                      <Typography variant="caption" color="text.secondary">
-                        {detailMetrics.note}
-                      </Typography>
-                    )}
-                  </>
-                ) : (
-                  <Typography variant="body2" color="text.secondary">
-                    暂无监控数据
-                  </Typography>
-                )}
-              </Card>
-              {inst.url && (
-                <Box>
-                  <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>访问地址</Typography>
-                  <Chip label={inst.url} size="small" variant="outlined" sx={{ fontFamily: 'monospace' }} onClick={() => window.open(inst.url, '_blank')} />
-                </Box>
-              )}
-            </DialogContent>
-          );
-        })()}
-        <DialogActions sx={{ px: 3, pb: 2 }}>
-          <Button onClick={() => setDetailDialog({ open: false })}>关闭</Button>
-        </DialogActions>
-      </Dialog>
-
-      {/* Scale dialog */}
       <Dialog open={scaleDialog.open} onClose={() => setScaleDialog({ open: false })} maxWidth="xs" fullWidth>
         <DialogTitle>实例伸缩 - {scaleDialog.instance?.instance_name}</DialogTitle>
         <DialogContent sx={{ pt: '16px !important' }}>
@@ -470,17 +570,41 @@ export default function InstancePage() {
           </FormControl>
           {scaleForm.scale_type === 'vertical' && (
             <>
-              <TextField fullWidth size="small" label="CPU (核)" type="number" value={scaleForm.cpu} onChange={(e) => setScaleForm({ ...scaleForm, cpu: parseInt(e.target.value, 10) || 1 })} sx={{ mb: 2 }} />
-              <TextField fullWidth size="small" label="内存 (Gi)" type="number" value={scaleForm.memory} onChange={(e) => setScaleForm({ ...scaleForm, memory: parseInt(e.target.value, 10) || 1 })} />
+              <TextField
+                fullWidth
+                size="small"
+                label="CPU (核)"
+                type="number"
+                value={scaleForm.cpu}
+                onChange={(e) => setScaleForm({ ...scaleForm, cpu: parseInt(e.target.value, 10) || 1 })}
+                sx={{ mb: 2 }}
+              />
+              <TextField
+                fullWidth
+                size="small"
+                label="内存 (Gi)"
+                type="number"
+                value={scaleForm.memory}
+                onChange={(e) => setScaleForm({ ...scaleForm, memory: parseInt(e.target.value, 10) || 1 })}
+              />
             </>
           )}
           {scaleForm.scale_type === 'storage' && (
-            <TextField fullWidth size="small" label="存储 (Gi)" type="number" value={scaleForm.storage} onChange={(e) => setScaleForm({ ...scaleForm, storage: parseInt(e.target.value, 10) || 1 })} />
+            <TextField
+              fullWidth
+              size="small"
+              label="存储 (Gi)"
+              type="number"
+              value={scaleForm.storage}
+              onChange={(e) => setScaleForm({ ...scaleForm, storage: parseInt(e.target.value, 10) || 1 })}
+            />
           )}
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2 }}>
           <Button onClick={() => setScaleDialog({ open: false })}>取消</Button>
-          <Button variant="contained" onClick={handleScale} disabled={saving}>{saving ? '提交中...' : '确认伸缩'}</Button>
+          <Button variant="contained" onClick={handleScale} disabled={saving}>
+            {saving ? '提交中...' : '确认伸缩'}
+          </Button>
         </DialogActions>
       </Dialog>
 

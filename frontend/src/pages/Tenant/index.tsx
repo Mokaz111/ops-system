@@ -35,7 +35,8 @@ import ConfirmDialog from '../../components/common/ConfirmDialog';
 import EmptyState from '../../components/common/EmptyState';
 import LoadingScreen from '../../components/common/LoadingScreen';
 import { tenantAPI } from '../../api/tenant';
-import type { Tenant } from '../../types/api';
+import { departmentAPI } from '../../api/department';
+import type { Department, Tenant } from '../../types/api';
 
 const templateLabels: Record<string, string> = {
   shared: '共享版',
@@ -46,6 +47,7 @@ const templateLabels: Record<string, string> = {
 export default function TenantPage() {
   const { enqueueSnackbar } = useSnackbar();
   const [tenants, setTenants] = useState<Tenant[]>([]);
+  const [departments, setDepartments] = useState<Department[]>([]);
   const [loading, setLoading] = useState(true);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(0);
@@ -71,6 +73,20 @@ export default function TenantPage() {
   }, [page, pageSize, search, enqueueSnackbar]);
 
   useEffect(() => { fetchTenants(); }, [fetchTenants]);
+
+  useEffect(() => {
+    const fetchDepartments = async () => {
+      try {
+        const { data: res } = await departmentAPI.tree();
+        const flat = (rows: Department[]): Department[] =>
+          rows.flatMap((dept) => [dept, ...(dept.children ? flat(dept.children) : [])]);
+        setDepartments(flat(res.data || []));
+      } catch {
+        enqueueSnackbar('获取部门列表失败', { variant: 'warning' });
+      }
+    };
+    fetchDepartments();
+  }, [enqueueSnackbar]);
 
   const handleSave = async () => {
     setSaving(true);
@@ -207,7 +223,21 @@ export default function TenantPage() {
         <DialogTitle>{editingId ? '编辑租户' : '新建租户'}</DialogTitle>
         <DialogContent sx={{ pt: '16px !important' }}>
           <TextField fullWidth label="租户名称" value={form.tenant_name} onChange={(e) => setForm({ ...form, tenant_name: e.target.value })} sx={{ mb: 2.5 }} required />
-          <TextField fullWidth label="所属部门 ID" value={form.dept_id} onChange={(e) => setForm({ ...form, dept_id: e.target.value })} sx={{ mb: 2.5 }} helperText="输入部门 UUID" />
+          <FormControl fullWidth size="small" sx={{ mb: 2.5 }}>
+            <InputLabel>所属部门</InputLabel>
+            <Select
+              value={form.dept_id}
+              label="所属部门"
+              onChange={(e) => setForm({ ...form, dept_id: e.target.value })}
+            >
+              <MenuItem value="">请选择部门</MenuItem>
+              {departments.map((dept) => (
+                <MenuItem key={dept.id} value={dept.id}>
+                  {dept.dept_name}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
           <FormControl fullWidth size="small">
             <InputLabel>模板类型</InputLabel>
             <Select value={form.template_type} label="模板类型" onChange={(e) => setForm({ ...form, template_type: e.target.value })}>

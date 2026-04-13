@@ -1,14 +1,26 @@
 import { Box, Button, Card, CardContent, Typography, Alert } from '@mui/material';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import NotificationsActiveOutlinedIcon from '@mui/icons-material/NotificationsActiveOutlined';
+import { useSearchParams } from 'react-router-dom';
 import PageHeader from '../../components/common/PageHeader';
 
 export default function AlertPage() {
+  const [searchParams] = useSearchParams();
   const n9eUrl = import.meta.env.VITE_N9E_URL || 'http://n9e.example.com';
+  const instanceId = searchParams.get('instance_id');
+  const instanceName = searchParams.get('instance_name');
+  const contextQuery = instanceId ? `instance_id=${encodeURIComponent(instanceId)}${instanceName ? `&instance_name=${encodeURIComponent(instanceName)}` : ''}` : '';
+  const n9eLink = contextQuery ? `${n9eUrl}${n9eUrl.includes('?') ? '&' : '?'}${contextQuery}` : n9eUrl;
 
   return (
     <Box>
       <PageHeader title="告警引擎" subtitle="告警管理由夜莺 (Nightingale / N9E) 独立提供" />
+
+      {instanceId && (
+        <Alert severity="success" sx={{ mb: 2 }}>
+          当前上下文：实例 {instanceName || instanceId}。点击下方按钮将携带实例参数进入夜莺控制台。
+        </Alert>
+      )}
 
       <Alert severity="info" sx={{ mb: 3 }}>
         告警引擎已独立部署为 N9E (夜莺) 系统。告警规则配置、告警事件查看、通知渠道管理等功能请前往 N9E 控制台操作。
@@ -44,7 +56,7 @@ export default function AlertPage() {
             variant="contained"
             size="large"
             startIcon={<OpenInNewIcon />}
-            onClick={() => window.open(n9eUrl, '_blank')}
+            onClick={() => window.open(n9eLink, '_blank')}
             sx={{ px: 4, py: 1.5 }}
           >
             打开夜莺控制台

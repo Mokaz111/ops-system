@@ -28,23 +28,15 @@ import { useSnackbar } from 'notistack';
 import PageHeader from '../../components/common/PageHeader';
 import ConfirmDialog from '../../components/common/ConfirmDialog';
 import { platformAPI } from '../../api/platform';
-import type {
-  PlatformInitSharedClusterPlan,
-  PlatformScaleAuditItem,
-  PlatformScaleTarget,
-  PlatformScaleVMClusterPlan,
-} from '../../types/api';
+import type { PlatformScaleAuditItem, PlatformScaleTarget, PlatformScaleVMClusterPlan } from '../../types/api';
 
 export default function PlatformScalingPage() {
   const { enqueueSnackbar } = useSnackbar();
   const [loading, setLoading] = useState(false);
-  const [initLoading, setInitLoading] = useState(false);
   const [targets, setTargets] = useState<PlatformScaleTarget[]>([]);
   const [targetsLoading, setTargetsLoading] = useState(false);
   const [applyConfirmOpen, setApplyConfirmOpen] = useState(false);
-  const [initApplyConfirmOpen, setInitApplyConfirmOpen] = useState(false);
   const [plan, setPlan] = useState<PlatformScaleVMClusterPlan | null>(null);
-  const [initPlan, setInitPlan] = useState<PlatformInitSharedClusterPlan | null>(null);
   const [audits, setAudits] = useState<PlatformScaleAuditItem[]>([]);
   const [auditLoading, setAuditLoading] = useState(false);
   const [detailAudit, setDetailAudit] = useState<PlatformScaleAuditItem | null>(null);
@@ -61,10 +53,6 @@ export default function PlatformScalingPage() {
     vminsert_replicas: 2,
     vmstorage_replicas: 2,
     storage_size: '200Gi',
-  });
-  const [initForm, setInitForm] = useState({
-    namespace: 'monitoring',
-    release_name: 'vm-shared-stack',
   });
 
   useEffect(() => {
@@ -175,43 +163,9 @@ export default function PlatformScalingPage() {
     }
   };
 
-  const handleInitDryRun = async () => {
-    setInitLoading(true);
-    try {
-      const { data: res } = await platformAPI.initSharedCluster({
-        ...initForm,
-        dry_run: true,
-      });
-      setInitPlan(res.data);
-      enqueueSnackbar('共享集群初始化 dry-run 成功', { variant: 'success' });
-    } catch {
-      enqueueSnackbar('共享集群初始化 dry-run 失败', { variant: 'error' });
-    } finally {
-      setInitLoading(false);
-    }
-  };
-
-  const handleInitApply = async () => {
-    setInitLoading(true);
-    try {
-      const { data: res } = await platformAPI.initSharedCluster({
-        ...initForm,
-        dry_run: false,
-      });
-      setInitPlan(res.data);
-      await refreshAudits();
-      enqueueSnackbar('共享集群初始化已提交', { variant: 'success' });
-      setInitApplyConfirmOpen(false);
-    } catch {
-      enqueueSnackbar('共享集群初始化提交失败', { variant: 'error' });
-    } finally {
-      setInitLoading(false);
-    }
-  };
-
   return (
     <Box>
-      <PageHeader title="平台扩容" subtitle="Iteration 3: 预览后确认应用（含审计）" />
+      <PageHeader title="平台扩容" subtitle="预览后确认应用（含审计追踪）" />
 
       <Card sx={{ mb: 2 }}>
         <CardContent>
@@ -300,64 +254,6 @@ export default function PlatformScalingPage() {
             >
               应用变更
             </Button>
-          </Box>
-        </CardContent>
-      </Card>
-
-      <Card sx={{ mb: 2 }}>
-        <CardContent>
-          <Typography variant="subtitle2" sx={{ mb: 1 }}>
-            共享监控集群初始化（admin）
-          </Typography>
-          <Alert severity="info" sx={{ mb: 2 }}>
-            将使用 Helm Chart `vm/victoria-metrics-k8s-stack` 初始化或升级全局共享监控集群，并启用内置 Grafana。
-          </Alert>
-          <Grid container spacing={2}>
-            <Grid size={{ xs: 12, md: 6 }}>
-              <TextField
-                fullWidth
-                size="small"
-                label="Namespace"
-                value={initForm.namespace}
-                onChange={(e) => setInitForm((prev) => ({ ...prev, namespace: e.target.value }))}
-              />
-            </Grid>
-            <Grid size={{ xs: 12, md: 6 }}>
-              <TextField
-                fullWidth
-                size="small"
-                label="Release Name"
-                value={initForm.release_name}
-                onChange={(e) => setInitForm((prev) => ({ ...prev, release_name: e.target.value }))}
-              />
-            </Grid>
-          </Grid>
-          <Box sx={{ mt: 2 }}>
-            <Button variant="contained" onClick={handleInitDryRun} disabled={initLoading}>
-              {initLoading ? '执行中...' : '生成初始化 Dry-run'}
-            </Button>
-            <Button
-              variant="outlined"
-              sx={{ ml: 1 }}
-              onClick={() => setInitApplyConfirmOpen(true)}
-              disabled={initLoading || !initPlan}
-            >
-              应用初始化
-            </Button>
-          </Box>
-          <Box
-            component="pre"
-            sx={{
-              p: 2,
-              borderRadius: 1,
-              backgroundColor: '#f8f9fa',
-              fontSize: 12,
-              overflowX: 'auto',
-              m: 0,
-              mt: 2,
-            }}
-          >
-            {initPlan ? JSON.stringify(initPlan, null, 2) : '暂无初始化预览，请先执行 dry-run。'}
           </Box>
         </CardContent>
       </Card>
@@ -531,17 +427,6 @@ export default function PlatformScalingPage() {
         loading={loading}
         onConfirm={handleApply}
         onCancel={() => setApplyConfirmOpen(false)}
-      />
-
-      <ConfirmDialog
-        open={initApplyConfirmOpen}
-        title="确认初始化共享监控集群"
-        message="将对共享监控集群执行 helm install/upgrade。建议先执行 dry-run 并核对预览内容。是否继续？"
-        confirmLabel="确认初始化"
-        severity="warning"
-        loading={initLoading}
-        onConfirm={handleInitApply}
-        onCancel={() => setInitApplyConfirmOpen(false)}
       />
 
       <Dialog open={Boolean(detailAudit)} onClose={() => setDetailAudit(null)} maxWidth="md" fullWidth>

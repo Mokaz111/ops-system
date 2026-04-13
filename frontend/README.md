@@ -41,17 +41,31 @@ npm run preview
 - `Grafana`
 - `PlatformScaling`（平台级扩容 + 变更历史审计）
 
-## 平台扩容审计页面能力
+## 平台扩容页面能力
 
-- 共享集群初始化（admin）：支持 dry-run 与确认应用
 - 历史列表：时间、操作者、目标、状态、来源 IP、错误信息
 - 筛选：目标、状态、操作者、开始时间、结束时间
 - 查看变更详情：查看每次操作的 `spec_patch`
 - 一键重置筛选
+
+## 系统设置页面能力
+
+- 共享集群初始化（admin）：支持 `vm/victoria-metrics-k8s-stack` 的 dry-run 与确认应用
 
 ## 环境变量
 
 按项目实际 `.env` 配置为准，通常至少包含：
 
 - `VITE_API_BASE_URL`
+
+## 集群前端改版要点（2026-04）
+
+- 实例详情升级为路由页：`/instances/:instanceId`，支持直达访问与分享链接。
+- 实例管理页新增“接入数据概览”和类型快速筛选，列表操作统一为详情/监控/伸缩/删除。
+- 告警页支持实例上下文参数（`instance_id`、`instance_name`），便于从实例详情直接联动到 N9E。
+- 路由与侧栏导航统一由 `src/config/appRoutes.ts` 管理，减少菜单与路由双维护问题。
+- 新增可复用组件：
+  - `src/components/common/FilterToolbar.tsx`
+  - `src/components/common/DataTableCard.tsx`
+  - `src/components/common/DetailTabs.tsx`
 

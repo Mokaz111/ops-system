@@ -17,25 +17,25 @@ import BarChartOutlinedIcon from '@mui/icons-material/BarChartOutlined';
 import NotificationsOutlinedIcon from '@mui/icons-material/NotificationsOutlined';
 import PeopleOutlinedIcon from '@mui/icons-material/PeopleOutlined';
 import SettingsOutlinedIcon from '@mui/icons-material/SettingsOutlined';
-import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import SettingsEthernetOutlinedIcon from '@mui/icons-material/SettingsEthernetOutlined';
+import { appRouteMeta, type AppRouteKey } from '../../config/appRoutes';
 
 const DRAWER_WIDTH = 256;
 
-const menuItems = [
-  { key: 'overview', label: '概览', icon: <DashboardOutlinedIcon />, path: '/dashboard' },
-  { type: 'divider' as const },
-  { key: 'departments', label: '部门管理', icon: <BusinessOutlinedIcon />, path: '/departments' },
-  { key: 'tenants', label: '租户管理', icon: <GroupsOutlinedIcon />, path: '/tenants' },
-  { key: 'instances', label: '实例管理', icon: <StorageOutlinedIcon />, path: '/instances' },
-  { type: 'divider' as const },
-  { key: 'grafana', label: 'Grafana 管理', icon: <BarChartOutlinedIcon />, path: '/grafana' },
-  { key: 'alerts', label: '告警引擎', icon: <NotificationsOutlinedIcon />, path: '/alerts', external: true },
-  { type: 'divider' as const },
-  { key: 'users', label: '用户管理', icon: <PeopleOutlinedIcon />, path: '/users' },
-  { key: 'platform-scaling', label: '平台扩容', icon: <SettingsEthernetOutlinedIcon />, path: '/platform-scaling' },
-  { key: 'settings', label: '系统设置', icon: <SettingsOutlinedIcon />, path: '/settings' },
-];
+const iconMap: Record<AppRouteKey, React.ReactNode> = {
+  dashboard: <DashboardOutlinedIcon />,
+  departments: <BusinessOutlinedIcon />,
+  tenants: <GroupsOutlinedIcon />,
+  instances: <StorageOutlinedIcon />,
+  'instance-detail': <StorageOutlinedIcon />,
+  grafana: <BarChartOutlinedIcon />,
+  alerts: <NotificationsOutlinedIcon />,
+  users: <PeopleOutlinedIcon />,
+  'platform-scaling': <SettingsEthernetOutlinedIcon />,
+  settings: <SettingsOutlinedIcon />,
+};
+
+const sidebarRoutes = appRouteMeta.filter((route) => route.showInSidebar && route.label);
 
 interface SidebarProps {
   open: boolean;
@@ -73,33 +73,29 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
       </Box>
 
       <List sx={{ flex: 1, px: 1, pt: 1 }}>
-        {menuItems.map((item, index) => {
-          if ('type' in item && item.type === 'divider') {
-            return <Divider key={`d-${index}`} sx={{ my: 1, mx: 2 }} />;
-          }
-          const menuItem = item as { key: string; label: string; icon: React.ReactNode; path: string; external?: boolean };
-          const isSelected = location.pathname === menuItem.path || location.pathname.startsWith(menuItem.path + '/');
+        {sidebarRoutes.map((menuItem, index) => {
+          const prev = sidebarRoutes[index - 1];
+          const showDivider = index > 0 && prev?.sidebarSection !== menuItem.sidebarSection;
+          const path = `/${menuItem.path}`;
+          const isSelected = location.pathname === path || location.pathname.startsWith(path + '/');
           return (
-            <ListItemButton
-              key={menuItem.key}
-              selected={isSelected}
-              onClick={() => {
-                if (menuItem.external) {
-                  navigate(menuItem.path);
-                } else {
-                  navigate(menuItem.path);
-                }
-                onClose?.();
-              }}
-              sx={{ mb: 0.25, py: 1 }}
-            >
-              <ListItemIcon>{menuItem.icon}</ListItemIcon>
-              <ListItemText
-                primary={menuItem.label}
-                primaryTypographyProps={{ fontSize: '0.875rem', fontWeight: isSelected ? 600 : 400 }}
-              />
-              {menuItem.external && <OpenInNewIcon sx={{ fontSize: 14, color: 'text.disabled' }} />}
-            </ListItemButton>
+            <Box key={menuItem.key}>
+              {showDivider && <Divider sx={{ my: 1, mx: 2 }} />}
+              <ListItemButton
+                selected={isSelected}
+                onClick={() => {
+                  navigate(path);
+                  onClose?.();
+                }}
+                sx={{ mb: 0.25, py: 1 }}
+              >
+                <ListItemIcon>{iconMap[menuItem.key]}</ListItemIcon>
+                <ListItemText
+                  primary={menuItem.label}
+                  primaryTypographyProps={{ fontSize: '0.875rem', fontWeight: isSelected ? 600 : 400 }}
+                />
+              </ListItemButton>
+            </Box>
           );
         })}
       </List>
