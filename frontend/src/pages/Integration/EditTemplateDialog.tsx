@@ -18,6 +18,7 @@ import {
   type IntegrationCategory,
   type IntegrationTemplate,
 } from '../../api/integration';
+import { extractApiError } from '../../api';
 
 interface Props {
   open: boolean;
@@ -77,8 +78,8 @@ export default function EditTemplateDialog({ open, template, categories, onClose
       enqueueSnackbar('模板已更新', { variant: 'success' });
       onClose();
       onSuccess();
-    } catch (e) {
-      enqueueSnackbar(`更新失败：${(e as Error).message}`, { variant: 'error' });
+    } catch (err) {
+      enqueueSnackbar(extractApiError(err, '更新失败'), { variant: 'error' });
     } finally {
       setSubmitting(false);
     }

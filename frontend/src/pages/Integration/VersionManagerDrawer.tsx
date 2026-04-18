@@ -31,6 +31,7 @@ import {
   type IntegrationTemplate,
   type IntegrationTemplateVersion,
 } from '../../api/integration';
+import { extractApiError } from '../../api';
 
 interface Props {
   open: boolean;
@@ -147,10 +148,10 @@ export default function VersionManagerDrawer({ open, template, onClose, onSucces
           setLeftVer('');
           setRightVer('');
         }
-      } catch {
+      } catch (err) {
         if (alive) {
           setVersions([]);
-          enqueueSnackbar('加载版本失败', { variant: 'error' });
+          enqueueSnackbar(extractApiError(err, '加载版本失败'), { variant: 'error' });
         }
       } finally {
         if (alive) setLoading(false);
@@ -177,9 +178,8 @@ export default function VersionManagerDrawer({ open, template, onClose, onSucces
       setDeleteTarget(null);
       setReloadTick((v) => v + 1);
       onSuccess();
-    } catch (e) {
-      const msg = (e as { response?: { data?: { message?: string } } }).response?.data?.message;
-      enqueueSnackbar(`下架失败：${msg || (e as Error).message}`, { variant: 'error' });
+    } catch (err) {
+      enqueueSnackbar(extractApiError(err, '下架失败'), { variant: 'error' });
     }
   };
 

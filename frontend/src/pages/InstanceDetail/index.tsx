@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   Accordion,
@@ -41,6 +41,8 @@ import {
   type IntegrationInstallationRevision,
 } from '../../api/integration';
 import { grafanaHostAPI, type GrafanaHost } from '../../api/grafanaHost';
+import { extractApiError } from '../../api';
+import { isAbortError, makeAbortController } from '../../api/client';
 import type { Instance, InstanceMetrics, InstanceSpec } from '../../types/api';
 
 const typeLabels: Record<string, { label: string; color: 'primary' | 'secondary' | 'success' | 'warning' }> = {
@@ -152,6 +154,7 @@ function ScaleEventList({ events, loading }: { events: ScaleEvent[]; loading: bo
 function statusColor(s?: string): 'success' | 'warning' | 'error' | 'default' {
   switch (s) {
     case 'success':
+    case 'uninstalled':
       return 'success';
     case 'partial':
     case 'rendered':
@@ -162,6 +165,31 @@ function statusColor(s?: string): 'success' | 'warning' | 'error' | 'default' {
       return 'error';
     default:
       return 'default';
+  }
+}
+
+// installation/revision 状态在 Chip 上的中文标签；后端值原样保留为 fallback。
+function statusLabel(s?: string): string {
+  switch (s) {
+    case 'success': return '成功';
+    case 'partial': return '部分成功';
+    case 'rendered': return '仅渲染';
+    case 'failed': return '失败';
+    case 'preflight_failed': return '预检失败';
+    case 'uninstalled': return '已卸载';
+    case 'uninstall_failed': return '卸载失败';
+    default: return s || '-';
+  }
+}
+
+// revision.action 中文标签：reinstall 是 stage-5 INS-1 引入的"卸载后再装回来"语义。
+function actionLabel(a?: string): string {
+  switch (a) {
+    case 'install': return '安装';
+    case 'upgrade': return '升级';
+    case 'reinstall': return '重新安装';
+    case 'uninstall': return '卸载';
+    default: return a || '-';
   }
 }
 
@@ -215,7 +243,7 @@ function AppliedRefsTable({ refs, grafanaHosts }: { refs: AppliedRef[]; grafanaH
                 <Typography variant="body2">{locLabel}</Typography>
               </TableCell>
               <TableCell>
-                <Chip size="small" color={statusColor(r.status)} label={r.status || '-'} />
+                <Chip size="small" color={statusColor(r.status)} label={statusLabel(r.status)} />
                 {r.error && (
                   <Typography variant="caption" color="error" sx={{ display: 'block', maxWidth: 260, wordBreak: 'break-all' }}>
                     {r.error}
@@ -223,7 +251,7 @@ function AppliedRefsTable({ refs, grafanaHosts }: { refs: AppliedRef[]; grafanaH
                 )}
               </TableCell>
               <TableCell>
-                <Typography variant="caption" color="text.secondary">{r.action || '-'}</Typography>
+                <Typography variant="caption" color="text.secondary">{actionLabel(r.action)}</Typography>
               </TableCell>
               <TableCell>
                 {openLink && (
@@ -259,6 +287,8 @@ function InstallationCard({
         const { data: res } = await integrationAPI.listInstallationRevisions(installation.id);
         setRevisions(res.data || []);
       } catch {
+        // 该面板是次级信息，列表请求失败不弹 toast，让上层保持安静；
+        // 设空数组让 UI 走"未找到变更历史"分支。
         setRevisions([]);
       } finally {
         setLoading(false);
@@ -280,7 +310,7 @@ function InstallationCard({
           <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
             模版 {installation.template_id.slice(0, 8)} · {installation.template_version}
           </Typography>
-          <Chip size="small" color={statusColor(installation.status)} label={installation.status} />
+          <Chip size="small" color={statusColor(installation.status)} label={statusLabel(installation.status)} />
           <Typography variant="caption" color="text.secondary">
             部件：{installation.installed_parts || '-'} · 安装人：{installation.installed_by || '-'}
           </Typography>
@@ -295,10 +325,12 @@ function InstallationCard({
         ) : revisions && revisions.length > 0 ? (
           <>
             <Typography variant="caption" color="text.secondary">
-              最新一次 {revisions[0].action} · {new Date(revisions[0].created_at).toLocaleString()} · {revisions[0].status}
+              最新一次 {actionLabel(revisions[0].action)} · {new Date(revisions[0].created_at).toLocaleString()} · {statusLabel(revisions[0].status)}
             </Typography>
             {revisions[0].error_message && (
-              <Alert severity="error" sx={{ mt: 1 }}>
+              // uninstall_failed / failed / partial 的 ErrorMessage 透传后端真实错误（INS-3 修复后保留），
+              // 给运维直接定位失败原因。
+              <Alert severity={revisions[0].status === 'uninstall_failed' || revisions[0].status === 'failed' ? 'error' : 'warning'} sx={{ mt: 1 }}>
                 {revisions[0].error_message}
               </Alert>
             )}
@@ -373,80 +405,91 @@ export default function InstanceDetailPage() {
   const [scaleEvents, setScaleEvents] = useState<ScaleEvent[]>([]);
   const [scaleEventsLoading, setScaleEventsLoading] = useState(false);
 
-  const fetchInstance = useCallback(async () => {
+  // 详情页一次性拉 4 个独立资源，统一通过同一个 AbortController 兜起：
+  //   - 切换实例 / 卸载组件时立即取消在飞请求；
+  //   - 单个失败用 extractApiError 给可读文案，不再吞错只显示通用提示。
+  useEffect(() => {
     if (!instanceId) return;
+    const ctl = makeAbortController();
+    let alive = true;
     setLoading(true);
-    try {
-      const { data: res } = await instanceAPI.get(instanceId);
-      setInstance(res.data || null);
-    } catch {
-      enqueueSnackbar('获取实例详情失败', { variant: 'error' });
-      navigate('/instances');
-    } finally {
-      setLoading(false);
-    }
+    setMetricsLoading(true);
+    setScaleEventsLoading(true);
+
+    (async () => {
+      try {
+        const { data: res } = await instanceAPI.get(instanceId, { signal: ctl.signal });
+        if (alive) setInstance(res.data || null);
+      } catch (err) {
+        if (isAbortError(err) || !alive) return;
+        enqueueSnackbar(extractApiError(err, '获取实例详情失败'), { variant: 'error' });
+        navigate('/instances');
+      } finally {
+        if (alive) setLoading(false);
+      }
+    })();
+
+    (async () => {
+      try {
+        const { data: res } = await instanceAPI.metrics(instanceId, { signal: ctl.signal });
+        if (alive) setMetrics(res.data || null);
+      } catch (err) {
+        if (isAbortError(err) || !alive) return;
+        setMetrics(null);
+        enqueueSnackbar(extractApiError(err, '获取实例监控数据失败'), { variant: 'warning' });
+      } finally {
+        if (alive) setMetricsLoading(false);
+      }
+    })();
+
+    (async () => {
+      try {
+        const { data: res } = await instanceAPI.scaleEvents(instanceId, { page: 1, page_size: 50 }, { signal: ctl.signal });
+        if (alive) setScaleEvents(res.data?.items || []);
+      } catch (err) {
+        if (isAbortError(err) || !alive) return;
+        // 伸缩历史为辅助信息，失败时静默置空（StatusChip 会显示"暂无伸缩事件"）。
+        setScaleEvents([]);
+      } finally {
+        if (alive) setScaleEventsLoading(false);
+      }
+    })();
+
+    (async () => {
+      try {
+        const { data: res } = await integrationAPI.listInstallations(
+          { page: 1, page_size: 50, instance_id: instanceId },
+          { signal: ctl.signal },
+        );
+        if (alive) setInstallations(res.data?.items || []);
+      } catch (err) {
+        if (isAbortError(err) || !alive) return;
+        setInstallations([]);
+      }
+    })();
+
+    return () => {
+      alive = false;
+      ctl.abort();
+    };
   }, [instanceId, enqueueSnackbar, navigate]);
 
-  const fetchMetrics = useCallback(async () => {
-    if (!instanceId) return;
-    setMetricsLoading(true);
-    try {
-      const { data: res } = await instanceAPI.metrics(instanceId);
-      setMetrics(res.data || null);
-    } catch {
-      setMetrics(null);
-      enqueueSnackbar('获取实例监控数据失败', { variant: 'warning' });
-    } finally {
-      setMetricsLoading(false);
-    }
-  }, [instanceId, enqueueSnackbar]);
-
-  const fetchScaleEvents = useCallback(async () => {
-    if (!instanceId) return;
-    setScaleEventsLoading(true);
-    try {
-      const { data: res } = await instanceAPI.scaleEvents(instanceId, { page: 1, page_size: 50 });
-      setScaleEvents(res.data?.items || []);
-    } catch {
-      setScaleEvents([]);
-    } finally {
-      setScaleEventsLoading(false);
-    }
-  }, [instanceId]);
-
-  const fetchInstallations = useCallback(async () => {
-    if (!instanceId) return;
-    try {
-      const { data: res } = await integrationAPI.listInstallations({
-        page: 1,
-        page_size: 50,
-        instance_id: instanceId,
-      });
-      setInstallations(res.data?.items || []);
-    } catch {
-      setInstallations([]);
-    }
-  }, [instanceId]);
-
   useEffect(() => {
-    fetchInstance();
-    fetchMetrics();
-    fetchInstallations();
-    fetchScaleEvents();
-  }, [fetchInstance, fetchMetrics, fetchInstallations, fetchScaleEvents]);
-
-  useEffect(() => {
+    const ctl = makeAbortController();
     let alive = true;
     (async () => {
       try {
-        const { data: res } = await grafanaHostAPI.list({ page: 1, page_size: 100 });
+        const { data: res } = await grafanaHostAPI.list({ page: 1, page_size: 100 }, { signal: ctl.signal });
         if (alive) setGrafanaHosts(res.data?.items || []);
-      } catch {
-        if (alive) setGrafanaHosts([]);
+      } catch (err) {
+        if (isAbortError(err) || !alive) return;
+        // grafana 主机列表用于 dashboard 链接渲染，缺失不阻塞主流程，静默降级。
+        setGrafanaHosts([]);
       }
     })();
     return () => {
       alive = false;
+      ctl.abort();
     };
   }, []);
 

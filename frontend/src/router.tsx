@@ -4,6 +4,7 @@ import AppLayout from './components/layout/AppLayout';
 import LoadingScreen from './components/common/LoadingScreen';
 import { appRouteMeta, type AppRouteKey } from './config/appRoutes';
 import { UNAUTHORIZED_EVENT } from './api';
+import { useAuthStore } from './stores/useAuthStore';
 
 const LoginPage = lazy(() => import('./pages/Login'));
 const DashboardPage = lazy(() => import('./pages/Dashboard'));
@@ -30,7 +31,9 @@ function Lazy({ children }: { children: React.ReactNode }) {
 
 function AuthGuard({ children }: { children: React.ReactNode }) {
   const navigate = useNavigate();
-  const token = localStorage.getItem('token');
+  // 订阅 store 的 token，401 拦截器把 token 清掉后会自动重渲染并跳到 /login，
+  // 不再依赖外层手动监听 UNAUTHORIZED_EVENT 才能感知。
+  const token = useAuthStore((s) => s.token);
 
   useEffect(() => {
     const onUnauthorized = () => navigate('/login', { replace: true });
@@ -43,7 +46,7 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
 }
 
 function GuestGuard({ children }: { children: React.ReactNode }) {
-  const token = localStorage.getItem('token');
+  const token = useAuthStore((s) => s.token);
   if (token) return <Navigate to="/dashboard" replace />;
   return <>{children}</>;
 }

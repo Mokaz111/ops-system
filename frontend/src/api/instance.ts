@@ -1,4 +1,5 @@
 import api from './index';
+import type { AxiosRequestConfig } from 'axios';
 import type {
   ApiResponse,
   CreateInstanceRequest,
@@ -10,11 +11,14 @@ import type {
 } from '../types/api';
 
 export const instanceAPI = {
-  list: (params?: PaginationParams & { tenant_id?: string; instance_type?: string; status?: string }) =>
-    api.get<ApiResponse<PaginatedResponse<Instance>>>('/instances', { params }),
+  list: (
+    params?: PaginationParams & { tenant_id?: string; instance_type?: string; status?: string },
+    config?: AxiosRequestConfig,
+  ) =>
+    api.get<ApiResponse<PaginatedResponse<Instance>>>('/instances', { ...config, params }),
 
-  get: (id: string) =>
-    api.get<ApiResponse<Instance>>(`/instances/${id}`),
+  get: (id: string, config?: AxiosRequestConfig) =>
+    api.get<ApiResponse<Instance>>(`/instances/${id}`, config),
 
   create: (data: CreateInstanceRequest) =>
     api.post<ApiResponse<Instance>>('/instances', data),
@@ -28,11 +32,15 @@ export const instanceAPI = {
   scale: (id: string, data: ScaleInstanceRequest) =>
     api.post<ApiResponse<Instance>>(`/instances/${id}/scale`, data),
 
-  metrics: (id: string) =>
-    api.get<ApiResponse<InstanceMetrics>>(`/instances/${id}/metrics`),
+  metrics: (id: string, config?: AxiosRequestConfig) =>
+    api.get<ApiResponse<InstanceMetrics>>(`/instances/${id}/metrics`, config),
 
-  scaleEvents: (id: string, params?: PaginationParams & { scale_type?: string; status?: string }) =>
-    api.get<ApiResponse<PaginatedResponse<ScaleEvent>>>(`/instances/${id}/scale-events`, { params }),
+  scaleEvents: (
+    id: string,
+    params?: PaginationParams & { scale_type?: string; status?: string },
+    config?: AxiosRequestConfig,
+  ) =>
+    api.get<ApiResponse<PaginatedResponse<ScaleEvent>>>(`/instances/${id}/scale-events`, { ...config, params }),
 };
 
 export interface ScaleEvent {

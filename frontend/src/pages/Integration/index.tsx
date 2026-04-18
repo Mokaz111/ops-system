@@ -53,6 +53,8 @@ import {
 import { instanceAPI } from '../../api/instance';
 import { clusterAPI, type Cluster } from '../../api/cluster';
 import { grafanaHostAPI, type GrafanaHost } from '../../api/grafanaHost';
+import { extractApiError } from '../../api';
+import { isAbortError, makeAbortController } from '../../api/client';
 import type { Instance } from '../../types/api';
 
 interface VariableDef {
@@ -115,15 +117,18 @@ export default function IntegrationPage() {
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
+    // 列表过滤参数变化（category/keyword）会触发频繁重发，
+    // 用 AbortController 把上一轮在飞的请求取消，避免后到的旧响应覆盖新结果。
+    const ctl = makeAbortController();
     let alive = true;
     (async () => {
       try {
         const [cats, list, inst, cls, ghs] = await Promise.all([
-          integrationAPI.listCategories(),
-          integrationAPI.listTemplates({ page: 1, page_size: 50, category, keyword }),
-          instanceAPI.list({ page: 1, page_size: 100 }),
-          clusterAPI.list({ page: 1, page_size: 100 }).catch(() => null),
-          grafanaHostAPI.list({ page: 1, page_size: 100 }).catch(() => null),
+          integrationAPI.listCategories({ signal: ctl.signal }),
+          integrationAPI.listTemplates({ page: 1, page_size: 50, category, keyword }, { signal: ctl.signal }),
+          instanceAPI.list({ page: 1, page_size: 100 }, { signal: ctl.signal }),
+          clusterAPI.list({ page: 1, page_size: 100 }, { signal: ctl.signal }).catch(() => null),
+          grafanaHostAPI.list({ page: 1, page_size: 100 }, { signal: ctl.signal }).catch(() => null),
         ]);
         if (!alive) return;
         setCategories(cats.data.data || []);
@@ -131,14 +136,18 @@ export default function IntegrationPage() {
         setInstances(inst.data.data?.items || []);
         setClusters(cls?.data.data?.items || []);
         setGrafanaHosts(ghs?.data.data?.items || []);
+      } catch (err) {
+        if (isAbortError(err)) return;
+        if (alive) enqueueSnackbar(extractApiError(err, '加载接入中心数据失败'), { variant: 'error' });
       } finally {
         if (alive) setLoading(false);
       }
     })();
     return () => {
       alive = false;
+      ctl.abort();
     };
-  }, [category, keyword, reloadTick]);
+  }, [category, keyword, reloadTick, enqueueSnackbar]);
 
   const reloadTemplates = () => setReloadTick((v) => v + 1);
 
@@ -149,8 +158,10 @@ export default function IntegrationPage() {
       enqueueSnackbar('模板删除成功', { variant: 'success' });
       setDeleteDialog({ open: false });
       reloadTemplates();
-    } catch {
-      enqueueSnackbar('模板删除失败', { variant: 'error' });
+    } catch (err) {
+      // 后端 stage-5 后会返回 409 ErrIntegrationTemplateInUse / ErrIntegrationVersionInUse
+      // 等带语义的中文消息，extractApiError 会原样透出来。
+      enqueueSnackbar(extractApiError(err, '模板删除失败'), { variant: 'error' });
     }
   };
 
@@ -177,8 +188,8 @@ export default function IntegrationPage() {
       } else {
         setValues({});
       }
-    } catch {
-      enqueueSnackbar('加载版本失败', { variant: 'error' });
+    } catch (err) {
+      enqueueSnackbar(extractApiError(err, '加载版本失败'), { variant: 'error' });
     }
   }, [enqueueSnackbar]);
 
@@ -237,8 +248,8 @@ export default function IntegrationPage() {
       if ((res.data?.preflight || []).length > 0) {
         enqueueSnackbar('预检发现问题，请先查看"渲染预览"顶部提示', { variant: 'warning' });
       }
-    } catch (e) {
-      enqueueSnackbar('渲染失败，请检查变量填写', { variant: 'error' });
+    } catch (err) {
+      enqueueSnackbar(extractApiError(err, '渲染失败，请检查变量填写'), { variant: 'error' });
     } finally {
       setBusy(false);
     }
@@ -285,8 +296,8 @@ export default function IntegrationPage() {
           : `已登记安装记录（${status}）`;
       enqueueSnackbar(msg, { variant });
       setTab('applied');
-    } catch (e) {
-      enqueueSnackbar('安装失败', { variant: 'error' });
+    } catch (err) {
+      enqueueSnackbar(extractApiError(err, '安装失败'), { variant: 'error' });
     } finally {
       setBusy(false);
     }
@@ -757,7 +768,12 @@ export default function IntegrationPage() {
       <ConfirmDialog
         open={deleteDialog.open}
         title="删除接入模板"
-        message={`确定要删除模板「${deleteDialog.template?.display_name || deleteDialog.template?.name}」吗？所有历史版本与关联安装记录将被删除/回收。`}
+        message={
+          // 后端 stage-5 行为：模板删除会一并软删所有版本；若仍有"活跃安装"会被 409 拒绝。
+          // 这里描述要与实际语义一致，避免误导用户以为"会顺带卸载在跑的安装"。
+          `确定要删除模板「${deleteDialog.template?.display_name || deleteDialog.template?.name}」吗？` +
+          `\n所有历史版本将一并下架（软删除）；若该模板仍存在活跃的安装记录，删除会被拒绝，请先到对应实例处卸载。`
+        }
         severity="error"
         confirmLabel="删除"
         onConfirm={handleDeleteTemplate}

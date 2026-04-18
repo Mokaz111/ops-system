@@ -42,6 +42,7 @@ import FilterToolbar from '../../components/common/FilterToolbar';
 import DataTableCard from '../../components/common/DataTableCard';
 import { instanceAPI } from '../../api/instance';
 import { clusterAPI, type Cluster } from '../../api/cluster';
+import { extractApiError } from '../../api';
 import type { Instance, InstanceSpec } from '../../types/api';
 
 const typeLabels: Record<string, { label: string; color: 'primary' | 'secondary' | 'success' | 'warning' }> = {
@@ -127,8 +128,8 @@ export default function InstancePage() {
       });
       setInstances(res.data?.items || []);
       setTotal(res.data?.total || 0);
-    } catch {
-      enqueueSnackbar('获取实例列表失败', { variant: 'error' });
+    } catch (err) {
+      enqueueSnackbar(extractApiError(err, '获取实例列表失败'), { variant: 'error' });
     } finally {
       setLoading(false);
     }
@@ -196,8 +197,8 @@ export default function InstancePage() {
       enqueueSnackbar('实例创建成功', { variant: 'success' });
       setCreateOpen(false);
       fetchInstances();
-    } catch {
-      enqueueSnackbar('创建失败', { variant: 'error' });
+    } catch (err) {
+      enqueueSnackbar(extractApiError(err, '创建失败'), { variant: 'error' });
     } finally {
       setSaving(false);
     }
@@ -218,8 +219,8 @@ export default function InstancePage() {
       enqueueSnackbar('伸缩请求已提交', { variant: 'success' });
       setScaleDialog({ open: false });
       fetchInstances();
-    } catch {
-      enqueueSnackbar('伸缩失败', { variant: 'error' });
+    } catch (err) {
+      enqueueSnackbar(extractApiError(err, '伸缩失败'), { variant: 'error' });
     } finally {
       setSaving(false);
     }
@@ -232,8 +233,8 @@ export default function InstancePage() {
       enqueueSnackbar('实例删除成功', { variant: 'success' });
       setDeleteDialog({ open: false });
       fetchInstances();
-    } catch {
-      enqueueSnackbar('删除失败', { variant: 'error' });
+    } catch (err) {
+      enqueueSnackbar(extractApiError(err, '删除失败'), { variant: 'error' });
     }
   };
 

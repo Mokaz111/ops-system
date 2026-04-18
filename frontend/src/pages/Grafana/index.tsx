@@ -41,6 +41,7 @@ import EmptyState from '../../components/common/EmptyState';
 import LoadingScreen from '../../components/common/LoadingScreen';
 import ConfirmDialog from '../../components/common/ConfirmDialog';
 import { grafanaAPI } from '../../api/grafana';
+import { extractApiError } from '../../api';
 import type { GrafanaDatasource, GrafanaOrg, GrafanaOrgUser } from '../../types/api';
 
 export default function GrafanaPage() {
@@ -69,8 +70,8 @@ export default function GrafanaPage() {
       if (res.data?.length > 0 && !selectedOrg) {
         setSelectedOrg(res.data[0]);
       }
-    } catch {
-      enqueueSnackbar('获取 Grafana 组织列表失败', { variant: 'error' });
+    } catch (err) {
+      enqueueSnackbar(extractApiError(err, '获取 Grafana 组织列表失败'), { variant: 'error' });
     } finally {
       setLoading(false);
     }
@@ -102,8 +103,8 @@ export default function GrafanaPage() {
       setCreateOrgOpen(false);
       setOrgName('');
       fetchOrgs();
-    } catch {
-      enqueueSnackbar('创建失败', { variant: 'error' });
+    } catch (err) {
+      enqueueSnackbar(extractApiError(err, '创建失败'), { variant: 'error' });
     } finally {
       setSaving(false);
     }
@@ -117,8 +118,8 @@ export default function GrafanaPage() {
       setDeleteOrgDialog({ open: false });
       if (selectedOrg?.id === deleteOrgDialog.org.id) setSelectedOrg(null);
       fetchOrgs();
-    } catch {
-      enqueueSnackbar('删除失败', { variant: 'error' });
+    } catch (err) {
+      enqueueSnackbar(extractApiError(err, '删除失败'), { variant: 'error' });
     }
   };
 
@@ -131,8 +132,8 @@ export default function GrafanaPage() {
       setAddUserOpen(false);
       setUserForm({ loginOrEmail: '', role: 'Viewer' });
       fetchOrgDetails();
-    } catch {
-      enqueueSnackbar('添加失败', { variant: 'error' });
+    } catch (err) {
+      enqueueSnackbar(extractApiError(err, '添加失败'), { variant: 'error' });
     } finally {
       setSaving(false);
     }
@@ -144,8 +145,8 @@ export default function GrafanaPage() {
       await grafanaAPI.removeOrgUser(selectedOrg.id, userId);
       enqueueSnackbar('用户已移除', { variant: 'success' });
       fetchOrgDetails();
-    } catch {
-      enqueueSnackbar('移除失败', { variant: 'error' });
+    } catch (err) {
+      enqueueSnackbar(extractApiError(err, '移除失败'), { variant: 'error' });
     }
   };
 
@@ -158,8 +159,8 @@ export default function GrafanaPage() {
       setAddDsOpen(false);
       setDsForm({ name: '', type: 'prometheus', url: '' });
       fetchOrgDetails();
-    } catch {
-      enqueueSnackbar('创建失败', { variant: 'error' });
+    } catch (err) {
+      enqueueSnackbar(extractApiError(err, '创建失败'), { variant: 'error' });
     } finally {
       setSaving(false);
     }
@@ -171,8 +172,8 @@ export default function GrafanaPage() {
       await grafanaAPI.deleteDatasource(selectedOrg.id, dsId);
       enqueueSnackbar('数据源已删除', { variant: 'success' });
       fetchOrgDetails();
-    } catch {
-      enqueueSnackbar('删除失败', { variant: 'error' });
+    } catch (err) {
+      enqueueSnackbar(extractApiError(err, '删除失败'), { variant: 'error' });
     }
   };
 

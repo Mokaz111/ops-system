@@ -26,6 +26,7 @@ import GridViewOutlinedIcon from '@mui/icons-material/GridViewOutlined';
 import HubOutlinedIcon from '@mui/icons-material/HubOutlined';
 import DnsOutlinedIcon from '@mui/icons-material/DnsOutlined';
 import { appRouteMeta, type AppRouteKey } from '../../config/appRoutes';
+import { useAuthStore } from '../../stores/useAuthStore';
 
 const DRAWER_WIDTH = 256;
 
@@ -49,7 +50,7 @@ const iconMap: Record<AppRouteKey, React.ReactNode> = {
   settings: <SettingsOutlinedIcon />,
 };
 
-const sidebarRoutes = appRouteMeta.filter((route) => route.showInSidebar && route.label);
+const allSidebarRoutes = appRouteMeta.filter((route) => route.showInSidebar && route.label);
 
 interface SidebarProps {
   open: boolean;
@@ -59,6 +60,9 @@ interface SidebarProps {
 export default function Sidebar({ open, onClose }: SidebarProps) {
   const location = useLocation();
   const navigate = useNavigate();
+  const role = useAuthStore((s) => s.user?.role);
+  // requireAdmin 的入口仅对 admin 显示；其它路由全部保留（后端 GET 对所有登录用户开放）。
+  const sidebarRoutes = allSidebarRoutes.filter((r) => !r.requireAdmin || role === 'admin');
 
   const drawerContent = (
     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>

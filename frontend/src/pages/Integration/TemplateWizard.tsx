@@ -24,6 +24,7 @@ import {
   integrationAPI,
   type IntegrationCategory,
 } from '../../api/integration';
+import { extractApiError } from '../../api';
 
 interface Props {
   open: boolean;
@@ -163,8 +164,10 @@ export default function TemplateWizard({ open, categories, onClose, onSuccess }:
       reset();
       onClose();
       onSuccess();
-    } catch (e) {
-      enqueueSnackbar(`创建失败：${(e as Error).message}`, { variant: 'error' });
+    } catch (err) {
+      // 这里的 409 / 422 通常是"模板名重复"或"版本号冲突"——后端 stage-5 已加 ErrIntegrationTemplateNameExists，
+      // 用 extractApiError 把后端文案直透出来比通用"创建失败"友好得多。
+      enqueueSnackbar(extractApiError(err, '创建失败'), { variant: 'error' });
     } finally {
       setSubmitting(false);
     }

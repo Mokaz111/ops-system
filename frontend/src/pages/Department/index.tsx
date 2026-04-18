@@ -32,6 +32,7 @@ import ConfirmDialog from '../../components/common/ConfirmDialog';
 import EmptyState from '../../components/common/EmptyState';
 import LoadingScreen from '../../components/common/LoadingScreen';
 import { departmentAPI } from '../../api/department';
+import { extractApiError } from '../../api';
 import type { Department } from '../../types/api';
 
 export default function DepartmentPage() {
@@ -54,8 +55,8 @@ export default function DepartmentPage() {
     try {
       const { data: res } = await departmentAPI.list({ search });
       setDepartments(res.data?.items || []);
-    } catch {
-      enqueueSnackbar('获取部门列表失败', { variant: 'error' });
+    } catch (err) {
+      enqueueSnackbar(extractApiError(err, '获取部门列表失败'), { variant: 'error' });
     } finally {
       setLoading(false);
     }
@@ -76,8 +77,8 @@ export default function DepartmentPage() {
       setDialogOpen(false);
       setEditingId(null);
       fetchDepartments();
-    } catch {
-      enqueueSnackbar(editingId ? '更新失败' : '创建失败', { variant: 'error' });
+    } catch (err) {
+      enqueueSnackbar(extractApiError(err, editingId ? '更新失败' : '创建失败'), { variant: 'error' });
     } finally {
       setSaving(false);
     }
@@ -90,8 +91,8 @@ export default function DepartmentPage() {
       enqueueSnackbar('部门删除成功', { variant: 'success' });
       setDeleteDialog({ open: false });
       fetchDepartments();
-    } catch {
-      enqueueSnackbar('删除失败', { variant: 'error' });
+    } catch (err) {
+      enqueueSnackbar(extractApiError(err, '删除失败'), { variant: 'error' });
     }
   };
 

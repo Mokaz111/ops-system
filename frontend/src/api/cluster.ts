@@ -1,4 +1,5 @@
 import api from './index';
+import type { AxiosRequestConfig } from 'axios';
 import type { ApiResponse, PaginatedResponse, PaginationParams } from '../types/api';
 
 export interface Cluster {
@@ -32,11 +33,11 @@ export interface UpdateClusterRequest {
 }
 
 export const clusterAPI = {
-  list: (params?: PaginationParams & { status?: string }) =>
-    api.get<ApiResponse<PaginatedResponse<Cluster>>>('/clusters', { params }),
+  list: (params?: PaginationParams & { status?: string }, config?: AxiosRequestConfig) =>
+    api.get<ApiResponse<PaginatedResponse<Cluster>>>('/clusters', { ...config, params }),
 
-  get: (id: string) =>
-    api.get<ApiResponse<Cluster>>(`/clusters/${id}`),
+  get: (id: string, config?: AxiosRequestConfig) =>
+    api.get<ApiResponse<Cluster>>(`/clusters/${id}`, config),
 
   create: (data: CreateClusterRequest) =>
     api.post<ApiResponse<Cluster>>('/clusters', data),

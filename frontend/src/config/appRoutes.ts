@@ -25,6 +25,9 @@ export interface AppRouteMeta {
   label?: string;
   showInSidebar?: boolean;
   sidebarSection?: SidebarSection;
+  // requireAdmin=true 的路由仍可访问（后端 GET 对所有登录用户开放），
+  // 但侧边栏仅在 admin 用户下显示，避免给 viewer 暴露平台维护入口。
+  requireAdmin?: boolean;
 }
 
 export const appRouteMeta: AppRouteMeta[] = [
@@ -48,8 +51,8 @@ export const appRouteMeta: AppRouteMeta[] = [
   // 告警引擎保留路由（供 InstanceDetail 内链跳转）但不在侧边栏显示。
   { key: 'alerts', path: 'alerts' },
 
-  { key: 'users', path: 'users', label: '用户管理', showInSidebar: true, sidebarSection: 'system' },
+  { key: 'users', path: 'users', label: '用户管理', showInSidebar: true, sidebarSection: 'system', requireAdmin: true },
   { key: 'clusters', path: 'clusters', label: '集群管理', showInSidebar: true, sidebarSection: 'system' },
-  { key: 'platform-scaling', path: 'platform-scaling', label: '平台扩容', showInSidebar: true, sidebarSection: 'system' },
+  { key: 'platform-scaling', path: 'platform-scaling', label: '平台扩容', showInSidebar: true, sidebarSection: 'system', requireAdmin: true },
   { key: 'settings', path: 'settings', label: '系统设置', showInSidebar: true, sidebarSection: 'system' },
 ];

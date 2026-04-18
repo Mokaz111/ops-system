@@ -1,4 +1,5 @@
 import api from './index';
+import type { AxiosRequestConfig } from 'axios';
 import type { ApiResponse, PaginatedResponse, PaginationParams } from '../types/api';
 
 export interface IntegrationTemplate {
@@ -154,14 +155,19 @@ export interface CreateVersionRequest {
 }
 
 export const integrationAPI = {
-  listCategories: () =>
-    api.get<ApiResponse<IntegrationCategory[]>>('/integrations/categories'),
+  // 第二个 config 参数主要用于传 AbortSignal，让调用方能在 useEffect cleanup 里把请求取消，
+  // 避免组件 unmount / 过滤条件高频切换时旧请求覆盖新结果。
+  listCategories: (config?: AxiosRequestConfig) =>
+    api.get<ApiResponse<IntegrationCategory[]>>('/integrations/categories', config),
 
-  listTemplates: (params?: PaginationParams & { category?: string; component?: string; keyword?: string }) =>
-    api.get<ApiResponse<PaginatedResponse<IntegrationTemplate>>>('/integrations/templates', { params }),
+  listTemplates: (
+    params?: PaginationParams & { category?: string; component?: string; keyword?: string },
+    config?: AxiosRequestConfig,
+  ) =>
+    api.get<ApiResponse<PaginatedResponse<IntegrationTemplate>>>('/integrations/templates', { ...config, params }),
 
-  getTemplate: (id: string) =>
-    api.get<ApiResponse<IntegrationTemplate>>(`/integrations/templates/${id}`),
+  getTemplate: (id: string, config?: AxiosRequestConfig) =>
+    api.get<ApiResponse<IntegrationTemplate>>(`/integrations/templates/${id}`, config),
 
   createTemplate: (data: CreateTemplateRequest) =>
     api.post<ApiResponse<IntegrationTemplate>>('/integrations/templates', data),
@@ -172,8 +178,8 @@ export const integrationAPI = {
   deleteTemplate: (id: string) =>
     api.delete<ApiResponse<null>>(`/integrations/templates/${id}`),
 
-  listVersions: (id: string) =>
-    api.get<ApiResponse<IntegrationTemplateVersion[]>>(`/integrations/templates/${id}/versions`),
+  listVersions: (id: string, config?: AxiosRequestConfig) =>
+    api.get<ApiResponse<IntegrationTemplateVersion[]>>(`/integrations/templates/${id}/versions`, config),
 
   createVersion: (id: string, data: CreateVersionRequest) =>
     api.post<ApiResponse<IntegrationTemplateVersion>>(`/integrations/templates/${id}/versions`, data),
@@ -187,14 +193,17 @@ export const integrationAPI = {
   install: (data: InstallRequest) =>
     api.post<ApiResponse<InstallResponse>>('/integrations/install', data),
 
-  listInstallations: (params?: PaginationParams & { tenant_id?: string; instance_id?: string; template_id?: string; status?: string }) =>
-    api.get<ApiResponse<PaginatedResponse<IntegrationInstallation>>>('/integrations/installations', { params }),
+  listInstallations: (
+    params?: PaginationParams & { tenant_id?: string; instance_id?: string; template_id?: string; status?: string },
+    config?: AxiosRequestConfig,
+  ) =>
+    api.get<ApiResponse<PaginatedResponse<IntegrationInstallation>>>('/integrations/installations', { ...config, params }),
 
-  getInstallation: (id: string) =>
-    api.get<ApiResponse<IntegrationInstallation>>(`/integrations/installations/${id}`),
+  getInstallation: (id: string, config?: AxiosRequestConfig) =>
+    api.get<ApiResponse<IntegrationInstallation>>(`/integrations/installations/${id}`, config),
 
-  listInstallationRevisions: (id: string) =>
-    api.get<ApiResponse<IntegrationInstallationRevision[]>>(`/integrations/installations/${id}/revisions`),
+  listInstallationRevisions: (id: string, config?: AxiosRequestConfig) =>
+    api.get<ApiResponse<IntegrationInstallationRevision[]>>(`/integrations/installations/${id}/revisions`, config),
 
   uninstall: (id: string) =>
     api.delete<ApiResponse<null>>(`/integrations/installations/${id}`),
@@ -215,12 +224,15 @@ export function parseAppliedResources(raw: string | null | undefined): AppliedRe
 }
 
 /**
- * 在历次 revision（后端按 created_at DESC 返回）中取最新一次 install/upgrade 的 AppliedRef。
- * action=uninstall 的 revision 不作为"当前已应用资源"的判断依据。
+ * 在历次 revision（后端按 created_at DESC 返回）中取最新一次 install / upgrade / reinstall 的 AppliedRef。
+ *
+ * action=uninstall 的 revision 不作为"当前已应用资源"判断依据；
+ * reinstall 是 stage-5 INS-1 引入的新 action（"卸载后再装回来"），
+ * 资源语义与 install 等价，必须纳入，否则重装后这里会返回空数组。
  */
 export function latestAppliedRefs(revisions: IntegrationInstallationRevision[]): AppliedRef[] {
   for (const r of revisions) {
-    if (r.action === 'install' || r.action === 'upgrade') {
+    if (r.action === 'install' || r.action === 'upgrade' || r.action === 'reinstall') {
       return parseAppliedResources(r.applied_resources);
     }
   }

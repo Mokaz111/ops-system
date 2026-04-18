@@ -36,6 +36,7 @@ import EmptyState from '../../components/common/EmptyState';
 import LoadingScreen from '../../components/common/LoadingScreen';
 import { tenantAPI } from '../../api/tenant';
 import { departmentAPI } from '../../api/department';
+import { extractApiError } from '../../api';
 import type { Department, Tenant } from '../../types/api';
 
 const templateLabels: Record<string, string> = {
@@ -65,8 +66,8 @@ export default function TenantPage() {
       const { data: res } = await tenantAPI.list({ page: page + 1, page_size: pageSize, search });
       setTenants(res.data?.items || []);
       setTotal(res.data?.total || 0);
-    } catch {
-      enqueueSnackbar('获取租户列表失败', { variant: 'error' });
+    } catch (err) {
+      enqueueSnackbar(extractApiError(err, '获取租户列表失败'), { variant: 'error' });
     } finally {
       setLoading(false);
     }
@@ -81,8 +82,8 @@ export default function TenantPage() {
         const flat = (rows: Department[]): Department[] =>
           rows.flatMap((dept) => [dept, ...(dept.children ? flat(dept.children) : [])]);
         setDepartments(flat(res.data || []));
-      } catch {
-        enqueueSnackbar('获取部门列表失败', { variant: 'warning' });
+      } catch (err) {
+        enqueueSnackbar(extractApiError(err, '获取部门列表失败'), { variant: 'warning' });
       }
     };
     fetchDepartments();
@@ -102,8 +103,8 @@ export default function TenantPage() {
       setEditingId(null);
       setForm({ tenant_name: '', dept_id: '', template_type: 'shared' });
       fetchTenants();
-    } catch {
-      enqueueSnackbar(editingId ? '更新失败' : '创建失败', { variant: 'error' });
+    } catch (err) {
+      enqueueSnackbar(extractApiError(err, editingId ? '更新失败' : '创建失败'), { variant: 'error' });
     } finally {
       setSaving(false);
     }
@@ -116,8 +117,8 @@ export default function TenantPage() {
       enqueueSnackbar('租户删除成功', { variant: 'success' });
       setDeleteDialog({ open: false });
       fetchTenants();
-    } catch {
-      enqueueSnackbar('删除失败', { variant: 'error' });
+    } catch (err) {
+      enqueueSnackbar(extractApiError(err, '删除失败'), { variant: 'error' });
     }
   };
 

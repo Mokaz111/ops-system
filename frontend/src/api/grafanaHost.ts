@@ -1,4 +1,5 @@
 import api from './index';
+import type { AxiosRequestConfig } from 'axios';
 import type { ApiResponse, PaginatedResponse, PaginationParams } from '../types/api';
 
 export interface GrafanaHost {
@@ -14,11 +15,11 @@ export interface GrafanaHost {
 }
 
 export const grafanaHostAPI = {
-  list: (params?: PaginationParams & { scope?: string; tenant_id?: string }) =>
-    api.get<ApiResponse<PaginatedResponse<GrafanaHost>>>('/grafana/hosts', { params }),
+  list: (params?: PaginationParams & { scope?: string; tenant_id?: string }, config?: AxiosRequestConfig) =>
+    api.get<ApiResponse<PaginatedResponse<GrafanaHost>>>('/grafana/hosts', { ...config, params }),
 
-  get: (id: string) =>
-    api.get<ApiResponse<GrafanaHost>>(`/grafana/hosts/${id}`),
+  get: (id: string, config?: AxiosRequestConfig) =>
+    api.get<ApiResponse<GrafanaHost>>(`/grafana/hosts/${id}`, config),
 
   create: (data: {
     name: string;

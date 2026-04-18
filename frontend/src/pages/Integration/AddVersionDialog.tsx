@@ -16,6 +16,7 @@ import {
   type IntegrationTemplate,
   type IntegrationTemplateVersion,
 } from '../../api/integration';
+import { extractApiError } from '../../api';
 
 interface Props {
   open: boolean;
@@ -108,8 +109,8 @@ export default function AddVersionDialog({ open, template, onClose, onSuccess }:
       enqueueSnackbar('新版本已登记', { variant: 'success' });
       onClose();
       onSuccess();
-    } catch (e) {
-      enqueueSnackbar(`提交失败：${(e as Error).message}`, { variant: 'error' });
+    } catch (err) {
+      enqueueSnackbar(extractApiError(err, '提交失败'), { variant: 'error' });
     } finally {
       setSubmitting(false);
     }

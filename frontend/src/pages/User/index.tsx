@@ -34,6 +34,7 @@ import ConfirmDialog from '../../components/common/ConfirmDialog';
 import EmptyState from '../../components/common/EmptyState';
 import LoadingScreen from '../../components/common/LoadingScreen';
 import { userAPI } from '../../api/user';
+import { extractApiError } from '../../api';
 import type { User } from '../../types/api';
 
 const roleLabels: Record<string, { label: string; color: 'primary' | 'secondary' | 'default' }> = {
@@ -70,8 +71,8 @@ export default function UserPage() {
       const { data: res } = await userAPI.list({ page: page + 1, page_size: pageSize, search });
       setUsers(res.data?.items || []);
       setTotal(res.data?.total || 0);
-    } catch {
-      enqueueSnackbar('获取用户列表失败', { variant: 'error' });
+    } catch (err) {
+      enqueueSnackbar(extractApiError(err, '获取用户列表失败'), { variant: 'error' });
     } finally {
       setLoading(false);
     }
@@ -98,8 +99,8 @@ export default function UserPage() {
       setDialogOpen(false);
       setEditingId(null);
       fetchUsers();
-    } catch {
-      enqueueSnackbar(editingId ? '更新失败' : '创建失败', { variant: 'error' });
+    } catch (err) {
+      enqueueSnackbar(extractApiError(err, editingId ? '更新失败' : '创建失败'), { variant: 'error' });
     } finally {
       setSaving(false);
     }
@@ -112,8 +113,8 @@ export default function UserPage() {
       enqueueSnackbar('用户删除成功', { variant: 'success' });
       setDeleteDialog({ open: false });
       fetchUsers();
-    } catch {
-      enqueueSnackbar('删除失败', { variant: 'error' });
+    } catch (err) {
+      enqueueSnackbar(extractApiError(err, '删除失败'), { variant: 'error' });
     }
   };
 

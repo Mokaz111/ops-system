@@ -35,6 +35,7 @@ import EmptyState from '../../components/common/EmptyState';
 import LoadingScreen from '../../components/common/LoadingScreen';
 import { grafanaHostAPI, type GrafanaHost } from '../../api/grafanaHost';
 import { tenantAPI } from '../../api/tenant';
+import { extractApiError } from '../../api';
 import type { Tenant } from '../../types/api';
 import { useAuthStore } from '../../stores/useAuthStore';
 
@@ -79,8 +80,8 @@ export default function GrafanaHostPage() {
       ]);
       setHosts(hostsRes.data.data?.items || []);
       setTenants(tenantsRes.data.data?.items || []);
-    } catch {
-      enqueueSnackbar('获取 Grafana 主机列表失败', { variant: 'error' });
+    } catch (err) {
+      enqueueSnackbar(extractApiError(err, '获取 Grafana 主机列表失败'), { variant: 'error' });
     } finally {
       setLoading(false);
     }
@@ -146,8 +147,8 @@ export default function GrafanaHostPage() {
       }
       setDialogOpen(false);
       fetch();
-    } catch {
-      enqueueSnackbar(editingId ? '更新失败' : '创建失败', { variant: 'error' });
+    } catch (err) {
+      enqueueSnackbar(extractApiError(err, editingId ? '更新失败' : '创建失败'), { variant: 'error' });
     } finally {
       setSaving(false);
     }
@@ -160,8 +161,8 @@ export default function GrafanaHostPage() {
       enqueueSnackbar('Grafana 主机删除成功', { variant: 'success' });
       setDeleteDialog({ open: false });
       fetch();
-    } catch {
-      enqueueSnackbar('删除失败', { variant: 'error' });
+    } catch (err) {
+      enqueueSnackbar(extractApiError(err, '删除失败'), { variant: 'error' });
     }
   };
 

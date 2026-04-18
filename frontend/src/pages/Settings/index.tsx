@@ -6,6 +6,7 @@ import ConfirmDialog from '../../components/common/ConfirmDialog';
 import { useAuthStore } from '../../stores/useAuthStore';
 import { userAPI } from '../../api/user';
 import { platformAPI } from '../../api/platform';
+import { extractApiError } from '../../api';
 import type { PlatformInitSharedClusterPlan } from '../../types/api';
 
 export default function SettingsPage() {
@@ -37,8 +38,8 @@ export default function SettingsPage() {
       const { data: res } = await userAPI.update(user.id, { email, phone });
       setUser(res.data);
       enqueueSnackbar('个人信息已更新', { variant: 'success' });
-    } catch {
-      enqueueSnackbar('保存失败，请稍后重试', { variant: 'error' });
+    } catch (err) {
+      enqueueSnackbar(extractApiError(err, '保存失败，请稍后重试'), { variant: 'error' });
     } finally {
       setSaving(false);
     }
@@ -53,8 +54,8 @@ export default function SettingsPage() {
       });
       setInitPlan(res.data);
       enqueueSnackbar('共享集群初始化 dry-run 成功', { variant: 'success' });
-    } catch {
-      enqueueSnackbar('共享集群初始化 dry-run 失败', { variant: 'error' });
+    } catch (err) {
+      enqueueSnackbar(extractApiError(err, '共享集群初始化 dry-run 失败'), { variant: 'error' });
     } finally {
       setInitLoading(false);
     }
@@ -70,8 +71,8 @@ export default function SettingsPage() {
       setInitPlan(res.data);
       enqueueSnackbar('共享集群初始化已提交', { variant: 'success' });
       setInitApplyConfirmOpen(false);
-    } catch {
-      enqueueSnackbar('共享集群初始化提交失败', { variant: 'error' });
+    } catch (err) {
+      enqueueSnackbar(extractApiError(err, '共享集群初始化提交失败'), { variant: 'error' });
     } finally {
       setInitLoading(false);
     }

@@ -30,6 +30,7 @@ import ConfirmDialog from '../../components/common/ConfirmDialog';
 import EmptyState from '../../components/common/EmptyState';
 import LoadingScreen from '../../components/common/LoadingScreen';
 import { clusterAPI, type Cluster } from '../../api/cluster';
+import { extractApiError } from '../../api';
 import { useAuthStore } from '../../stores/useAuthStore';
 
 interface FormState {
@@ -70,8 +71,8 @@ export default function ClusterPage() {
     try {
       const { data: res } = await clusterAPI.list({ page: 1, page_size: 100 });
       setClusters(res.data?.items || []);
-    } catch {
-      enqueueSnackbar('获取集群列表失败', { variant: 'error' });
+    } catch (err) {
+      enqueueSnackbar(extractApiError(err, '获取集群列表失败'), { variant: 'error' });
     } finally {
       setLoading(false);
     }
@@ -135,8 +136,8 @@ export default function ClusterPage() {
       }
       setDialogOpen(false);
       fetch();
-    } catch {
-      enqueueSnackbar(editingId ? '更新失败' : '创建失败', { variant: 'error' });
+    } catch (err) {
+      enqueueSnackbar(extractApiError(err, editingId ? '更新失败' : '创建失败'), { variant: 'error' });
     } finally {
       setSaving(false);
     }
@@ -149,8 +150,8 @@ export default function ClusterPage() {
       enqueueSnackbar('集群删除成功', { variant: 'success' });
       setDeleteDialog({ open: false });
       fetch();
-    } catch {
-      enqueueSnackbar('删除失败（该集群可能仍有实例在使用）', { variant: 'error' });
+    } catch (err) {
+      enqueueSnackbar(extractApiError(err, '删除失败（该集群可能仍有实例在使用）'), { variant: 'error' });
     }
   };
 

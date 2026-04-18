@@ -28,6 +28,7 @@ import { useSnackbar } from 'notistack';
 import PageHeader from '../../components/common/PageHeader';
 import ConfirmDialog from '../../components/common/ConfirmDialog';
 import { platformAPI } from '../../api/platform';
+import { extractApiError } from '../../api';
 import type { PlatformScaleAuditItem, PlatformScaleTarget, PlatformScaleVMClusterPlan } from '../../types/api';
 
 export default function PlatformScalingPage() {
@@ -65,8 +66,8 @@ export default function PlatformScalingPage() {
         if (rows.length > 0) {
           setForm((prev) => ({ ...prev, target_id: prev.target_id || rows[0].id }));
         }
-      } catch {
-        enqueueSnackbar('加载平台扩容目标失败', { variant: 'error' });
+      } catch (err) {
+        enqueueSnackbar(extractApiError(err, '加载平台扩容目标失败'), { variant: 'error' });
       } finally {
         setTargetsLoading(false);
       }
@@ -114,8 +115,8 @@ export default function PlatformScalingPage() {
       setAuditLoading(true);
       try {
         await refreshAudits();
-      } catch {
-        enqueueSnackbar('加载变更历史失败', { variant: 'error' });
+      } catch (err) {
+        enqueueSnackbar(extractApiError(err, '加载变更历史失败'), { variant: 'error' });
       } finally {
         setAuditLoading(false);
       }
@@ -137,8 +138,8 @@ export default function PlatformScalingPage() {
       });
       setPlan(res.data);
       enqueueSnackbar('Dry-run 成功，已生成变更预览', { variant: 'success' });
-    } catch {
-      enqueueSnackbar('Dry-run 失败，请检查参数', { variant: 'error' });
+    } catch (err) {
+      enqueueSnackbar(extractApiError(err, 'Dry-run 失败，请检查参数'), { variant: 'error' });
     } finally {
       setLoading(false);
     }
@@ -156,8 +157,8 @@ export default function PlatformScalingPage() {
       await refreshAudits();
       enqueueSnackbar('扩容配置已提交', { variant: 'success' });
       setApplyConfirmOpen(false);
-    } catch {
-      enqueueSnackbar('提交失败，请稍后重试', { variant: 'error' });
+    } catch (err) {
+      enqueueSnackbar(extractApiError(err, '提交失败，请稍后重试'), { variant: 'error' });
     } finally {
       setLoading(false);
     }
