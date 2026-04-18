@@ -28,7 +28,17 @@ export default function LoginPage() {
     setError('');
     try {
       await login(username, password);
-      navigate('/dashboard', { replace: true });
+      let redirect = '/dashboard';
+      try {
+        const saved = sessionStorage.getItem('ops:redirectAfterLogin');
+        if (saved && saved.startsWith('/') && !saved.startsWith('/login')) {
+          redirect = saved;
+        }
+        sessionStorage.removeItem('ops:redirectAfterLogin');
+      } catch {
+        // 忽略 storage 读取失败
+      }
+      navigate(redirect, { replace: true });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : '登录失败';
       setError(message);

@@ -4,3 +4,6 @@
 .env
 .idea/
 .vscode/
+
+# 本地运行时配置：含明文凭证，不入仓。模板见 configs/config.example.yaml。
+configs/config.yaml

@@ -1,8 +1,9 @@
-import { lazy, Suspense } from 'react';
-import { createBrowserRouter, Navigate } from 'react-router-dom';
+import { lazy, Suspense, useEffect } from 'react';
+import { createBrowserRouter, Navigate, useNavigate } from 'react-router-dom';
 import AppLayout from './components/layout/AppLayout';
 import LoadingScreen from './components/common/LoadingScreen';
 import { appRouteMeta, type AppRouteKey } from './config/appRoutes';
+import { UNAUTHORIZED_EVENT } from './api';
 
 const LoginPage = lazy(() => import('./pages/Login'));
 const DashboardPage = lazy(() => import('./pages/Dashboard'));
@@ -28,7 +29,15 @@ function Lazy({ children }: { children: React.ReactNode }) {
 }
 
 function AuthGuard({ children }: { children: React.ReactNode }) {
+  const navigate = useNavigate();
   const token = localStorage.getItem('token');
+
+  useEffect(() => {
+    const onUnauthorized = () => navigate('/login', { replace: true });
+    window.addEventListener(UNAUTHORIZED_EVENT, onUnauthorized);
+    return () => window.removeEventListener(UNAUTHORIZED_EVENT, onUnauthorized);
+  }, [navigate]);
+
   if (!token) return <Navigate to="/login" replace />;
   return <>{children}</>;
 }

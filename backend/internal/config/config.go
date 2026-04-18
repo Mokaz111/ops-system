@@ -23,6 +23,14 @@ type Config struct {
 	VM            VMConfig            `mapstructure:"vm"`
 	N9E           N9EConfig           `mapstructure:"n9e"`
 	Grafana       GrafanaConfig       `mapstructure:"grafana"`
+	Worker        WorkerConfig        `mapstructure:"worker"`
+}
+
+// WorkerConfig 后台异步 worker 参数。
+// InstanceStatusAutoAdvance=true 时，周期性把 creating/updating → running；
+// 默认关闭，因为目前并未真正回落到 helm/k8s 做健康检查，贸然推进会产生"伪 running"。
+type WorkerConfig struct {
+	InstanceStatusAutoAdvance bool `mapstructure:"instance_status_auto_advance"`
 }
 
 // CORSConfig 跨域策略。AllowedOrigins 为空时允许所有域名（开发模式）。
@@ -196,8 +204,10 @@ func Load(configPath string) (*Config, error) {
 	if strings.TrimSpace(cfg.JWT.Secret) == "" {
 		return nil, fmt.Errorf("jwt.secret is required; set OPS_JWT_SECRET or jwt.secret")
 	}
-	if cfg.Server.Mode == "release" && len(cfg.CORS.AllowedOrigins) == 0 {
-		return nil, fmt.Errorf("cors.allowed_origins is required in release mode")
+	if cfg.Server.Mode == "release" {
+		if err := validateReleaseConfig(&cfg); err != nil {
+			return nil, err
+		}
 	}
 	if cfg.RateLimit.RequestsPerSecond <= 0 {
 		cfg.RateLimit.RequestsPerSecond = 100
@@ -231,6 +241,40 @@ func Load(configPath string) (*Config, error) {
 	}
 
 	return &cfg, nil
+}
+
+// weakDefaults 列出仓库 example/dev 值，release 模式下禁止原样使用。
+var weakDefaults = map[string]struct{}{
+	"ops_secret":     {},
+	"ops_admin":      {},
+	"changeme":       {},
+	"please_change":  {},
+	"your_jwt_secret": {},
+}
+
+// validateReleaseConfig 在 mode=release 下收紧关键字段，防止把仓库默认值直接带上线。
+func validateReleaseConfig(cfg *Config) error {
+	if len(cfg.CORS.AllowedOrigins) == 0 {
+		return fmt.Errorf("cors.allowed_origins is required in release mode")
+	}
+	jwtSecret := strings.TrimSpace(cfg.JWT.Secret)
+	if len(jwtSecret) < 32 {
+		return fmt.Errorf("jwt.secret must be at least 32 chars in release mode (set OPS_JWT_SECRET)")
+	}
+	if _, bad := weakDefaults[strings.ToLower(jwtSecret)]; bad {
+		return fmt.Errorf("jwt.secret is a well-known default; please set OPS_JWT_SECRET to a strong random value")
+	}
+	dbPwd := strings.TrimSpace(cfg.Database.Password)
+	if dbPwd == "" {
+		return fmt.Errorf("database.password is required in release mode (set OPS_DATABASE_PASSWORD)")
+	}
+	if _, bad := weakDefaults[strings.ToLower(dbPwd)]; bad {
+		return fmt.Errorf("database.password matches a repository default; set OPS_DATABASE_PASSWORD to a real secret")
+	}
+	if cfg.Database.SSLMode == "disable" {
+		return fmt.Errorf("database.sslmode must not be 'disable' in release mode")
+	}
+	return nil
 }
 
 func expandPlaceholders(cfg *Config) {

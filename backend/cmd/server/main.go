@@ -47,7 +47,9 @@ func main() {
 	}
 	log.Info("db_migrate_ok")
 
-	wm := worker.NewManager(log)
+	wm := worker.NewManager(log, worker.Options{
+		InstanceStatusAutoAdvance: cfg.Worker.InstanceStatusAutoAdvance,
+	})
 	wm.StartInstanceSync(context.Background(), db)
 	defer wm.Stop()
 

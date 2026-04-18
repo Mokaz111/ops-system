@@ -149,12 +149,8 @@ func NewRouter(cfg *config.Config, log *zap.Logger, db *gorm.DB) *gin.Engine {
 			renderer := integrationpkg.NewRenderer()
 
 			// 集群 resolver：按 cluster id 动态构造 k8s.Client；nil / 查询失败 / 创建失败 → 回退默认 client。
-			// 用闭包缓存已建 client，避免每次 Apply 反复初始化 discovery。
-			type clusterClientEntry struct {
-				client *k8s.Client
-				fp     string // kubeconfig 指纹，用于失效检测
-			}
-			clusterClientCache := map[uuid.UUID]*clusterClientEntry{}
+			// 用线程安全缓存避免每次 Apply 反复做 discovery（并发请求同 cluster 也安全）。
+			clusterClientCache := k8s.NewClusterClientCache()
 			k8sResolver := integrationpkg.K8sClientResolver(func(ctx context.Context, clusterID *uuid.UUID) (*k8s.Client, error) {
 				if clusterID == nil {
 					return k8sClient, nil
@@ -167,12 +163,12 @@ func NewRouter(cfg *config.Config, log *zap.Logger, db *gorm.DB) *gin.Engine {
 					return k8sClient, nil
 				}
 				fp := fmt.Sprintf("%v|%s|%s", cluster.InCluster, cluster.KubeconfigPath, cluster.Kubeconfig)
-				if entry, ok := clusterClientCache[*clusterID]; ok && entry.fp == fp {
-					return entry.client, nil
+				if cached := clusterClientCache.Get(*clusterID, fp); cached != nil {
+					return cached, nil
 				}
 				kubeconfigPath := strings.TrimSpace(cluster.KubeconfigPath)
 				inCluster := cluster.InCluster
-				// 若只提供了 kubeconfig 原文，可在临时目录里写一个文件；M3 先只支持 path/incluster，
+				// 若只提供了 kubeconfig 原文，可在临时目录里写一个文件；当前实现仅支持 path/incluster，
 				// inline kubeconfig 暂不自动落盘（可在后续加 helper）。
 				if strings.TrimSpace(cluster.Kubeconfig) != "" && kubeconfigPath == "" {
 					log.Warn("cluster_inline_kubeconfig_ignored",
@@ -189,7 +185,7 @@ func NewRouter(cfg *config.Config, log *zap.Logger, db *gorm.DB) *gin.Engine {
 						zap.Error(kerr))
 					return k8sClient, kerr
 				}
-				clusterClientCache[*clusterID] = &clusterClientEntry{client: cli, fp: fp}
+				clusterClientCache.Put(*clusterID, fp, cli)
 				return cli, nil
 			})
 
