@@ -39,10 +39,11 @@ func (t *IntegrationTemplate) BeforeCreate(tx *gorm.DB) error {
 }
 
 // IntegrationTemplateVersion 模版版本快照。
+// (TemplateID, Version) 组合唯一，避免同一模版被重复写入同一版本号。
 type IntegrationTemplateVersion struct {
 	ID            uuid.UUID `json:"id" gorm:"type:uuid;primaryKey"`
-	TemplateID    uuid.UUID `json:"template_id" gorm:"type:uuid;index;not null"`
-	Version       string    `json:"version" gorm:"type:varchar(50);not null"`
+	TemplateID    uuid.UUID `json:"template_id" gorm:"type:uuid;not null;uniqueIndex:uk_tpl_version,priority:1"`
+	Version       string    `json:"version" gorm:"type:varchar(50);not null;uniqueIndex:uk_tpl_version,priority:2"`
 	CollectorSpec string    `json:"collector_spec" gorm:"type:jsonb"` // VMPodScrape/VMServiceScrape/VMAgent YAML 片段
 	AlertSpec     string    `json:"alert_spec" gorm:"type:jsonb"`     // { vmrule, n9e, alert_targets: []string }
 	DashboardSpec string    `json:"dashboard_spec" gorm:"type:jsonb"` // [Grafana dashboard JSON]

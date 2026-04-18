@@ -35,9 +35,11 @@ func (r *MetricRepository) GetByID(ctx context.Context, id uuid.UUID) (*model.Me
 	return &m, nil
 }
 
-func (r *MetricRepository) GetByName(ctx context.Context, name string) (*model.Metric, error) {
+// GetByComponentAndName 按 (component, name) 联合查询 —— 与唯一索引 uk_metric_component_name 对齐。
+// component 为空时表示"未归属任何组件"，同样按严格相等匹配。
+func (r *MetricRepository) GetByComponentAndName(ctx context.Context, component, name string) (*model.Metric, error) {
 	var m model.Metric
-	err := r.db.WithContext(ctx).First(&m, "name = ?", name).Error
+	err := r.db.WithContext(ctx).First(&m, "component = ? AND name = ?", component, name).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil

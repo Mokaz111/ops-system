@@ -8,12 +8,16 @@ import (
 )
 
 // Metric 指标库条目。
+//
+// (Component, Name) 组合唯一：Prometheus 指标名（如 up / requests_total）在不同
+// component 下完全可能重名；早期的全局 uniqueIndex(name) 与真实数据冲突。
+// 同时保留对 name 的非唯一索引，用于按名称关键字模糊搜索。
 type Metric struct {
 	ID                    uuid.UUID      `json:"id" gorm:"type:uuid;primaryKey"`
-	Name                  string         `json:"name" gorm:"type:varchar(255);uniqueIndex;not null"`
+	Name                  string         `json:"name" gorm:"type:varchar(255);not null;index;uniqueIndex:uk_metric_component_name,priority:2"`
 	MetricType            string         `json:"metric_type" gorm:"type:varchar(20)"` // counter/gauge/histogram/summary
 	Unit                  string         `json:"unit" gorm:"type:varchar(50)"`
-	Component             string         `json:"component" gorm:"type:varchar(100);index"`
+	Component             string         `json:"component" gorm:"type:varchar(100);index;uniqueIndex:uk_metric_component_name,priority:1"`
 	DescriptionCN         string         `json:"description_cn" gorm:"type:text"`
 	DescriptionEN         string         `json:"description_en" gorm:"type:text"`
 	Labels                string         `json:"labels" gorm:"type:jsonb"`   // [{name, description}]

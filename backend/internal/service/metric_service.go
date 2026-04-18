@@ -50,7 +50,7 @@ func (s *MetricService) Create(ctx context.Context, req *CreateMetricRequest) (*
 	if req.Name == "" {
 		return nil, errors.New("name required")
 	}
-	exist, err := s.repo.GetByName(ctx, req.Name)
+	exist, err := s.repo.GetByComponentAndName(ctx, req.Component, req.Name)
 	if err != nil {
 		return nil, err
 	}
@@ -222,7 +222,7 @@ func (s *MetricService) Reparse(ctx context.Context, templateID uuid.UUID, versi
 
 	res := &ReparseResult{}
 	for name, info := range extracted {
-		metric, err := s.repo.GetByName(ctx, name)
+		metric, err := s.repo.GetByComponentAndName(ctx, tpl.Component, name)
 		if err != nil {
 			return nil, err
 		}

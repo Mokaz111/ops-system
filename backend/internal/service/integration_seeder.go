@@ -113,7 +113,7 @@ func (s *IntegrationSeeder) upsertMetrics(
 ) error {
 	extracted := integration.ExtractFromSpec(spec)
 	for name, info := range extracted {
-		metric, err := s.metricRepo.GetByName(ctx, name)
+		metric, err := s.metricRepo.GetByComponentAndName(ctx, tpl.Component, name)
 		if err != nil {
 			return err
 		}

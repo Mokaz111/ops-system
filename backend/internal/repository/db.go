@@ -80,6 +80,9 @@ func AutoMigrate(db *gorm.DB) error {
 		&model.GrafanaHost{},
 		&model.Cluster{},
 		&model.ScaleEvent{},
+		&model.AlertRule{},
+		&model.AlertEvent{},
+		&model.NotificationChannel{},
 	)
 }
 
