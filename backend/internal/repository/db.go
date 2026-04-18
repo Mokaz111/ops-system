@@ -75,6 +75,7 @@ func dropLegacyUniqueIndexes(db *gorm.DB) error {
 		"uni_ops_departments_tenant_id",
 		"uni_ops_users_username",
 		"uni_ops_clusters_name",
+		"uni_ops_integration_templates_name",
 	}
 	for _, name := range legacy {
 		if err := db.Exec("DROP INDEX IF EXISTS " + name).Error; err != nil {

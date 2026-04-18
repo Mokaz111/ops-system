@@ -8,9 +8,12 @@ import (
 )
 
 // IntegrationTemplate 接入中心模版（逻辑本体）。
+//
+// name 只在活跃行内唯一（partial unique index）；软删除模板后可以再用同名重建，
+// 否则相同的 schema 缺陷会让"下架后重建"失败。
 type IntegrationTemplate struct {
 	ID            uuid.UUID      `json:"id" gorm:"type:uuid;primaryKey"`
-	Name          string         `json:"name" gorm:"type:varchar(255);uniqueIndex;not null"`
+	Name          string         `json:"name" gorm:"type:varchar(255);not null;uniqueIndex:uk_integration_tpl_name_active,where:deleted_at IS NULL"`
 	DisplayName   string         `json:"display_name" gorm:"type:varchar(255)"`
 	Category      string         `json:"category" gorm:"type:varchar(50);index"`   // monitor/db/middleware/infra/log/cloud
 	Component     string         `json:"component" gorm:"type:varchar(100);index"` // node/mysql/redis/kafka...

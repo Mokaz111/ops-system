@@ -341,12 +341,14 @@ func (h *IntegrationHandler) handleErr(c *gin.Context, err error) {
 		errors.Is(err, service.ErrIntegrationInstanceNotFound):
 		response.Error(c, http.StatusNotFound, http.StatusNotFound, err.Error())
 	case errors.Is(err, service.ErrIntegrationTemplateName),
-		errors.Is(err, service.ErrIntegrationVersionExists),
 		errors.Is(err, service.ErrInvalidPagination):
 		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, err.Error())
 	case errors.Is(err, service.ErrIntegrationTenantMismatch):
 		response.Error(c, http.StatusForbidden, http.StatusForbidden, err.Error())
-	case errors.Is(err, service.ErrIntegrationVersionInUse),
+	case errors.Is(err, service.ErrIntegrationTemplateNameExists),
+		errors.Is(err, service.ErrIntegrationTemplateInUse),
+		errors.Is(err, service.ErrIntegrationVersionExists),
+		errors.Is(err, service.ErrIntegrationVersionInUse),
 		errors.Is(err, service.ErrIntegrationVersionLastOne):
 		response.Error(c, http.StatusConflict, http.StatusConflict, err.Error())
 	default:

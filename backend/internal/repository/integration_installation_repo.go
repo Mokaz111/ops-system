@@ -35,6 +35,70 @@ func (r *IntegrationInstallationRepository) GetByID(ctx context.Context, id uuid
 	return &m, nil
 }
 
+// FindByInstanceTemplate 按 (instance_id, template_id) 查找活跃（未软删除）的安装记录。
+//
+// 活跃行在 Postgres 里由 partial unique index `uk_install_instance_tpl_active` 保证至多 1 条；
+// 即使 status=uninstalled 也会占用该索引位（我们没有在卸载时 soft-delete 原行，便于保留审计链），
+// 所以 Install/Upgrade/Reinstall 之前都要先经过这里查一下再决定是 create 还是 update。
+func (r *IntegrationInstallationRepository) FindByInstanceTemplate(
+	ctx context.Context,
+	instanceID, templateID uuid.UUID,
+) (*model.IntegrationInstallation, error) {
+	var m model.IntegrationInstallation
+	err := r.db.WithContext(ctx).
+		Where("instance_id = ? AND template_id = ?", instanceID, templateID).
+		First(&m).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &m, nil
+}
+
+// CreateWithRevision 在同一事务里创建安装记录 + 首次 revision，并把 last_revision_id 指回。
+//
+// 这是 Install 的首次安装路径；任何一步失败都会整体回滚，避免只插入 installation 却
+// 丢失 revision（或反过来）导致审计链断裂。
+func (r *IntegrationInstallationRepository) CreateWithRevision(
+	ctx context.Context,
+	m *model.IntegrationInstallation,
+	rev *model.IntegrationInstallationRevision,
+) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(m).Error; err != nil {
+			return err
+		}
+		rev.InstallationID = m.ID
+		if err := tx.Create(rev).Error; err != nil {
+			return err
+		}
+		m.LastRevisionID = &rev.ID
+		return tx.Model(&model.IntegrationInstallation{}).
+			Where("id = ?", m.ID).
+			Update("last_revision_id", rev.ID).Error
+	})
+}
+
+// UpdateWithRevision 在同一事务里更新安装记录 + 追加一条 revision，并把 last_revision_id 指到新 revision。
+//
+// 用于升级（Install on existing）和卸载：任何失败都会回滚，确保状态与审计保持一致。
+func (r *IntegrationInstallationRepository) UpdateWithRevision(
+	ctx context.Context,
+	m *model.IntegrationInstallation,
+	rev *model.IntegrationInstallationRevision,
+) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		rev.InstallationID = m.ID
+		if err := tx.Create(rev).Error; err != nil {
+			return err
+		}
+		m.LastRevisionID = &rev.ID
+		return tx.Save(m).Error
+	})
+}
+
 func (r *IntegrationInstallationRepository) Update(ctx context.Context, m *model.IntegrationInstallation) error {
 	return r.db.WithContext(ctx).Save(m).Error
 }
@@ -99,6 +163,21 @@ func (r *IntegrationInstallationRepository) CountActiveByTemplateVersion(
 	err := r.db.WithContext(ctx).
 		Model(&model.IntegrationInstallation{}).
 		Where("template_id = ? AND template_version = ?", templateID, version).
+		Where("status NOT IN ?", []string{"uninstalled", "uninstall_failed"}).
+		Count(&total).Error
+	return total, err
+}
+
+// CountActiveByTemplateID 统计某模板（无版本区分）仍在活跃使用中的安装记录数。
+// 用于模板本体删除前的引用检查。
+func (r *IntegrationInstallationRepository) CountActiveByTemplateID(
+	ctx context.Context,
+	templateID uuid.UUID,
+) (int64, error) {
+	var total int64
+	err := r.db.WithContext(ctx).
+		Model(&model.IntegrationInstallation{}).
+		Where("template_id = ?", templateID).
 		Where("status NOT IN ?", []string{"uninstalled", "uninstall_failed"}).
 		Count(&total).Error
 	return total, err

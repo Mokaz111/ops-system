@@ -142,6 +142,11 @@ func (s *IntegrationInstallationService) validateInstallTarget(ctx context.Conte
 
 // Install 渲染 + Apply + 持久化。
 // 若 applier 为 NoopApplier（k8s/grafana 不可用）则退化为 B 方案仅记录 rendered 状态。
+//
+// 幂等 / 重入规则：
+//   - 目标 (instance_id, template_id) 已有活跃（未软删除）安装记录 → 在原行上 upgrade/reinstall，
+//     不再创建新行（否则会撞到 partial unique index `uk_install_instance_tpl_active`，报 500）；
+//   - 首次安装 → 创建新行 + 首条 revision，在同一事务中落库。
 func (s *IntegrationInstallationService) Install(ctx context.Context, operator string, req *InstallRequest) (*InstallResult, error) {
 	if err := s.validateInstallTarget(ctx, req); err != nil {
 		return nil, err
@@ -181,12 +186,60 @@ func (s *IntegrationInstallationService) Install(ctx context.Context, operator s
 			Status:    "preflight_failed",
 		}, nil
 	}
+
+	existing, err := s.repo.FindByInstanceTemplate(ctx, req.InstanceID, req.TemplateID)
+	if err != nil {
+		return nil, err
+	}
+
 	applied, applyErr := s.applier.Apply(ctx, rendered, applyOpts)
 	overallStatus, errorMsg := summarizeApply(s.applier, applied, applyErr)
 
 	valuesJSON := "{}"
 	if b, mErr := json.Marshal(req.Values); mErr == nil {
 		valuesJSON = string(b)
+	}
+	appliedJSON := "[]"
+	if b, mErr := json.Marshal(applied); mErr == nil {
+		appliedJSON = string(b)
+	}
+
+	if existing != nil {
+		// 已有安装记录 → upgrade / reinstall 路径。
+		// action 取决于前一次是否已卸载：从 uninstalled/uninstall_failed 再装回来算 reinstall，
+		// 其余活跃状态覆盖写就是 upgrade（即便 template_version 没换，也属于一次重新 apply）。
+		action := "upgrade"
+		if existing.Status == "uninstalled" || existing.Status == "uninstall_failed" {
+			action = "reinstall"
+		}
+
+		existing.TemplateVersion = req.TemplateVersion
+		existing.GrafanaHostID = req.GrafanaHostID
+		existing.GrafanaOrgID = req.GrafanaOrgID
+		existing.InstalledParts = marshalJSONStringArray(collectParts(rendered))
+		existing.Variables = valuesJSON
+		existing.Status = overallStatus
+		existing.InstalledBy = operator
+
+		rev := &model.IntegrationInstallationRevision{
+			Version:          req.TemplateVersion,
+			Action:           action,
+			SpecDiff:         valuesJSON,
+			AppliedResources: appliedJSON,
+			Operator:         operator,
+			Status:           overallStatus,
+			ErrorMessage:     errorMsg,
+		}
+		if err := s.repo.UpdateWithRevision(ctx, existing, rev); err != nil {
+			return nil, err
+		}
+		return &InstallResult{
+			Installation: existing,
+			Rendered:     rendered,
+			Applied:      applied,
+			Preflight:    issues,
+			Status:       overallStatus,
+		}, nil
 	}
 
 	m := &model.IntegrationInstallation{
@@ -201,16 +254,7 @@ func (s *IntegrationInstallationService) Install(ctx context.Context, operator s
 		Status:          overallStatus,
 		InstalledBy:     operator,
 	}
-	if err := s.repo.Create(ctx, m); err != nil {
-		return nil, err
-	}
-
-	appliedJSON := "[]"
-	if b, mErr := json.Marshal(applied); mErr == nil {
-		appliedJSON = string(b)
-	}
 	rev := &model.IntegrationInstallationRevision{
-		InstallationID:   m.ID,
 		Version:          req.TemplateVersion,
 		Action:           "install",
 		SpecDiff:         valuesJSON,
@@ -219,11 +263,7 @@ func (s *IntegrationInstallationService) Install(ctx context.Context, operator s
 		Status:           overallStatus,
 		ErrorMessage:     errorMsg,
 	}
-	if err := s.repo.CreateRevision(ctx, rev); err != nil {
-		return nil, err
-	}
-	m.LastRevisionID = &rev.ID
-	if err := s.repo.Update(ctx, m); err != nil {
+	if err := s.repo.CreateWithRevision(ctx, m, rev); err != nil {
 		return nil, err
 	}
 	return &InstallResult{
@@ -397,16 +437,12 @@ func (s *IntegrationInstallationService) Uninstall(ctx context.Context, id uuid.
 		status = "uninstall_failed"
 		errorMsg = deleteErr.Error()
 	}
-	m.Status = status
-	if err := s.repo.Update(ctx, m); err != nil {
-		return err
-	}
 	appliedJSON := "[]"
 	if b, mErr := json.Marshal(refs); mErr == nil {
 		appliedJSON = string(b)
 	}
+	m.Status = status
 	rev := &model.IntegrationInstallationRevision{
-		InstallationID:   m.ID,
 		Version:          m.TemplateVersion,
 		Action:           "uninstall",
 		AppliedResources: appliedJSON,
@@ -414,7 +450,15 @@ func (s *IntegrationInstallationService) Uninstall(ctx context.Context, id uuid.
 		Status:           status,
 		ErrorMessage:     errorMsg,
 	}
-	return s.repo.CreateRevision(ctx, rev)
+	// 状态 + revision 同事务落库：避免"资源已被删、但 DB 里状态还停在 success"的悬空态。
+	if err := s.repo.UpdateWithRevision(ctx, m, rev); err != nil {
+		return err
+	}
+	// 资源删除失败要上抛给调用方（前端会看到 409 -> 500 的错误），但审计链已经完整记录。
+	if deleteErr != nil {
+		return deleteErr
+	}
+	return nil
 }
 
 // List 分页列表。

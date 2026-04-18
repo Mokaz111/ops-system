@@ -116,3 +116,46 @@ func (r *IntegrationTemplateRepository) DeleteVersion(ctx context.Context, templ
 		Where("template_id = ? AND version = ?", templateID, version).
 		Delete(&model.IntegrationTemplateVersion{}).Error
 }
+
+// DeleteVersionTx 在同一事务里删除指定版本；若 updateLatest 为 true，同事务更新模板的 latest_version。
+//
+// 原来的 DeleteVersion + Update(tpl) 是两步调用，中间宕机会让 `latest_version` 悬空（指向已删除版本）。
+// 这个方法把两步合在一起，保证 latest_version 永远不会指到已被删除的版本。
+func (r *IntegrationTemplateRepository) DeleteVersionTx(
+	ctx context.Context,
+	templateID uuid.UUID,
+	version string,
+	updateLatest bool,
+	newLatest string,
+) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("template_id = ? AND version = ?", templateID, version).
+			Delete(&model.IntegrationTemplateVersion{}).Error; err != nil {
+			return err
+		}
+		if updateLatest {
+			if err := tx.Model(&model.IntegrationTemplate{}).
+				Where("id = ?", templateID).
+				Update("latest_version", newLatest).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+// DeleteTemplateTx 在同一事务里硬清理模板 + 其所有版本（软删除语义）。
+//
+// 用于模板本体的删除：先软删版本，再软删模板；避免出现"模板没了但版本残留可查"的半态。
+func (r *IntegrationTemplateRepository) DeleteTemplateTx(
+	ctx context.Context,
+	templateID uuid.UUID,
+) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("template_id = ?", templateID).
+			Delete(&model.IntegrationTemplateVersion{}).Error; err != nil {
+			return err
+		}
+		return tx.Delete(&model.IntegrationTemplate{}, "id = ?", templateID).Error
+	})
+}
