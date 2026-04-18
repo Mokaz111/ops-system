@@ -16,6 +16,8 @@ import (
 // 安装记录相关业务错误。
 var (
 	ErrIntegrationInstallationNotFound = errors.New("integration installation not found")
+	ErrIntegrationInstanceNotFound     = errors.New("target instance not found")
+	ErrIntegrationTenantMismatch       = errors.New("tenant_id does not match target instance")
 )
 
 // IntegrationInstallationService 接入中心安装记录业务。
@@ -77,6 +79,9 @@ type InstallResult struct {
 
 // Plan 仅渲染不落库（dry-run 预览），并返回 preflight 结果。
 func (s *IntegrationInstallationService) Plan(ctx context.Context, req *InstallRequest) (*PlanResult, error) {
+	if err := s.validateInstallTarget(ctx, req); err != nil {
+		return nil, err
+	}
 	spec, _, _, err := s.loadSpec(ctx, req.TemplateID, req.TemplateVersion)
 	if err != nil {
 		return nil, err
@@ -116,9 +121,31 @@ func (s *IntegrationInstallationService) lookupClusterID(ctx context.Context, in
 	return inst.ClusterID
 }
 
+// validateInstallTarget 确认 req.InstanceID 真实存在且属于 req.TenantID。
+// 任何不一致都会被拦下，防止跨租户安装模板（service 层最后一道防线）。
+func (s *IntegrationInstallationService) validateInstallTarget(ctx context.Context, req *InstallRequest) error {
+	if s.instanceRepo == nil {
+		return nil
+	}
+	inst, err := s.instanceRepo.GetByID(ctx, req.InstanceID)
+	if err != nil {
+		return err
+	}
+	if inst == nil {
+		return ErrIntegrationInstanceNotFound
+	}
+	if inst.TenantID != req.TenantID {
+		return ErrIntegrationTenantMismatch
+	}
+	return nil
+}
+
 // Install 渲染 + Apply + 持久化。
 // 若 applier 为 NoopApplier（k8s/grafana 不可用）则退化为 B 方案仅记录 rendered 状态。
 func (s *IntegrationInstallationService) Install(ctx context.Context, operator string, req *InstallRequest) (*InstallResult, error) {
+	if err := s.validateInstallTarget(ctx, req); err != nil {
+		return nil, err
+	}
 	spec, tpl, version, err := s.loadSpec(ctx, req.TemplateID, req.TemplateVersion)
 	if err != nil {
 		return nil, err

@@ -10,6 +10,7 @@ import (
 	"ops-system/backend/pkg/utils"
 
 	"github.com/google/uuid"
+	"go.uber.org/zap"
 )
 
 var (
@@ -85,6 +86,13 @@ func (s *UserService) Bootstrap(ctx context.Context, req *CreateUserRequest) (*m
 		}
 		return nil, err
 	}
+	// 首任管理员创建是高敏操作，必须在日志中留痕，便于事后审计与
+	// 发现异常的"二次 bootstrap"尝试。这里只记元数据，不落密码/hash。
+	zap.L().Warn("bootstrap_admin_created",
+		zap.String("user_id", u.ID.String()),
+		zap.String("username", u.Username),
+		zap.String("email", u.Email),
+	)
 	return u, nil
 }
 

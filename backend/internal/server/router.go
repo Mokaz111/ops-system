@@ -144,7 +144,7 @@ func NewRouter(cfg *config.Config, log *zap.Logger, db *gorm.DB) *gin.Engine {
 			alertH := handler.NewAlertHandler(alertSvc, alertEventSvc, channelSvc, userSvc)
 
 			logInstanceSvc := service.NewLogInstanceService(logInstanceRepo)
-			logInstanceH := handler.NewLogInstanceHandler(logInstanceSvc)
+			logInstanceH := handler.NewLogInstanceHandler(logInstanceSvc, userSvc)
 
 			renderer := integrationpkg.NewRenderer()
 

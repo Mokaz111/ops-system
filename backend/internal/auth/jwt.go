@@ -38,13 +38,24 @@ func SignUserToken(secret string, userID uuid.UUID, username, role string, expir
 }
 
 // ParseUserToken 解析并校验 Token。
+//
+// 显式校验签名算法为 HS256，防止 algorithm confusion 攻击：攻击者把 header
+// 中的 alg 改成 none / RS256 后，jwt 库可能用错误的算法（公钥当 HMAC secret）
+// 验证，从而伪造 token。jwt/v5 默认拒绝 alg=none，但仍需在 keyFunc 里主动
+// 断言算法以防其它变种攻击。
 func ParseUserToken(secret, raw string) (*UserClaims, error) {
 	if secret == "" {
 		return nil, errors.New("jwt secret is empty")
 	}
 	t, err := jwt.ParseWithClaims(raw, &UserClaims{}, func(t *jwt.Token) (any, error) {
+		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, errors.New("unexpected signing method")
+		}
+		if t.Method.Alg() != jwt.SigningMethodHS256.Alg() {
+			return nil, errors.New("unexpected signing algorithm")
+		}
 		return []byte(secret), nil
-	})
+	}, jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}))
 	if err != nil || !t.Valid {
 		return nil, errors.New("invalid token")
 	}

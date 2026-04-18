@@ -250,6 +250,15 @@ func (h *InstanceHandler) ListScaleEvents(c *gin.Context) {
 		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, "invalid id")
 		return
 	}
+	// 先拉 instance 做租户校验，防止 IDOR：非 admin 只能看自己租户实例的伸缩历史。
+	inst, err := h.svc.Get(c.Request.Context(), id)
+	if err != nil {
+		h.handleErr(c, err)
+		return
+	}
+	if !assertTenantAccess(c, h.userSvc, inst.TenantID) {
+		return
+	}
 	page, ps, ok := parsePageAndSize(c, 20)
 	if !ok {
 		return

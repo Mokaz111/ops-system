@@ -188,6 +188,9 @@ func (h *IntegrationHandler) InstallPlan(c *gin.Context) {
 		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, err.Error())
 		return
 	}
+	if !h.installPlanTenantGuard(c, &body) {
+		return
+	}
 	plan, err := h.installSvc.Plan(c.Request.Context(), &body)
 	if err != nil {
 		h.handleErr(c, err)
@@ -207,6 +210,10 @@ func (h *IntegrationHandler) Install(c *gin.Context) {
 		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, err.Error())
 		return
 	}
+	// 非 admin 只能在自己的 tenant 下安装。
+	if !assertTenantAccess(c, h.userSvc, body.TenantID) {
+		return
+	}
 	m, err := h.installSvc.Install(c.Request.Context(), u.Username, &body)
 	if err != nil {
 		h.handleErr(c, err)
@@ -215,21 +222,24 @@ func (h *IntegrationHandler) Install(c *gin.Context) {
 	response.JSON(c, m)
 }
 
+// InstallPlan POST /api/v1/integrations/install/plan
+// Plan 和 Install 共用 InstallRequest，同样要校验租户。
+func (h *IntegrationHandler) installPlanTenantGuard(c *gin.Context, body *service.InstallRequest) bool {
+	return assertTenantAccess(c, h.userSvc, body.TenantID)
+}
+
 // ListInstallations GET /api/v1/integrations/installations
 func (h *IntegrationHandler) ListInstallations(c *gin.Context) {
 	page, ps, ok := parsePageAndSize(c, 20)
 	if !ok {
 		return
 	}
-	var f repository.IntegrationInstallationListFilter
-	if raw := c.Query("tenant_id"); raw != "" {
-		id, err := uuid.Parse(raw)
-		if err != nil {
-			response.Error(c, http.StatusBadRequest, http.StatusBadRequest, "invalid tenant_id")
-			return
-		}
-		f.TenantID = &id
+	scope, ok := resolveTenantScope(c, h.userSvc)
+	if !ok {
+		return
 	}
+	var f repository.IntegrationInstallationListFilter
+	f.TenantID = scope
 	if raw := c.Query("instance_id"); raw != "" {
 		id, err := uuid.Parse(raw)
 		if err != nil {
@@ -267,6 +277,9 @@ func (h *IntegrationHandler) GetInstallation(c *gin.Context) {
 		h.handleErr(c, err)
 		return
 	}
+	if !assertTenantAccess(c, h.userSvc, m.TenantID) {
+		return
+	}
 	response.JSON(c, m)
 }
 
@@ -275,6 +288,15 @@ func (h *IntegrationHandler) ListInstallationRevisions(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
 		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, "invalid id")
+		return
+	}
+	// 先按 id 加载 installation 做 tenant 校验，再返回 revisions。
+	m, err := h.installSvc.Get(c.Request.Context(), id)
+	if err != nil {
+		h.handleErr(c, err)
+		return
+	}
+	if !assertTenantAccess(c, h.userSvc, m.TenantID) {
 		return
 	}
 	list, err := h.installSvc.ListRevisions(c.Request.Context(), id)
@@ -296,6 +318,14 @@ func (h *IntegrationHandler) Uninstall(c *gin.Context) {
 		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, "invalid id")
 		return
 	}
+	m, err := h.installSvc.Get(c.Request.Context(), id)
+	if err != nil {
+		h.handleErr(c, err)
+		return
+	}
+	if !assertTenantAccess(c, h.userSvc, m.TenantID) {
+		return
+	}
 	if err := h.installSvc.Uninstall(c.Request.Context(), id, u.Username); err != nil {
 		h.handleErr(c, err)
 		return
@@ -307,12 +337,15 @@ func (h *IntegrationHandler) handleErr(c *gin.Context, err error) {
 	switch {
 	case errors.Is(err, service.ErrIntegrationTemplateNotFound),
 		errors.Is(err, service.ErrIntegrationVersionNotFound),
-		errors.Is(err, service.ErrIntegrationInstallationNotFound):
+		errors.Is(err, service.ErrIntegrationInstallationNotFound),
+		errors.Is(err, service.ErrIntegrationInstanceNotFound):
 		response.Error(c, http.StatusNotFound, http.StatusNotFound, err.Error())
 	case errors.Is(err, service.ErrIntegrationTemplateName),
 		errors.Is(err, service.ErrIntegrationVersionExists),
 		errors.Is(err, service.ErrInvalidPagination):
 		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, err.Error())
+	case errors.Is(err, service.ErrIntegrationTenantMismatch):
+		response.Error(c, http.StatusForbidden, http.StatusForbidden, err.Error())
 	case errors.Is(err, service.ErrIntegrationVersionInUse),
 		errors.Is(err, service.ErrIntegrationVersionLastOne):
 		response.Error(c, http.StatusConflict, http.StatusConflict, err.Error())

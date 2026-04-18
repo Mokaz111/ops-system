@@ -65,3 +65,59 @@ func currentUser(c *gin.Context, userSvc *service.UserService) (*model.User, boo
 	}
 	return u, true
 }
+
+// resolveTenantScope 解析列表/查询接口的租户作用域：
+//   - admin：尊重 ?tenant_id=；未传则 nil（代表"全租户"）。
+//   - 普通用户：必须有自己的 tenant_id；若 ?tenant_id= 与自身不符则 403。
+//
+// 返回值 (scope, ok)；ok=false 时已写入错误响应，上层直接 return。
+func resolveTenantScope(c *gin.Context, userSvc *service.UserService) (*uuid.UUID, bool) {
+	raw := c.Query("tenant_id")
+	if isAdmin(c) {
+		if raw == "" {
+			return nil, true
+		}
+		id, err := uuid.Parse(raw)
+		if err != nil {
+			response.Error(c, http.StatusBadRequest, http.StatusBadRequest, "invalid tenant_id")
+			return nil, false
+		}
+		return &id, true
+	}
+	u, ok := currentUser(c, userSvc)
+	if !ok {
+		return nil, false
+	}
+	if u.TenantID == nil {
+		response.Error(c, http.StatusForbidden, http.StatusForbidden, "forbidden")
+		return nil, false
+	}
+	if raw != "" {
+		id, err := uuid.Parse(raw)
+		if err != nil {
+			response.Error(c, http.StatusBadRequest, http.StatusBadRequest, "invalid tenant_id")
+			return nil, false
+		}
+		if id != *u.TenantID {
+			response.Error(c, http.StatusForbidden, http.StatusForbidden, "forbidden")
+			return nil, false
+		}
+	}
+	return u.TenantID, true
+}
+
+// assertTenantAccess 非 admin 用户必须命中 ownerTenant，否则写 403 并返回 false。
+func assertTenantAccess(c *gin.Context, userSvc *service.UserService, ownerTenant uuid.UUID) bool {
+	if isAdmin(c) {
+		return true
+	}
+	u, ok := currentUser(c, userSvc)
+	if !ok {
+		return false
+	}
+	if u.TenantID == nil || *u.TenantID != ownerTenant {
+		response.Error(c, http.StatusForbidden, http.StatusForbidden, "forbidden")
+		return false
+	}
+	return true
+}

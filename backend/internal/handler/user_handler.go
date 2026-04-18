@@ -9,6 +9,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"go.uber.org/zap"
 )
 
 // UserHandler 用户 HTTP。
@@ -67,9 +68,23 @@ func (h *UserHandler) Bootstrap(c *gin.Context) {
 		TenantID: body.TenantID,
 	})
 	if err != nil {
+		// bootstrap 失败也需留痕：多次失败的 bootstrap 请求往往意味着
+		// 有人在持续探测；records client IP/UA 便于事后复盘。
+		zap.L().Warn("bootstrap_attempt_rejected",
+			zap.String("username", body.Username),
+			zap.String("client_ip", c.ClientIP()),
+			zap.String("user_agent", c.Request.UserAgent()),
+			zap.Error(err),
+		)
 		h.handleErr(c, err)
 		return
 	}
+	zap.L().Warn("bootstrap_attempt_succeeded",
+		zap.String("user_id", u.ID.String()),
+		zap.String("username", u.Username),
+		zap.String("client_ip", c.ClientIP()),
+		zap.String("user_agent", c.Request.UserAgent()),
+	)
 	response.JSON(c, toUserPublic(u))
 }
 

@@ -31,6 +31,8 @@ func main() {
 		panic(err)
 	}
 	defer log.Sync() //nolint:errcheck
+	// 同时把 logger 注册为全局，方便 service 层用 zap.L() 记录审计/警告。
+	zap.ReplaceGlobals(log)
 
 	db, err := repository.NewPostgres(cfg, log)
 	if err != nil {
