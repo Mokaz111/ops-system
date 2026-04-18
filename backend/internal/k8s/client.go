@@ -9,21 +9,28 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/discovery"
+	memcached "k8s.io/client-go/discovery/cached/memory"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
+	"k8s.io/client-go/restmapper"
 	"k8s.io/client-go/tools/clientcmd"
+	sigyaml "sigs.k8s.io/yaml"
 )
 
-// Client 租户命名空间与配额、网络策略。
+// Client 租户命名空间与配额、网络策略 + 通用 CR 管理。
 type Client struct {
-	cs  kubernetes.Interface
-	dyn dynamic.Interface
+	cs     kubernetes.Interface
+	dyn    dynamic.Interface
+	disco  discovery.CachedDiscoveryInterface
+	mapper meta.RESTMapper
 }
 
 // NewClient 构建 client-go；inCluster 为 true 时使用 Pod 内 ServiceAccount。
@@ -49,7 +56,13 @@ func NewClient(kubeconfig string, inCluster bool) (*Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Client{cs: cs, dyn: dc}, nil
+	discoClient, err := discovery.NewDiscoveryClientForConfig(cfg)
+	if err != nil {
+		return nil, err
+	}
+	cached := memcached.NewMemCacheClient(discoClient)
+	mapper := restmapper.NewDeferredDiscoveryRESTMapper(cached)
+	return &Client{cs: cs, dyn: dc, disco: cached, mapper: mapper}, nil
 }
 
 // EnsureNamespace 创建命名空间（已存在则忽略）。
@@ -238,6 +251,177 @@ func (c *Client) ResizePVC(ctx context.Context, namespace, name, newSize string)
 	pvc.Spec.Resources.Requests[corev1.ResourceStorage] = resource.MustParse(newSize)
 	_, err = c.cs.CoreV1().PersistentVolumeClaims(namespace).Update(ctx, pvc, metav1.UpdateOptions{})
 	return err
+}
+
+// ResolveGVR 通过 RESTMapper 将 GVK 映射成 GVR。
+func (c *Client) ResolveGVR(gvk schema.GroupVersionKind) (schema.GroupVersionResource, bool, error) {
+	if c.mapper == nil {
+		return schema.GroupVersionResource{}, false, fmt.Errorf("rest mapper is not configured")
+	}
+	m, err := c.mapper.RESTMapping(gvk.GroupKind(), gvk.Version)
+	if err != nil {
+		return schema.GroupVersionResource{}, false, err
+	}
+	namespaced := m.Scope != nil && m.Scope.Name() == meta.RESTScopeNameNamespace
+	return m.Resource, namespaced, nil
+}
+
+// ResolveGVRByString 用字符串形式的 apiVersion / kind 解析 GVR。
+func (c *Client) ResolveGVRByString(apiVersion, kind string) (schema.GroupVersionResource, bool, error) {
+	gv, err := schema.ParseGroupVersion(apiVersion)
+	if err != nil {
+		return schema.GroupVersionResource{}, false, fmt.Errorf("parse apiVersion %s: %w", apiVersion, err)
+	}
+	return c.ResolveGVR(gv.WithKind(kind))
+}
+
+// InvalidateMapperCache 强制刷新 discovery 缓存（CRD 新增时使用）。
+func (c *Client) InvalidateMapperCache() {
+	if c.disco != nil {
+		c.disco.Invalidate()
+	}
+}
+
+// ApplyYAMLResult 单个资源 apply 结果。
+type ApplyYAMLResult struct {
+	APIVersion string
+	Kind       string
+	Namespace  string
+	Name       string
+	Action     string // created | updated
+	UID        string
+}
+
+// ApplyYAML 将 YAML 文本（可能包含多个 --- 分隔文档）依次 apply 到集群。
+// defaultNamespace 在 YAML 未指定 metadata.namespace 时生效（对 namespaced 资源）。
+func (c *Client) ApplyYAML(ctx context.Context, yamlText, defaultNamespace string) ([]ApplyYAMLResult, error) {
+	docs := splitYAMLDocs(yamlText)
+	results := make([]ApplyYAMLResult, 0, len(docs))
+	for _, doc := range docs {
+		trimmed := strings.TrimSpace(doc)
+		if trimmed == "" {
+			continue
+		}
+		obj := &unstructured.Unstructured{}
+		jsonBytes, err := sigyaml.YAMLToJSON([]byte(trimmed))
+		if err != nil {
+			return results, fmt.Errorf("yaml to json: %w", err)
+		}
+		if err := obj.UnmarshalJSON(jsonBytes); err != nil {
+			return results, fmt.Errorf("unmarshal object: %w", err)
+		}
+		if obj.GetKind() == "" {
+			continue
+		}
+		res, err := c.applyUnstructured(ctx, obj, defaultNamespace)
+		if err != nil {
+			return results, err
+		}
+		results = append(results, res)
+	}
+	return results, nil
+}
+
+// applyUnstructured 对单个 unstructured 对象执行 create-or-update。
+func (c *Client) applyUnstructured(ctx context.Context, obj *unstructured.Unstructured, defaultNamespace string) (ApplyYAMLResult, error) {
+	res := ApplyYAMLResult{
+		APIVersion: obj.GetAPIVersion(),
+		Kind:       obj.GetKind(),
+		Name:       obj.GetName(),
+		Namespace:  obj.GetNamespace(),
+	}
+	if c.dyn == nil || c.mapper == nil {
+		return res, fmt.Errorf("dynamic client / mapper is not configured")
+	}
+	gvk := obj.GroupVersionKind()
+	gvr, namespaced, err := c.ResolveGVR(gvk)
+	if err != nil {
+		return res, fmt.Errorf("resolve gvr %s: %w", gvk.String(), err)
+	}
+	ns := obj.GetNamespace()
+	if namespaced && strings.TrimSpace(ns) == "" {
+		ns = defaultNamespace
+		obj.SetNamespace(ns)
+		res.Namespace = ns
+	}
+	var ri dynamic.ResourceInterface
+	if namespaced {
+		ri = c.dyn.Resource(gvr).Namespace(ns)
+	} else {
+		ri = c.dyn.Resource(gvr)
+	}
+	existing, err := ri.Get(ctx, obj.GetName(), metav1.GetOptions{})
+	if err != nil {
+		if !apierrors.IsNotFound(err) {
+			return res, fmt.Errorf("get %s/%s: %w", gvk.Kind, obj.GetName(), err)
+		}
+		created, err := ri.Create(ctx, obj, metav1.CreateOptions{})
+		if err != nil {
+			return res, fmt.Errorf("create %s/%s: %w", gvk.Kind, obj.GetName(), err)
+		}
+		res.Action = "created"
+		res.UID = string(created.GetUID())
+		return res, nil
+	}
+	obj.SetResourceVersion(existing.GetResourceVersion())
+	updated, err := ri.Update(ctx, obj, metav1.UpdateOptions{})
+	if err != nil {
+		return res, fmt.Errorf("update %s/%s: %w", gvk.Kind, obj.GetName(), err)
+	}
+	res.Action = "updated"
+	res.UID = string(updated.GetUID())
+	return res, nil
+}
+
+// DeleteByGVK 通过 RESTMapper 解析 GVR 后删除资源，NotFound 视为成功。
+func (c *Client) DeleteByGVK(ctx context.Context, apiVersion, kind, namespace, name string) error {
+	if c.dyn == nil || c.mapper == nil {
+		return fmt.Errorf("dynamic client / mapper is not configured")
+	}
+	gv, err := schema.ParseGroupVersion(apiVersion)
+	if err != nil {
+		return fmt.Errorf("parse apiVersion %s: %w", apiVersion, err)
+	}
+	gvr, namespaced, err := c.ResolveGVR(gv.WithKind(kind))
+	if err != nil {
+		return fmt.Errorf("resolve gvr: %w", err)
+	}
+	var ri dynamic.ResourceInterface
+	if namespaced {
+		ri = c.dyn.Resource(gvr).Namespace(namespace)
+	} else {
+		ri = c.dyn.Resource(gvr)
+	}
+	if err := ri.Delete(ctx, name, metav1.DeleteOptions{}); err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil
+		}
+		return err
+	}
+	return nil
+}
+
+// splitYAMLDocs 按 --- 切分 YAML 多文档；保留 anchor，不处理转义。
+func splitYAMLDocs(yamlText string) []string {
+	normalized := strings.ReplaceAll(yamlText, "\r\n", "\n")
+	lines := strings.Split(normalized, "\n")
+	var docs []string
+	var cur strings.Builder
+	for _, line := range lines {
+		if strings.TrimSpace(line) == "---" {
+			if cur.Len() > 0 {
+				docs = append(docs, cur.String())
+				cur.Reset()
+			}
+			continue
+		}
+		cur.WriteString(line)
+		cur.WriteString("\n")
+	}
+	if cur.Len() > 0 {
+		docs = append(docs, cur.String())
+	}
+	return docs
 }
 
 // ApplyDefaultNetworkPolicy 同命名空间内 Pod 互通，默认拒绝来自其它命名空间入站（可按需收紧）。

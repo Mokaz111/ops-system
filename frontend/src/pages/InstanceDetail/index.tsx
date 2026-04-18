@@ -1,31 +1,46 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
+  Accordion,
+  AccordionDetails,
+  AccordionSummary,
   Alert,
   Box,
   Button,
   Card,
   Chip,
-  FormControl,
+  CircularProgress,
   Grid,
-  InputLabel,
   LinearProgress,
-  MenuItem,
-  Select,
+  Link as MuiLink,
+  Stack,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableRow,
   Typography,
 } from '@mui/material';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
-import RefreshIcon from '@mui/icons-material/Refresh';
-import InsightsOutlinedIcon from '@mui/icons-material/InsightsOutlined';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import ExtensionOutlinedIcon from '@mui/icons-material/ExtensionOutlined';
 import NotificationsActiveOutlinedIcon from '@mui/icons-material/NotificationsActiveOutlined';
-import LinkOutlinedIcon from '@mui/icons-material/LinkOutlined';
 import { useSnackbar } from 'notistack';
 import PageHeader from '../../components/common/PageHeader';
 import StatusChip from '../../components/common/StatusChip';
 import LoadingScreen from '../../components/common/LoadingScreen';
+import EmptyState from '../../components/common/EmptyState';
 import DetailTabs from '../../components/common/DetailTabs';
-import { instanceAPI } from '../../api/instance';
+import { instanceAPI, type ScaleEvent } from '../../api/instance';
+import {
+  integrationAPI,
+  latestAppliedRefs,
+  type AppliedRef,
+  type IntegrationInstallation,
+  type IntegrationInstallationRevision,
+} from '../../api/integration';
+import { grafanaHostAPI, type GrafanaHost } from '../../api/grafanaHost';
 import type { Instance, InstanceMetrics, InstanceSpec } from '../../types/api';
 
 const typeLabels: Record<string, { label: string; color: 'primary' | 'secondary' | 'success' | 'warning' }> = {
@@ -54,6 +69,270 @@ function ResourceBar({ label, used, total, unit }: { label: string; used: number
       </Box>
       <LinearProgress variant="determinate" value={pct} color={color} sx={{ height: 7, borderRadius: 4 }} />
     </Box>
+  );
+}
+
+function ScaleEventList({ events, loading }: { events: ScaleEvent[]; loading: boolean }) {
+  if (loading) {
+    return (
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+        <CircularProgress size={16} />
+        <Typography variant="caption">加载伸缩事件...</Typography>
+      </Box>
+    );
+  }
+  if (events.length === 0) {
+    return <EmptyState title="暂无伸缩事件" description="通过 /api/v1/instances/:id/scale 触发后会在此处展示。" />;
+  }
+  const methodChip = (m: string) => {
+    const colorMap: Record<string, 'primary' | 'secondary' | 'default' | 'error'> = {
+      cr_patch: 'primary',
+      helm_upgrade: 'secondary',
+      k8s_native: 'default',
+      rejected: 'error',
+    };
+    return <Chip size="small" label={m} color={colorMap[m] || 'default'} variant="outlined" />;
+  };
+  return (
+    <Table size="small">
+      <TableHead>
+        <TableRow>
+          <TableCell>时间</TableCell>
+          <TableCell>类型</TableCell>
+          <TableCell>生效路径</TableCell>
+          <TableCell>参数</TableCell>
+          <TableCell>状态</TableCell>
+          <TableCell>操作人</TableCell>
+        </TableRow>
+      </TableHead>
+      <TableBody>
+        {events.map((e) => {
+          const params: string[] = [];
+          if (e.replicas != null) params.push(`replicas=${e.replicas}`);
+          if (e.cpu) params.push(`cpu=${e.cpu}`);
+          if (e.memory) params.push(`memory=${e.memory}`);
+          if (e.storage) params.push(`storage=${e.storage}`);
+          return (
+            <TableRow key={e.id}>
+              <TableCell>
+                <Typography variant="caption">{new Date(e.created_at).toLocaleString()}</Typography>
+              </TableCell>
+              <TableCell>
+                <Chip size="small" label={e.scale_type} />
+              </TableCell>
+              <TableCell>{methodChip(e.method)}</TableCell>
+              <TableCell>
+                <Typography variant="caption" sx={{ fontFamily: 'monospace' }}>
+                  {params.join(' · ') || '-'}
+                </Typography>
+              </TableCell>
+              <TableCell>
+                <Chip
+                  size="small"
+                  label={e.status}
+                  color={e.status === 'success' ? 'success' : 'error'}
+                />
+                {e.error_message && (
+                  <Typography variant="caption" color="error" sx={{ display: 'block', maxWidth: 260, wordBreak: 'break-all' }}>
+                    {e.error_message}
+                  </Typography>
+                )}
+              </TableCell>
+              <TableCell>
+                <Typography variant="caption">{e.operator || '-'}</Typography>
+              </TableCell>
+            </TableRow>
+          );
+        })}
+      </TableBody>
+    </Table>
+  );
+}
+
+function statusColor(s?: string): 'success' | 'warning' | 'error' | 'default' {
+  switch (s) {
+    case 'success':
+      return 'success';
+    case 'partial':
+    case 'rendered':
+      return 'warning';
+    case 'failed':
+    case 'preflight_failed':
+    case 'uninstall_failed':
+      return 'error';
+    default:
+      return 'default';
+  }
+}
+
+function AppliedRefsTable({ refs, grafanaHosts }: { refs: AppliedRef[]; grafanaHosts: GrafanaHost[] }) {
+  if (refs.length === 0) {
+    return (
+      <Alert severity="info" sx={{ mt: 1 }}>
+        暂无已应用资源明细。可能为仅渲染未下发（rendered）状态，或该实例的 Apply 过程未产生资源。
+      </Alert>
+    );
+  }
+  const hostById: Record<string, GrafanaHost> = {};
+  for (const h of grafanaHosts) hostById[h.id] = h;
+  return (
+    <Table size="small" sx={{ mt: 1 }}>
+      <TableHead>
+        <TableRow>
+          <TableCell>Target</TableCell>
+          <TableCell>资源</TableCell>
+          <TableCell>命名空间 / 位置</TableCell>
+          <TableCell>状态</TableCell>
+          <TableCell>动作</TableCell>
+          <TableCell />
+        </TableRow>
+      </TableHead>
+      <TableBody>
+        {refs.map((r, idx) => {
+          let locLabel = r.namespace || '-';
+          let openLink: string | null = null;
+          if (r.target === 'grafana') {
+            const host = r.grafana_host_id ? hostById[r.grafana_host_id] : null;
+            locLabel = host ? `${host.name}${r.grafana_org ? ` · org=${r.grafana_org}` : ''}` : `org=${r.grafana_org ?? '-'}`;
+            if (host && r.uid) {
+              openLink = `${host.url.replace(/\/$/, '')}/d/${r.uid}`;
+            }
+          }
+          return (
+            <TableRow key={idx}>
+              <TableCell>
+                <Chip size="small" label={r.target || '-'} />
+              </TableCell>
+              <TableCell>
+                <Typography variant="body2" sx={{ fontFamily: 'monospace' }}>
+                  {r.apiVersion ? `${r.apiVersion} / ` : ''}{r.kind || '-'} · {r.name || '-'}
+                </Typography>
+                {r.uid && (
+                  <Typography variant="caption" color="text.secondary">uid: {r.uid}</Typography>
+                )}
+              </TableCell>
+              <TableCell>
+                <Typography variant="body2">{locLabel}</Typography>
+              </TableCell>
+              <TableCell>
+                <Chip size="small" color={statusColor(r.status)} label={r.status || '-'} />
+                {r.error && (
+                  <Typography variant="caption" color="error" sx={{ display: 'block', maxWidth: 260, wordBreak: 'break-all' }}>
+                    {r.error}
+                  </Typography>
+                )}
+              </TableCell>
+              <TableCell>
+                <Typography variant="caption" color="text.secondary">{r.action || '-'}</Typography>
+              </TableCell>
+              <TableCell>
+                {openLink && (
+                  <MuiLink href={openLink} target="_blank" rel="noreferrer" underline="hover">
+                    打开
+                  </MuiLink>
+                )}
+              </TableCell>
+            </TableRow>
+          );
+        })}
+      </TableBody>
+    </Table>
+  );
+}
+
+function InstallationCard({
+  installation,
+  grafanaHosts,
+}: {
+  installation: IntegrationInstallation;
+  grafanaHosts: GrafanaHost[];
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [revisions, setRevisions] = useState<IntegrationInstallationRevision[] | null>(null);
+
+  const handleChange = async (_: unknown, isOpen: boolean) => {
+    setExpanded(isOpen);
+    if (isOpen && !revisions) {
+      setLoading(true);
+      try {
+        const { data: res } = await integrationAPI.listInstallationRevisions(installation.id);
+        setRevisions(res.data || []);
+      } catch {
+        setRevisions([]);
+      } finally {
+        setLoading(false);
+      }
+    }
+  };
+
+  const refs = revisions ? latestAppliedRefs(revisions) : [];
+
+  return (
+    <Accordion
+      expanded={expanded}
+      onChange={handleChange}
+      sx={{ '&:before': { display: 'none' }, border: '1px solid', borderColor: 'divider' }}
+      elevation={0}
+    >
+      <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+        <Stack direction="row" spacing={1.5} alignItems="center" sx={{ flex: 1, flexWrap: 'wrap' }}>
+          <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
+            模版 {installation.template_id.slice(0, 8)} · {installation.template_version}
+          </Typography>
+          <Chip size="small" color={statusColor(installation.status)} label={installation.status} />
+          <Typography variant="caption" color="text.secondary">
+            部件：{installation.installed_parts || '-'} · 安装人：{installation.installed_by || '-'}
+          </Typography>
+        </Stack>
+      </AccordionSummary>
+      <AccordionDetails>
+        {loading ? (
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <CircularProgress size={16} />
+            <Typography variant="caption">正在加载变更历史...</Typography>
+          </Box>
+        ) : revisions && revisions.length > 0 ? (
+          <>
+            <Typography variant="caption" color="text.secondary">
+              最新一次 {revisions[0].action} · {new Date(revisions[0].created_at).toLocaleString()} · {revisions[0].status}
+            </Typography>
+            {revisions[0].error_message && (
+              <Alert severity="error" sx={{ mt: 1 }}>
+                {revisions[0].error_message}
+              </Alert>
+            )}
+            <AppliedRefsTable refs={refs} grafanaHosts={grafanaHosts} />
+          </>
+        ) : (
+          <Alert severity="warning">未找到变更历史记录。</Alert>
+        )}
+      </AccordionDetails>
+    </Accordion>
+  );
+}
+
+function InstallationList({
+  installations,
+  grafanaHosts,
+  filterPart,
+}: {
+  installations: IntegrationInstallation[];
+  grafanaHosts: GrafanaHost[];
+  filterPart?: string;
+}) {
+  const filtered = filterPart
+    ? installations.filter((i) => (i.installed_parts || '').includes(filterPart))
+    : installations;
+  if (filtered.length === 0) {
+    return <EmptyState title="暂无记录" description="通过接入中心安装模版后会展示在此。" />;
+  }
+  return (
+    <Stack spacing={1.5}>
+      {filtered.map((i) => (
+        <InstallationCard key={i.id} installation={i} grafanaHosts={grafanaHosts} />
+      ))}
+    </Stack>
   );
 }
 
@@ -89,7 +368,10 @@ export default function InstanceDetailPage() {
   const [instance, setInstance] = useState<Instance | null>(null);
   const [metrics, setMetrics] = useState<InstanceMetrics | null>(null);
   const [activeTab, setActiveTab] = useState('base');
-  const [timeRange, setTimeRange] = useState('1h');
+  const [installations, setInstallations] = useState<IntegrationInstallation[]>([]);
+  const [grafanaHosts, setGrafanaHosts] = useState<GrafanaHost[]>([]);
+  const [scaleEvents, setScaleEvents] = useState<ScaleEvent[]>([]);
+  const [scaleEventsLoading, setScaleEventsLoading] = useState(false);
 
   const fetchInstance = useCallback(async () => {
     if (!instanceId) return;
@@ -119,10 +401,54 @@ export default function InstanceDetailPage() {
     }
   }, [instanceId, enqueueSnackbar]);
 
+  const fetchScaleEvents = useCallback(async () => {
+    if (!instanceId) return;
+    setScaleEventsLoading(true);
+    try {
+      const { data: res } = await instanceAPI.scaleEvents(instanceId, { page: 1, page_size: 50 });
+      setScaleEvents(res.data?.items || []);
+    } catch {
+      setScaleEvents([]);
+    } finally {
+      setScaleEventsLoading(false);
+    }
+  }, [instanceId]);
+
+  const fetchInstallations = useCallback(async () => {
+    if (!instanceId) return;
+    try {
+      const { data: res } = await integrationAPI.listInstallations({
+        page: 1,
+        page_size: 50,
+        instance_id: instanceId,
+      });
+      setInstallations(res.data?.items || []);
+    } catch {
+      setInstallations([]);
+    }
+  }, [instanceId]);
+
   useEffect(() => {
     fetchInstance();
     fetchMetrics();
-  }, [fetchInstance, fetchMetrics]);
+    fetchInstallations();
+    fetchScaleEvents();
+  }, [fetchInstance, fetchMetrics, fetchInstallations, fetchScaleEvents]);
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const { data: res } = await grafanaHostAPI.list({ page: 1, page_size: 100 });
+        if (alive) setGrafanaHosts(res.data?.items || []);
+      } catch {
+        if (alive) setGrafanaHosts([]);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   const spec = useMemo(() => parseSpec(instance?.spec || '{}'), [instance?.spec]);
 
@@ -161,159 +487,157 @@ export default function InstanceDetailPage() {
             key: 'base',
             label: '基本信息',
             content: (
-              <Card sx={{ p: 2.5 }}>
-                <Grid container spacing={2}>
-                  <Grid size={{ xs: 12, md: 3 }}>
-                    <Typography variant="body2" color="text.secondary">实例名称</Typography>
-                    <Typography variant="body1" sx={{ fontWeight: 500 }}>{instance.instance_name}</Typography>
+              <>
+                <Card sx={{ p: 2.5, mb: 2 }}>
+                  <Grid container spacing={2}>
+                    <Grid size={{ xs: 12, md: 3 }}>
+                      <Typography variant="body2" color="text.secondary">实例名称</Typography>
+                      <Typography variant="body1" sx={{ fontWeight: 500 }}>{instance.instance_name}</Typography>
+                    </Grid>
+                    <Grid size={{ xs: 6, md: 2 }}>
+                      <Typography variant="body2" color="text.secondary">类型</Typography>
+                      <Chip
+                        label={typeLabels[instance.instance_type]?.label || instance.instance_type}
+                        color={typeLabels[instance.instance_type]?.color || 'default'}
+                        size="small"
+                      />
+                    </Grid>
+                    <Grid size={{ xs: 6, md: 2 }}>
+                      <Typography variant="body2" color="text.secondary">状态</Typography>
+                      <StatusChip status={instance.status} />
+                    </Grid>
+                    <Grid size={{ xs: 6, md: 2 }}>
+                      <Typography variant="body2" color="text.secondary">模板</Typography>
+                      <Typography variant="body2">{instance.template_type}</Typography>
+                    </Grid>
+                    <Grid size={{ xs: 6, md: 3 }}>
+                      <Typography variant="body2" color="text.secondary">命名空间</Typography>
+                      <Typography variant="body2">{instance.namespace || '-'}</Typography>
+                    </Grid>
+                    <Grid size={{ xs: 6, md: 3 }}>
+                      <Typography variant="body2" color="text.secondary">CPU</Typography>
+                      <Typography variant="body2">{spec.cpu} Core</Typography>
+                    </Grid>
+                    <Grid size={{ xs: 6, md: 3 }}>
+                      <Typography variant="body2" color="text.secondary">内存</Typography>
+                      <Typography variant="body2">{spec.memory} Gi</Typography>
+                    </Grid>
+                    <Grid size={{ xs: 6, md: 3 }}>
+                      <Typography variant="body2" color="text.secondary">存储</Typography>
+                      <Typography variant="body2">{spec.storage} Gi</Typography>
+                    </Grid>
+                    <Grid size={{ xs: 6, md: 3 }}>
+                      <Typography variant="body2" color="text.secondary">创建时间</Typography>
+                      <Typography variant="body2">{new Date(instance.created_at).toLocaleString()}</Typography>
+                    </Grid>
                   </Grid>
-                  <Grid size={{ xs: 6, md: 2 }}>
-                    <Typography variant="body2" color="text.secondary">类型</Typography>
-                    <Chip
-                      label={typeLabels[instance.instance_type]?.label || instance.instance_type}
-                      color={typeLabels[instance.instance_type]?.color || 'default'}
-                      size="small"
-                    />
-                  </Grid>
-                  <Grid size={{ xs: 6, md: 2 }}>
-                    <Typography variant="body2" color="text.secondary">状态</Typography>
-                    <StatusChip status={instance.status} />
-                  </Grid>
-                  <Grid size={{ xs: 6, md: 2 }}>
-                    <Typography variant="body2" color="text.secondary">模板</Typography>
-                    <Typography variant="body2">{instance.template_type}</Typography>
-                  </Grid>
-                  <Grid size={{ xs: 6, md: 3 }}>
-                    <Typography variant="body2" color="text.secondary">命名空间</Typography>
-                    <Typography variant="body2">{instance.namespace || '-'}</Typography>
-                  </Grid>
-                  <Grid size={{ xs: 6, md: 3 }}>
-                    <Typography variant="body2" color="text.secondary">CPU</Typography>
-                    <Typography variant="body2">{spec.cpu} Core</Typography>
-                  </Grid>
-                  <Grid size={{ xs: 6, md: 3 }}>
-                    <Typography variant="body2" color="text.secondary">内存</Typography>
-                    <Typography variant="body2">{spec.memory} Gi</Typography>
-                  </Grid>
-                  <Grid size={{ xs: 6, md: 3 }}>
-                    <Typography variant="body2" color="text.secondary">存储</Typography>
-                    <Typography variant="body2">{spec.storage} Gi</Typography>
-                  </Grid>
-                  <Grid size={{ xs: 6, md: 3 }}>
-                    <Typography variant="body2" color="text.secondary">创建时间</Typography>
-                    <Typography variant="body2">{new Date(instance.created_at).toLocaleString()}</Typography>
-                  </Grid>
-                </Grid>
-              </Card>
-            ),
-          },
-          {
-            key: 'service',
-            label: '服务地址',
-            content: (
-              <Card sx={{ p: 2.5 }}>
-                <Typography variant="subtitle2" sx={{ mb: 1.5 }}>服务连接信息</Typography>
-                <EndpointRow label="访问地址" value={instance.url || '-'} />
-                <EndpointRow label="Remote Write" value={remoteWrite} />
-                <EndpointRow label="Remote Read" value={remoteRead} />
-                <EndpointRow label="HTTP API" value={httpApi} />
-                <Box sx={{ mt: 2 }}>
-                  <Button
-                    variant="outlined"
-                    startIcon={<OpenInNewIcon />}
-                    onClick={() => instance.url && window.open(instance.url, '_blank')}
-                    disabled={!instance.url}
-                  >
-                    打开实例监控页面
-                  </Button>
-                </Box>
-              </Card>
-            ),
-          },
-          {
-            key: 'monitor',
-            label: '实例监控',
-            content: (
-              <Card sx={{ p: 2.5 }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                    <InsightsOutlinedIcon color="primary" />
-                    <Typography variant="subtitle2">资源监控</Typography>
-                  </Box>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                    <FormControl size="small" sx={{ minWidth: 140 }}>
-                      <InputLabel>时间范围</InputLabel>
-                      <Select value={timeRange} label="时间范围" onChange={(e) => setTimeRange(e.target.value)}>
-                        <MenuItem value="15m">最近 15 分钟</MenuItem>
-                        <MenuItem value="1h">最近 1 小时</MenuItem>
-                        <MenuItem value="6h">最近 6 小时</MenuItem>
-                        <MenuItem value="24h">最近 24 小时</MenuItem>
-                      </Select>
-                    </FormControl>
-                    <Button startIcon={<RefreshIcon />} onClick={fetchMetrics} disabled={metricsLoading}>刷新</Button>
-                  </Box>
-                </Box>
+                </Card>
 
-                {metricsLoading ? (
-                  <LinearProgress />
-                ) : metrics ? (
-                  <>
-                    <ResourceBar
-                      label="CPU"
-                      used={Math.round(spec.cpu * (metrics.cpu_usage_percent || 0) / 100)}
-                      total={spec.cpu}
-                      unit="Core"
-                    />
-                    <ResourceBar
-                      label="内存"
-                      used={Math.round(spec.memory * (metrics.memory_usage_percent || 0) / 100)}
-                      total={spec.memory}
-                      unit="GiB"
-                    />
-                    <ResourceBar
-                      label="存储"
-                      used={Math.round(spec.storage * (metrics.disk_usage_percent || 0) / 100)}
-                      total={spec.storage}
-                      unit="GiB"
-                    />
-                    {metrics.note && (
-                      <Alert severity="info">{metrics.note}</Alert>
-                    )}
-                  </>
-                ) : (
-                  <Alert severity="warning">暂无可用监控数据，请稍后重试。</Alert>
-                )}
+                <Card sx={{ p: 2.5, mb: 2 }}>
+                  <Typography variant="subtitle2" sx={{ mb: 1.5 }}>服务地址</Typography>
+                  <EndpointRow label="访问地址" value={instance.url || '-'} />
+                  <EndpointRow label="Remote Write" value={remoteWrite} />
+                  <EndpointRow label="Remote Read" value={remoteRead} />
+                  <EndpointRow label="HTTP API" value={httpApi} />
+                  <Box sx={{ mt: 2 }}>
+                    <Button
+                      variant="outlined"
+                      startIcon={<OpenInNewIcon />}
+                      onClick={() => instance.url && window.open(instance.url, '_blank')}
+                      disabled={!instance.url}
+                    >
+                      打开实例监控页面
+                    </Button>
+                  </Box>
+                </Card>
+
+                <Card sx={{ p: 2.5 }}>
+                  <Typography variant="subtitle2" sx={{ mb: 1.5 }}>资源使用</Typography>
+                  {metricsLoading ? (
+                    <LinearProgress />
+                  ) : metrics ? (
+                    <>
+                      <ResourceBar label="CPU" used={Math.round(spec.cpu * (metrics.cpu_usage_percent || 0) / 100)} total={spec.cpu} unit="Core" />
+                      <ResourceBar label="内存" used={Math.round(spec.memory * (metrics.memory_usage_percent || 0) / 100)} total={spec.memory} unit="GiB" />
+                      <ResourceBar label="存储" used={Math.round(spec.storage * (metrics.disk_usage_percent || 0) / 100)} total={spec.storage} unit="GiB" />
+                      {metrics.note && <Alert severity="info">{metrics.note}</Alert>}
+                    </>
+                  ) : (
+                    <Alert severity="warning">暂无可用监控数据，请稍后重试。</Alert>
+                  )}
+                </Card>
+              </>
+            ),
+          },
+          {
+            key: 'collect',
+            label: '数据采集',
+            content: (
+              <Card sx={{ p: 2.5 }}>
+                <Typography variant="subtitle2" sx={{ mb: 1 }}>接入中心</Typography>
+                <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                  选择模版将 VMPodScrape / VMServiceScrape / VMAgent 等采集配置下发到本实例。
+                </Typography>
+                <Button
+                  variant="contained"
+                  startIcon={<ExtensionOutlinedIcon />}
+                  onClick={() => navigate(`/integrations?instance_id=${instance.id}&instance_name=${encodeURIComponent(instance.instance_name)}`)}
+                >
+                  打开接入中心
+                </Button>
+                <Box sx={{ mt: 3 }}>
+                  <Typography variant="subtitle2" sx={{ mb: 1 }}>本实例已安装的采集模版</Typography>
+                  <InstallationList installations={installations} grafanaHosts={grafanaHosts} filterPart="collector" />
+                </Box>
+              </Card>
+            ),
+          },
+          {
+            key: 'dashboard',
+            label: 'Dashboard',
+            content: (
+              <Card sx={{ p: 2.5 }}>
+                <Typography variant="subtitle2" sx={{ mb: 1 }}>本实例已安装的 Dashboard</Typography>
+                <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                  通过接入中心安装模版时勾选 Dashboard 部件，会在此处展示。
+                </Typography>
+                <InstallationList installations={installations} grafanaHosts={grafanaHosts} filterPart="dashboard" />
               </Card>
             ),
           },
           {
             key: 'alert',
-            label: '告警管理',
+            label: '告警',
             content: (
               <Card sx={{ p: 2.5 }}>
-                <Typography variant="subtitle2" sx={{ mb: 1 }}>告警联动</Typography>
+                <Typography variant="subtitle2" sx={{ mb: 1 }}>本实例已下发的告警模版</Typography>
                 <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                  可跳转到告警引擎查看当前实例对应的告警规则、告警事件与通知渠道。
+                  M2 起，VMRule 会以 K8s CR 形式下发；N9E 规则为占位，未执行。
                 </Typography>
-                <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                <InstallationList installations={installations} grafanaHosts={grafanaHosts} filterPart="vmrule" />
+                <Box sx={{ mt: 2, display: 'flex', gap: 1, flexWrap: 'wrap' }}>
                   <Button
-                    variant="contained"
+                    variant="outlined"
                     startIcon={<NotificationsActiveOutlinedIcon />}
                     onClick={() => navigate(`/alerts?instance_id=${instance.id}&instance_name=${encodeURIComponent(instance.instance_name)}`)}
                   >
-                    打开告警引擎
-                  </Button>
-                  <Button
-                    variant="outlined"
-                    startIcon={<LinkOutlinedIcon />}
-                    onClick={() => navigate('/platform-scaling')}
-                  >
-                    前往平台扩容
+                    打开 N9E 告警引擎（占位）
                   </Button>
                 </Box>
-                <Alert severity="info" sx={{ mt: 2 }}>
-                  独享集群与共享版的扩容入口不同：实例级操作仅适用于单节点独享实例，集群扩容请使用平台扩容页面。
-                </Alert>
+              </Card>
+            ),
+          },
+          {
+            key: 'scale',
+            label: '伸缩历史',
+            content: (
+              <Card sx={{ p: 2.5 }}>
+                <Typography variant="subtitle2" sx={{ mb: 1 }}>实例伸缩事件（最近 50 条）</Typography>
+                <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                  每次水平 / 垂直 / 存储伸缩都会记录生效路径（CR 直 patch / helm upgrade / k8s 原生），
+                  方便审计与诊断。
+                </Typography>
+                <ScaleEventList events={scaleEvents} loading={scaleEventsLoading} />
               </Card>
             ),
           },

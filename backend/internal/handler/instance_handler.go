@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"ops-system/backend/internal/model"
+	"ops-system/backend/internal/repository"
 	"ops-system/backend/internal/service"
 	"ops-system/backend/pkg/response"
 
@@ -25,24 +26,26 @@ func NewInstanceHandler(svc *service.InstanceService, scaleSvc *service.ScaleSer
 }
 
 type instanceResp struct {
-	ID           uuid.UUID `json:"id"`
-	TenantID     uuid.UUID `json:"tenant_id"`
-	InstanceName string    `json:"instance_name"`
-	InstanceType string    `json:"instance_type"`
-	TemplateType string    `json:"template_type"`
-	ReleaseName  string    `json:"release_name"`
-	Namespace    string    `json:"namespace"`
-	Spec         string    `json:"spec"`
-	Status       string    `json:"status"`
-	URL          string    `json:"url"`
-	CreatedAt    time.Time `json:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at"`
+	ID           uuid.UUID  `json:"id"`
+	TenantID     uuid.UUID  `json:"tenant_id"`
+	ClusterID    *uuid.UUID `json:"cluster_id,omitempty"`
+	InstanceName string     `json:"instance_name"`
+	InstanceType string     `json:"instance_type"`
+	TemplateType string     `json:"template_type"`
+	ReleaseName  string     `json:"release_name"`
+	Namespace    string     `json:"namespace"`
+	Spec         string     `json:"spec"`
+	Status       string     `json:"status"`
+	URL          string     `json:"url"`
+	CreatedAt    time.Time  `json:"created_at"`
+	UpdatedAt    time.Time  `json:"updated_at"`
 }
 
 func toInstanceResp(i *model.Instance) instanceResp {
 	return instanceResp{
 		ID:           i.ID,
 		TenantID:     i.TenantID,
+		ClusterID:    i.ClusterID,
 		InstanceName: i.InstanceName,
 		InstanceType: i.InstanceType,
 		TemplateType: i.TemplateType,
@@ -57,11 +60,12 @@ func toInstanceResp(i *model.Instance) instanceResp {
 }
 
 type createInstanceBody struct {
-	TenantID     uuid.UUID `json:"tenant_id" binding:"required"`
-	InstanceName string    `json:"instance_name" binding:"required"`
-	InstanceType string    `json:"instance_type" binding:"required"`
-	TemplateType string    `json:"template_type"`
-	Spec         string    `json:"spec"`
+	TenantID     uuid.UUID  `json:"tenant_id" binding:"required"`
+	ClusterID    *uuid.UUID `json:"cluster_id"`
+	InstanceName string     `json:"instance_name" binding:"required"`
+	InstanceType string     `json:"instance_type" binding:"required"`
+	TemplateType string     `json:"template_type"`
+	Spec         string     `json:"spec"`
 }
 
 // List GET /api/v1/instances
@@ -119,6 +123,7 @@ func (h *InstanceHandler) Create(c *gin.Context) {
 	}
 	inst, err := h.svc.Create(c.Request.Context(), &service.CreateInstanceRequest{
 		TenantID:     body.TenantID,
+		ClusterID:    body.ClusterID,
 		InstanceName: body.InstanceName,
 		InstanceType: body.InstanceType,
 		TemplateType: body.TemplateType,
@@ -220,17 +225,44 @@ func (h *InstanceHandler) Scale(c *gin.Context) {
 		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, err.Error())
 		return
 	}
+	operator := ""
+	if u, ok := currentUser(c, h.userSvc); ok {
+		operator = u.Username
+	}
 	if err := h.scaleSvc.Scale(c.Request.Context(), id, &service.ScaleRequest{
 		ScaleType: body.ScaleType,
 		Replicas:  body.Replicas,
 		CPU:       body.CPU,
 		Memory:    body.Memory,
 		Storage:   body.Storage,
+		Operator:  operator,
 	}); err != nil {
 		h.handleErr(c, err)
 		return
 	}
 	response.JSON(c, nil)
+}
+
+// ListScaleEvents GET /api/v1/instances/:id/scale-events
+func (h *InstanceHandler) ListScaleEvents(c *gin.Context) {
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, "invalid id")
+		return
+	}
+	page, ps, ok := parsePageAndSize(c, 20)
+	if !ok {
+		return
+	}
+	f := repository.ScaleEventListFilter{InstanceID: &id}
+	f.ScaleType = c.Query("scale_type")
+	f.Status = c.Query("status")
+	list, total, err := h.scaleSvc.ListScaleEvents(c.Request.Context(), f, page, ps)
+	if err != nil {
+		h.handleErr(c, err)
+		return
+	}
+	response.JSON(c, gin.H{"items": list, "total": total, "page": page, "page_size": ps})
 }
 
 // Metrics GET /api/v1/instances/:id/metrics

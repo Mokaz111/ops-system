@@ -18,6 +18,13 @@ import NotificationsOutlinedIcon from '@mui/icons-material/NotificationsOutlined
 import PeopleOutlinedIcon from '@mui/icons-material/PeopleOutlined';
 import SettingsOutlinedIcon from '@mui/icons-material/SettingsOutlined';
 import SettingsEthernetOutlinedIcon from '@mui/icons-material/SettingsEthernetOutlined';
+import ExtensionOutlinedIcon from '@mui/icons-material/ExtensionOutlined';
+import DataUsageOutlinedIcon from '@mui/icons-material/DataUsageOutlined';
+import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined';
+import ManageSearchOutlinedIcon from '@mui/icons-material/ManageSearchOutlined';
+import GridViewOutlinedIcon from '@mui/icons-material/GridViewOutlined';
+import HubOutlinedIcon from '@mui/icons-material/HubOutlined';
+import DnsOutlinedIcon from '@mui/icons-material/DnsOutlined';
 import { appRouteMeta, type AppRouteKey } from '../../config/appRoutes';
 
 const DRAWER_WIDTH = 256;
@@ -28,9 +35,16 @@ const iconMap: Record<AppRouteKey, React.ReactNode> = {
   tenants: <GroupsOutlinedIcon />,
   instances: <StorageOutlinedIcon />,
   'instance-detail': <StorageOutlinedIcon />,
+  integrations: <ExtensionOutlinedIcon />,
+  metrics: <DataUsageOutlinedIcon />,
+  'log-instances': <DescriptionOutlinedIcon />,
+  'log-query': <ManageSearchOutlinedIcon />,
   grafana: <BarChartOutlinedIcon />,
+  'grafana-hosts': <DnsOutlinedIcon />,
+  'dashboard-mgmt': <GridViewOutlinedIcon />,
   alerts: <NotificationsOutlinedIcon />,
   users: <PeopleOutlinedIcon />,
+  clusters: <HubOutlinedIcon />,
   'platform-scaling': <SettingsEthernetOutlinedIcon />,
   settings: <SettingsOutlinedIcon />,
 };

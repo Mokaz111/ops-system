@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"ops-system/backend/internal/helm"
+	"ops-system/backend/internal/k8s"
 )
 
 var (
@@ -40,10 +41,11 @@ type InitSharedClusterPlan struct {
 
 type PlatformBootstrapService struct {
 	helmClient *helm.Client
+	k8sClient  *k8s.Client // 可选；用于安装完成后刷新 RESTMapper 缓存。
 }
 
-func NewPlatformBootstrapService(helmClient *helm.Client) *PlatformBootstrapService {
-	return &PlatformBootstrapService{helmClient: helmClient}
+func NewPlatformBootstrapService(helmClient *helm.Client, k8sClient *k8s.Client) *PlatformBootstrapService {
+	return &PlatformBootstrapService{helmClient: helmClient, k8sClient: k8sClient}
 }
 
 // InitSharedVMStack 初始化或升级全局共享监控集群（admin 手动触发）。
@@ -91,6 +93,11 @@ func (s *PlatformBootstrapService) InitSharedVMStack(
 	}
 	if err := s.helmClient.InstallOrUpgrade(ctx, release, defaultSharedStackChart, ns, values); err != nil {
 		return nil, err
+	}
+	// VictoriaMetrics operator 会注册 VMAgent/VMRule/VMPodScrape 等 CRD；
+	// 刷新缓存，后续 Install 走 CompositeApplier 才能正确解析 GVR。
+	if s.k8sClient != nil {
+		s.k8sClient.InvalidateMapperCache()
 	}
 	return plan, nil
 }

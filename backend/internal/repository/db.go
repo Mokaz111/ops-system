@@ -70,6 +70,16 @@ func AutoMigrate(db *gorm.DB) error {
 		&model.User{},
 		&model.Instance{},
 		&model.PlatformScaleAudit{},
+		&model.LogInstance{},
+		&model.IntegrationTemplate{},
+		&model.IntegrationTemplateVersion{},
+		&model.IntegrationInstallation{},
+		&model.IntegrationInstallationRevision{},
+		&model.Metric{},
+		&model.MetricTemplateMapping{},
+		&model.GrafanaHost{},
+		&model.Cluster{},
+		&model.ScaleEvent{},
 	)
 }
 

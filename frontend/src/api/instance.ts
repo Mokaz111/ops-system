@@ -30,4 +30,24 @@ export const instanceAPI = {
 
   metrics: (id: string) =>
     api.get<ApiResponse<InstanceMetrics>>(`/instances/${id}/metrics`),
+
+  scaleEvents: (id: string, params?: PaginationParams & { scale_type?: string; status?: string }) =>
+    api.get<ApiResponse<PaginatedResponse<ScaleEvent>>>(`/instances/${id}/scale-events`, { params }),
 };
+
+export interface ScaleEvent {
+  id: string;
+  instance_id: string;
+  instance_name: string;
+  tenant_id: string;
+  scale_type: 'horizontal' | 'vertical' | 'storage' | string;
+  method: 'cr_patch' | 'helm_upgrade' | 'k8s_native' | 'rejected' | string;
+  replicas?: number | null;
+  cpu?: string;
+  memory?: string;
+  storage?: string;
+  status: 'success' | 'failed' | string;
+  error_message?: string;
+  operator?: string;
+  created_at: string;
+}

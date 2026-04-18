@@ -23,6 +23,42 @@ var (
 	ErrScaleTypeNotAllowed    = errors.New("scale_type not allowed for this template_type")
 )
 
+// vmOperatorGroup / vmOperatorVersion 是 VictoriaMetrics Operator 维护的 CRD group/version。
+// 单节点 metrics/logs 实例由 Operator 直接 reconcile，patch CR spec 会触发 sts 滚动。
+const (
+	vmOperatorGroup   = "operator.victoriametrics.com"
+	vmOperatorVersion = "v1beta1"
+)
+
+// ListScaleEvents 按 instance 分页查询伸缩事件。
+func (s *ScaleService) ListScaleEvents(ctx context.Context, f repository.ScaleEventListFilter, page, pageSize int) ([]model.ScaleEvent, int64, error) {
+	if s.scaleEventRepo == nil {
+		return nil, 0, nil
+	}
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 || pageSize > 200 {
+		return nil, 0, ErrInvalidPagination
+	}
+	f.Offset = (page - 1) * pageSize
+	f.Limit = pageSize
+	return s.scaleEventRepo.List(ctx, f)
+}
+
+// vmCRResourceFor 根据 instance_type 返回对应的 VM Operator CR resource 名称（复数）。
+// 仅 metrics/logs 存在对应 CR；其它类型（如 visual=Grafana）返回空表示无法 CR 直 patch。
+func vmCRResourceFor(instanceType string) string {
+	switch instanceType {
+	case "metrics":
+		return "vmsingles"
+	case "logs":
+		return "vlsingles"
+	default:
+		return ""
+	}
+}
+
 // ScaleRequest 伸缩请求。
 type ScaleRequest struct {
 	ScaleType string
@@ -30,31 +66,65 @@ type ScaleRequest struct {
 	CPU       string
 	Memory    string
 	Storage   string
+	Operator  string // 审计字段，非业务必填
 }
 
 // ScaleService 实例伸缩（水平 / 垂直 / 存储）。
 type ScaleService struct {
-	helmClient   *helm.Client
-	k8sClient    *k8s.Client
-	instanceRepo *repository.InstanceRepository
-	log          *zap.Logger
+	helmClient     *helm.Client
+	k8sClient      *k8s.Client
+	instanceRepo   *repository.InstanceRepository
+	scaleEventRepo *repository.ScaleEventRepository
+	log            *zap.Logger
 }
 
 func NewScaleService(
 	helmClient *helm.Client,
 	k8sClient *k8s.Client,
 	instanceRepo *repository.InstanceRepository,
+	scaleEventRepo *repository.ScaleEventRepository,
 	log *zap.Logger,
 ) *ScaleService {
 	return &ScaleService{
-		helmClient:   helmClient,
-		k8sClient:    k8sClient,
-		instanceRepo: instanceRepo,
-		log:          log,
+		helmClient:     helmClient,
+		k8sClient:      k8sClient,
+		instanceRepo:   instanceRepo,
+		scaleEventRepo: scaleEventRepo,
+		log:            log,
 	}
 }
 
-// Scale 根据类型执行对应伸缩操作。
+// recordEvent 把一次伸缩结果写入审计。任何 DB 错误仅记录日志，不向上冒泡。
+func (s *ScaleService) recordEvent(ctx context.Context, inst *model.Instance, req *ScaleRequest, method string, err error) {
+	if s.scaleEventRepo == nil || inst == nil {
+		return
+	}
+	status := "success"
+	errMsg := ""
+	if err != nil {
+		status = "failed"
+		errMsg = err.Error()
+	}
+	e := &model.ScaleEvent{
+		InstanceID:   inst.ID,
+		InstanceName: inst.InstanceName,
+		TenantID:     inst.TenantID,
+		ScaleType:    req.ScaleType,
+		Method:       method,
+		Replicas:     req.Replicas,
+		CPU:          req.CPU,
+		Memory:       req.Memory,
+		Storage:      req.Storage,
+		Status:       status,
+		ErrorMessage: errMsg,
+		Operator:     req.Operator,
+	}
+	if werr := s.scaleEventRepo.Create(ctx, e); werr != nil && s.log != nil {
+		s.log.Warn("scale_event_persist_failed", zap.Error(werr))
+	}
+}
+
+// Scale 根据类型执行对应伸缩操作，并写入审计事件。
 func (s *ScaleService) Scale(ctx context.Context, instanceID uuid.UUID, req *ScaleRequest) error {
 	inst, err := s.instanceRepo.GetByID(ctx, instanceID)
 	if err != nil {
@@ -64,6 +134,7 @@ func (s *ScaleService) Scale(ctx context.Context, instanceID uuid.UUID, req *Sca
 		return ErrScaleInstanceNotFound
 	}
 	if err := validateScalePolicy(inst, req); err != nil {
+		s.recordEvent(ctx, inst, req, "rejected", err)
 		return err
 	}
 
@@ -75,6 +146,7 @@ func (s *ScaleService) Scale(ctx context.Context, instanceID uuid.UUID, req *Sca
 	case "storage":
 		return s.scaleStorage(ctx, inst, req)
 	default:
+		s.recordEvent(ctx, inst, req, "rejected", ErrInvalidScaleType)
 		return ErrInvalidScaleType
 	}
 }
@@ -95,29 +167,81 @@ func validateScalePolicy(inst *model.Instance, req *ScaleRequest) error {
 
 func (s *ScaleService) scaleHorizontal(ctx context.Context, inst *model.Instance, req *ScaleRequest) error {
 	if s.k8sClient == nil {
+		s.recordEvent(ctx, inst, req, "k8s_native", ErrScaleNotSupported)
 		return ErrScaleNotSupported
 	}
 	if inst.Namespace == "" {
+		s.recordEvent(ctx, inst, req, "k8s_native", ErrScaleNotSupported)
 		return ErrScaleNotSupported
 	}
 	if req.Replicas == nil {
-		return fmt.Errorf("replicas required for horizontal scaling")
+		err := fmt.Errorf("replicas required for horizontal scaling")
+		s.recordEvent(ctx, inst, req, "k8s_native", err)
+		return err
 	}
 	deployName := inst.ReleaseName
 	if deployName == "" {
 		deployName = inst.InstanceName
 	}
 	if err := s.k8sClient.ScaleDeployment(ctx, inst.Namespace, deployName, *req.Replicas); err != nil {
-		return fmt.Errorf("scale deployment: %w", err)
+		wrapped := fmt.Errorf("scale deployment: %w", err)
+		s.recordEvent(ctx, inst, req, "k8s_native", wrapped)
+		return wrapped
 	}
-	return s.updateInstanceSpec(ctx, inst, req)
+	if err := s.updateInstanceSpec(ctx, inst, req); err != nil {
+		s.recordEvent(ctx, inst, req, "k8s_native", err)
+		return err
+	}
+	s.recordEvent(ctx, inst, req, "k8s_native", nil)
+	return nil
 }
 
+// scaleVertical 先尝试直接 patch VMSingle/VLSingle CR 的 spec.resources，失败或 CR 不存在时回退到 helm upgrade。
+//
+// 直接 patch CR 的好处：
+//   - 无需加载 chart、无需重新渲染整套 values；
+//   - 幂等、秒级生效（VM Operator 会 reconcile 对应 StatefulSet）；
+//   - 不影响其它 values（告警、数据源等），避免 helm 意外覆盖。
 func (s *ScaleService) scaleVertical(ctx context.Context, inst *model.Instance, req *ScaleRequest) error {
-	if s.helmClient == nil {
+	if req.CPU == "" && req.Memory == "" {
+		err := fmt.Errorf("cpu or memory required for vertical scaling")
+		s.recordEvent(ctx, inst, req, "rejected", err)
+		return err
+	}
+	if inst.Namespace == "" {
+		s.recordEvent(ctx, inst, req, "rejected", ErrScaleNotSupported)
 		return ErrScaleNotSupported
 	}
-	if inst.ReleaseName == "" || inst.Namespace == "" {
+
+	patched, err := s.tryPatchVMCRResources(ctx, inst, req)
+	if err != nil {
+		if s.log != nil {
+			s.log.Warn("scale_vertical_cr_patch_failed",
+				zap.String("instance", inst.InstanceName),
+				zap.String("namespace", inst.Namespace),
+				zap.Error(err))
+		}
+	} else if patched {
+		if s.log != nil {
+			s.log.Info("scale_vertical_cr_patched",
+				zap.String("instance", inst.InstanceName),
+				zap.String("namespace", inst.Namespace),
+				zap.String("type", inst.InstanceType))
+		}
+		if uerr := s.updateInstanceSpec(ctx, inst, req); uerr != nil {
+			s.recordEvent(ctx, inst, req, "cr_patch", uerr)
+			return uerr
+		}
+		s.recordEvent(ctx, inst, req, "cr_patch", nil)
+		return nil
+	}
+
+	if s.helmClient == nil {
+		s.recordEvent(ctx, inst, req, "helm_upgrade", ErrScaleNotSupported)
+		return ErrScaleNotSupported
+	}
+	if inst.ReleaseName == "" {
+		s.recordEvent(ctx, inst, req, "helm_upgrade", ErrScaleNotSupported)
 		return ErrScaleNotSupported
 	}
 
@@ -135,34 +259,155 @@ func (s *ScaleService) scaleVertical(ctx context.Context, inst *model.Instance, 
 		},
 	}
 
-	rs, err := s.helmClient.GetReleaseStatus(ctx, inst.ReleaseName, inst.Namespace)
-	if err != nil {
-		return fmt.Errorf("get release status: %w", err)
+	rs, rerr := s.helmClient.GetReleaseStatus(ctx, inst.ReleaseName, inst.Namespace)
+	if rerr != nil {
+		wrapped := fmt.Errorf("get release status: %w", rerr)
+		s.recordEvent(ctx, inst, req, "helm_upgrade", wrapped)
+		return wrapped
 	}
-	if err := s.helmClient.UpgradeRelease(ctx, inst.ReleaseName, rs.Chart, inst.Namespace, vals); err != nil {
-		return fmt.Errorf("upgrade release: %w", err)
+	if uerr := s.helmClient.UpgradeRelease(ctx, inst.ReleaseName, rs.Chart, inst.Namespace, vals); uerr != nil {
+		wrapped := fmt.Errorf("upgrade release: %w", uerr)
+		s.recordEvent(ctx, inst, req, "helm_upgrade", wrapped)
+		return wrapped
 	}
-	return s.updateInstanceSpec(ctx, inst, req)
+	if uerr := s.updateInstanceSpec(ctx, inst, req); uerr != nil {
+		s.recordEvent(ctx, inst, req, "helm_upgrade", uerr)
+		return uerr
+	}
+	s.recordEvent(ctx, inst, req, "helm_upgrade", nil)
+	return nil
 }
 
+// tryPatchVMCRResources 直接 patch VMSingle/VLSingle CR 的 spec.resources。
+// 返回 (patched bool, err error)。patched=false && err=nil 表示该实例不适用（调用方需回退到 helm）。
+func (s *ScaleService) tryPatchVMCRResources(ctx context.Context, inst *model.Instance, req *ScaleRequest) (bool, error) {
+	if s.k8sClient == nil {
+		return false, nil
+	}
+	resource := vmCRResourceFor(inst.InstanceType)
+	if resource == "" {
+		return false, nil
+	}
+	name := inst.ReleaseName
+	if name == "" {
+		name = inst.InstanceName
+	}
+	existing, err := s.k8sClient.GetCustomResource(ctx, vmOperatorGroup, vmOperatorVersion, resource, inst.Namespace, name)
+	if err != nil {
+		return false, fmt.Errorf("get %s/%s: %w", resource, name, err)
+	}
+	if existing == nil {
+		return false, nil
+	}
+	limits := map[string]interface{}{}
+	if req.CPU != "" {
+		limits["cpu"] = req.CPU
+	}
+	if req.Memory != "" {
+		limits["memory"] = req.Memory
+	}
+	spec := map[string]interface{}{
+		"resources": map[string]interface{}{
+			"limits":   limits,
+			"requests": limits,
+		},
+	}
+	if err := s.k8sClient.PatchCustomResourceSpec(ctx, vmOperatorGroup, vmOperatorVersion, resource, inst.Namespace, name, spec); err != nil {
+		return false, fmt.Errorf("patch %s/%s spec: %w", resource, name, err)
+	}
+	return true, nil
+}
+
+// scaleStorage 优先 patch VMSingle/VLSingle CR 的 spec.storage，让 Operator 处理 PVC expand；
+// 若 CR 不存在（例如老实例直接由 helm 管理 PVC），回退到直接 PVC resize。
 func (s *ScaleService) scaleStorage(ctx context.Context, inst *model.Instance, req *ScaleRequest) error {
 	if s.k8sClient == nil {
+		s.recordEvent(ctx, inst, req, "k8s_native", ErrScaleNotSupported)
 		return ErrScaleNotSupported
 	}
 	if inst.Namespace == "" {
+		s.recordEvent(ctx, inst, req, "k8s_native", ErrScaleNotSupported)
 		return ErrScaleNotSupported
 	}
 	if req.Storage == "" {
-		return fmt.Errorf("storage size required for storage scaling")
+		err := fmt.Errorf("storage size required for storage scaling")
+		s.recordEvent(ctx, inst, req, "rejected", err)
+		return err
 	}
+
+	patched, err := s.tryPatchVMCRStorage(ctx, inst, req)
+	if err != nil {
+		if s.log != nil {
+			s.log.Warn("scale_storage_cr_patch_failed",
+				zap.String("instance", inst.InstanceName),
+				zap.String("namespace", inst.Namespace),
+				zap.Error(err))
+		}
+	} else if patched {
+		if s.log != nil {
+			s.log.Info("scale_storage_cr_patched",
+				zap.String("instance", inst.InstanceName),
+				zap.String("namespace", inst.Namespace),
+				zap.String("type", inst.InstanceType))
+		}
+		if uerr := s.updateInstanceSpec(ctx, inst, req); uerr != nil {
+			s.recordEvent(ctx, inst, req, "cr_patch", uerr)
+			return uerr
+		}
+		s.recordEvent(ctx, inst, req, "cr_patch", nil)
+		return nil
+	}
+
 	pvcName := inst.ReleaseName
 	if pvcName == "" {
 		pvcName = inst.InstanceName
 	}
-	if err := s.k8sClient.ResizePVC(ctx, inst.Namespace, pvcName, req.Storage); err != nil {
-		return fmt.Errorf("resize pvc: %w", err)
+	if rerr := s.k8sClient.ResizePVC(ctx, inst.Namespace, pvcName, req.Storage); rerr != nil {
+		wrapped := fmt.Errorf("resize pvc: %w", rerr)
+		s.recordEvent(ctx, inst, req, "k8s_native", wrapped)
+		return wrapped
 	}
-	return s.updateInstanceSpec(ctx, inst, req)
+	if uerr := s.updateInstanceSpec(ctx, inst, req); uerr != nil {
+		s.recordEvent(ctx, inst, req, "k8s_native", uerr)
+		return uerr
+	}
+	s.recordEvent(ctx, inst, req, "k8s_native", nil)
+	return nil
+}
+
+// tryPatchVMCRStorage patch VMSingle/VLSingle CR 的 spec.storage.resources.requests.storage。
+func (s *ScaleService) tryPatchVMCRStorage(ctx context.Context, inst *model.Instance, req *ScaleRequest) (bool, error) {
+	if s.k8sClient == nil {
+		return false, nil
+	}
+	resource := vmCRResourceFor(inst.InstanceType)
+	if resource == "" {
+		return false, nil
+	}
+	name := inst.ReleaseName
+	if name == "" {
+		name = inst.InstanceName
+	}
+	existing, err := s.k8sClient.GetCustomResource(ctx, vmOperatorGroup, vmOperatorVersion, resource, inst.Namespace, name)
+	if err != nil {
+		return false, fmt.Errorf("get %s/%s: %w", resource, name, err)
+	}
+	if existing == nil {
+		return false, nil
+	}
+	spec := map[string]interface{}{
+		"storage": map[string]interface{}{
+			"resources": map[string]interface{}{
+				"requests": map[string]interface{}{
+					"storage": req.Storage,
+				},
+			},
+		},
+	}
+	if err := s.k8sClient.PatchCustomResourceSpec(ctx, vmOperatorGroup, vmOperatorVersion, resource, inst.Namespace, name, spec); err != nil {
+		return false, fmt.Errorf("patch %s/%s spec.storage: %w", resource, name, err)
+	}
+	return true, nil
 }
 
 func (s *ScaleService) updateInstanceSpec(ctx context.Context, inst *model.Instance, req *ScaleRequest) error {

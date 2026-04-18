@@ -41,6 +41,7 @@ import LoadingScreen from '../../components/common/LoadingScreen';
 import FilterToolbar from '../../components/common/FilterToolbar';
 import DataTableCard from '../../components/common/DataTableCard';
 import { instanceAPI } from '../../api/instance';
+import { clusterAPI, type Cluster } from '../../api/cluster';
 import type { Instance, InstanceSpec } from '../../types/api';
 
 const typeLabels: Record<string, { label: string; color: 'primary' | 'secondary' | 'success' | 'warning' }> = {
@@ -94,8 +95,10 @@ export default function InstancePage() {
   const [scaleDialog, setScaleDialog] = useState<{ open: boolean; instance?: Instance }>({ open: false });
   const [saving, setSaving] = useState(false);
 
+  const [clusters, setClusters] = useState<Cluster[]>([]);
   const [createForm, setCreateForm] = useState({
     tenant_id: '',
+    cluster_id: '',
     instance_name: '',
     instance_type: 'metrics',
     template_type: 'dedicated_single',
@@ -135,6 +138,24 @@ export default function InstancePage() {
     fetchInstances();
   }, [fetchInstances]);
 
+  useEffect(() => {
+    (async () => {
+      try {
+        const { data: res } = await clusterAPI.list({ page: 1, page_size: 100 });
+        setClusters(res.data?.items || []);
+      } catch {
+        /* cluster list optional */
+      }
+    })();
+  }, []);
+
+  const clusterNameById = useMemo(() => {
+    return clusters.reduce<Record<string, string>>((acc, c) => {
+      acc[c.id] = c.display_name || c.name;
+      return acc;
+    }, {});
+  }, [clusters]);
+
   const statusStats = useMemo(() => {
     return instances.reduce(
       (acc, item) => {
@@ -166,6 +187,7 @@ export default function InstancePage() {
       });
       await instanceAPI.create({
         tenant_id: createForm.tenant_id,
+        cluster_id: createForm.cluster_id || undefined,
         instance_name: createForm.instance_name,
         instance_type: createForm.instance_type,
         template_type: createForm.template_type,
@@ -348,6 +370,7 @@ export default function InstancePage() {
                 <TableCell>模板</TableCell>
                 <TableCell>规格</TableCell>
                 <TableCell>命名空间</TableCell>
+                <TableCell>目标集群</TableCell>
                 <TableCell>状态</TableCell>
                 <TableCell>创建时间</TableCell>
                 <TableCell align="right">操作</TableCell>
@@ -356,7 +379,7 @@ export default function InstancePage() {
             <TableBody>
               {instances.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={8}>
+                  <TableCell colSpan={9}>
                     <EmptyState title="暂无实例" description="点击右上角按钮创建第一个实例" />
                   </TableCell>
                 </TableRow>
@@ -380,6 +403,9 @@ export default function InstancePage() {
                         {spec.cpu}C / {spec.memory}G / {spec.storage}Gi
                       </TableCell>
                       <TableCell sx={{ fontSize: '0.8125rem', color: 'text.secondary' }}>{inst.namespace || '-'}</TableCell>
+                      <TableCell sx={{ fontSize: '0.8125rem', color: 'text.secondary' }}>
+                        {inst.cluster_id ? (clusterNameById[inst.cluster_id] || inst.cluster_id.slice(0, 8)) : '默认'}
+                      </TableCell>
                       <TableCell><StatusChip status={inst.status} /></TableCell>
                       <TableCell sx={{ color: 'text.secondary', fontSize: '0.8125rem' }}>
                         {new Date(inst.created_at).toLocaleDateString()}
@@ -494,6 +520,24 @@ export default function InstancePage() {
                   <MenuItem value="shared">共享版</MenuItem>
                   <MenuItem value="dedicated_single">独享单节点</MenuItem>
                   <MenuItem value="dedicated_cluster">独享集群</MenuItem>
+                </Select>
+              </FormControl>
+            </Grid>
+            <Grid size={{ xs: 12 }}>
+              <FormControl fullWidth size="small">
+                <InputLabel>目标集群（可选）</InputLabel>
+                <Select
+                  value={createForm.cluster_id}
+                  label="目标集群（可选）"
+                  onChange={(e) => setCreateForm({ ...createForm, cluster_id: e.target.value })}
+                >
+                  <MenuItem value="">使用平台默认集群</MenuItem>
+                  {clusters.map((c) => (
+                    <MenuItem key={c.id} value={c.id}>
+                      {c.display_name || c.name}
+                      {c.in_cluster ? ' · in-cluster' : ''}
+                    </MenuItem>
+                  ))}
                 </Select>
               </FormControl>
             </Grid>

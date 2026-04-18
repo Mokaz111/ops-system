@@ -73,6 +73,7 @@ export interface Instance {
   id: string;
   tenant_id: string;
   tenant_name?: string;
+  cluster_id?: string | null;
   instance_name: string;
   instance_type: 'metrics' | 'logs' | 'visual' | 'alert';
   template_type: 'shared' | 'dedicated_single' | 'dedicated_cluster';
@@ -102,6 +103,7 @@ export interface CreateTenantRequest {
 
 export interface CreateInstanceRequest {
   tenant_id: string;
+  cluster_id?: string;
   instance_name: string;
   instance_type: string;
   template_type: string;

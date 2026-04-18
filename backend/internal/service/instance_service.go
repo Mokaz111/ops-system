@@ -29,6 +29,7 @@ var allowedInstanceTypes = map[string]struct{}{
 // CreateInstanceRequest 创建实例请求。
 type CreateInstanceRequest struct {
 	TenantID     uuid.UUID
+	ClusterID    *uuid.UUID
 	InstanceName string
 	InstanceType string
 	TemplateType string
@@ -78,6 +79,7 @@ func (s *InstanceService) Create(ctx context.Context, req *CreateInstanceRequest
 
 	inst := &model.Instance{
 		TenantID:     req.TenantID,
+		ClusterID:    req.ClusterID,
 		InstanceName: strings.TrimSpace(req.InstanceName),
 		InstanceType: req.InstanceType,
 		TemplateType: req.TemplateType,
