@@ -13,7 +13,29 @@ import (
 
 	"github.com/google/uuid"
 	"go.uber.org/zap"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
+
+// scaleK8sOps 是 ScaleService 实际用到的 k8s.Client 子集，抽成接口以便单元测试注入 fake。
+// *k8s.Client 已天然满足本接口。
+type scaleK8sOps interface {
+	ScaleDeployment(ctx context.Context, namespace, name string, replicas int32) error
+	GetCustomResource(ctx context.Context, group, version, resource, namespace, name string) (*unstructured.Unstructured, error)
+	PatchCustomResourceSpec(ctx context.Context, group, version, resource, namespace, name string, spec map[string]interface{}) error
+	ResizePVC(ctx context.Context, namespace, name, newSize string) error
+}
+
+// scaleHelmOps 是 ScaleService 实际用到的 helm.Client 子集。
+type scaleHelmOps interface {
+	GetReleaseStatus(ctx context.Context, name, namespace string) (*helm.ReleaseStatus, error)
+	UpgradeRelease(ctx context.Context, name, chartRef, namespace string, values map[string]interface{}) error
+}
+
+// scaleEventWriter 是 ScaleService 记录审计事件所需的最小方法集。
+type scaleEventWriter interface {
+	Create(ctx context.Context, e *model.ScaleEvent) error
+	List(ctx context.Context, f repository.ScaleEventListFilter) ([]model.ScaleEvent, int64, error)
+}
 
 var (
 	ErrScaleInstanceNotFound  = errors.New("instance not found for scaling")
@@ -71,10 +93,10 @@ type ScaleRequest struct {
 
 // ScaleService 实例伸缩（水平 / 垂直 / 存储）。
 type ScaleService struct {
-	helmClient     *helm.Client
-	k8sClient      *k8s.Client
+	helmClient     scaleHelmOps
+	k8sClient      scaleK8sOps
 	instanceRepo   *repository.InstanceRepository
-	scaleEventRepo *repository.ScaleEventRepository
+	scaleEventRepo scaleEventWriter
 	log            *zap.Logger
 }
 
@@ -83,6 +105,31 @@ func NewScaleService(
 	k8sClient *k8s.Client,
 	instanceRepo *repository.InstanceRepository,
 	scaleEventRepo *repository.ScaleEventRepository,
+	log *zap.Logger,
+) *ScaleService {
+	s := &ScaleService{
+		instanceRepo: instanceRepo,
+		log:          log,
+	}
+	// 显式避免 typed-nil：把 nil 指针映射成 nil 接口，后续 `if s.xxxClient == nil` 仍然有效。
+	if helmClient != nil {
+		s.helmClient = helmClient
+	}
+	if k8sClient != nil {
+		s.k8sClient = k8sClient
+	}
+	if scaleEventRepo != nil {
+		s.scaleEventRepo = scaleEventRepo
+	}
+	return s
+}
+
+// newScaleServiceForTest 仅供测试：直接注入接口实现。
+func newScaleServiceForTest(
+	helmClient scaleHelmOps,
+	k8sClient scaleK8sOps,
+	instanceRepo *repository.InstanceRepository,
+	scaleEventRepo scaleEventWriter,
 	log *zap.Logger,
 ) *ScaleService {
 	return &ScaleService{
