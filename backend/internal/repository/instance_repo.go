@@ -86,3 +86,17 @@ func (r *InstanceRepository) ListByTenantID(ctx context.Context, tenantID uuid.U
 func (r *InstanceRepository) UpdateStatus(ctx context.Context, id uuid.UUID, status string) error {
 	return r.db.WithContext(ctx).Model(&model.Instance{}).Where("id = ?", id).Update("status", status).Error
 }
+
+// CompareAndSetStatus 原子地把 instance.status 从 fromStatus 改成 toStatus，
+// 返回 (swapped bool, err error)。仅当 DB 中当前值恰好为 fromStatus 时才写入，
+// 用于实现基于 DB 的"一次只有一个 scale 进行中"的互斥语义。
+func (r *InstanceRepository) CompareAndSetStatus(ctx context.Context, id uuid.UUID, fromStatus, toStatus string) (bool, error) {
+	res := r.db.WithContext(ctx).
+		Model(&model.Instance{}).
+		Where("id = ? AND status = ?", id, fromStatus).
+		Update("status", toStatus)
+	if res.Error != nil {
+		return false, res.Error
+	}
+	return res.RowsAffected > 0, nil
+}

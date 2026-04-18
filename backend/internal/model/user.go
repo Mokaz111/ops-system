@@ -8,9 +8,12 @@ import (
 )
 
 // User 平台用户。
+//
+// username 只在活跃行内唯一；软删除后，同名用户可以重新创建。若未来需要
+// "保留历史用户名防止冒名"，应改成独立审计表而不是依赖 uniqueIndex。
 type User struct {
 	ID           uuid.UUID      `json:"id" gorm:"type:uuid;primaryKey"`
-	Username     string         `json:"username" gorm:"type:varchar(255);uniqueIndex;not null"`
+	Username     string         `json:"username" gorm:"type:varchar(255);not null;uniqueIndex:uk_user_username_active,where:deleted_at IS NULL"`
 	PasswordHash string         `json:"-" gorm:"type:varchar(255);not null"`
 	Email        string         `json:"email" gorm:"type:varchar(255)"`
 	Phone        string         `json:"phone" gorm:"type:varchar(50)"`

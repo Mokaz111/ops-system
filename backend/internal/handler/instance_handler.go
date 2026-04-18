@@ -314,8 +314,12 @@ func (h *InstanceHandler) handleErr(c *gin.Context, err error) {
 	case errors.Is(err, service.ErrTenantNotFoundForInstance):
 		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, err.Error())
 	case errors.Is(err, service.ErrInstanceNameRequired),
-		errors.Is(err, service.ErrInvalidInstanceType):
+		errors.Is(err, service.ErrInvalidInstanceType),
+		errors.Is(err, service.ErrInvalidInstanceStatus):
 		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, err.Error())
+	case errors.Is(err, service.ErrInstanceHasInstallations),
+		errors.Is(err, service.ErrInstanceBusy):
+		response.Error(c, http.StatusConflict, http.StatusConflict, err.Error())
 	case errors.Is(err, service.ErrInvalidScaleType),
 		errors.Is(err, service.ErrScaleNotSupported),
 		errors.Is(err, service.ErrScaleManagedByPlatform),

@@ -8,9 +8,11 @@ import (
 )
 
 // Cluster K8s 集群注册表。未注册时所有 Instance 使用平台默认 kubeconfig（config.Kubernetes）。
+//
+// name 在活跃行内唯一（partial unique index），避免软删除后同名集群无法重建。
 type Cluster struct {
 	ID             uuid.UUID      `json:"id" gorm:"type:uuid;primaryKey"`
-	Name           string         `json:"name" gorm:"type:varchar(255);uniqueIndex;not null"`
+	Name           string         `json:"name" gorm:"type:varchar(255);not null;uniqueIndex:uk_cluster_name_active,where:deleted_at IS NULL"`
 	DisplayName    string         `json:"display_name" gorm:"type:varchar(255)"`
 	Description    string         `json:"description" gorm:"type:text"`
 	InCluster      bool           `json:"in_cluster"` // true = 使用 Pod 内 ServiceAccount

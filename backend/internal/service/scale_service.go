@@ -43,7 +43,13 @@ var (
 	ErrScaleNotSupported      = errors.New("scale operation not supported for this instance")
 	ErrScaleManagedByPlatform = errors.New("shared/dedicated_cluster instances must be scaled at platform level")
 	ErrScaleTypeNotAllowed    = errors.New("scale_type not allowed for this template_type")
+	// ErrInstanceBusy 表示已有一次伸缩操作在进行中。通过 DB 条件更新实现的互斥锁
+	// 保证同一实例上不会出现两个并发 Scale 调用，避免 CR/Helm 的 "operation in progress"。
+	ErrInstanceBusy = errors.New("instance is currently scaling, please retry later")
 )
+
+// scalingStatus 是 ScaleService 内部使用的"加锁"状态值，由 CompareAndSetStatus 原子切换。
+const scalingStatus = "scaling"
 
 // vmOperatorGroup / vmOperatorVersion 是 VictoriaMetrics Operator 维护的 CRD group/version。
 // 单节点 metrics/logs 实例由 Operator 直接 reconcile，patch CR spec 会触发 sts 滚动。
@@ -172,6 +178,9 @@ func (s *ScaleService) recordEvent(ctx context.Context, inst *model.Instance, re
 }
 
 // Scale 根据类型执行对应伸缩操作，并写入审计事件。
+//
+// 互斥：进入函数时用 CAS 把 status 置成 "scaling"，结束时还原；
+// 同一实例并发 Scale 的第二次调用会在 CAS 阶段拿到 ErrInstanceBusy。
 func (s *ScaleService) Scale(ctx context.Context, instanceID uuid.UUID, req *ScaleRequest) error {
 	inst, err := s.instanceRepo.GetByID(ctx, instanceID)
 	if err != nil {
@@ -184,6 +193,31 @@ func (s *ScaleService) Scale(ctx context.Context, instanceID uuid.UUID, req *Sca
 		s.recordEvent(ctx, inst, req, "rejected", err)
 		return err
 	}
+
+	// 已在伸缩中的实例直接拒绝，避免 CAS 自我覆盖。
+	if inst.Status == scalingStatus {
+		s.recordEvent(ctx, inst, req, "rejected", ErrInstanceBusy)
+		return ErrInstanceBusy
+	}
+	prevStatus := inst.Status
+	acquired, err := s.instanceRepo.CompareAndSetStatus(ctx, inst.ID, prevStatus, scalingStatus)
+	if err != nil {
+		return err
+	}
+	if !acquired {
+		s.recordEvent(ctx, inst, req, "rejected", ErrInstanceBusy)
+		return ErrInstanceBusy
+	}
+	// 不管成功失败都要尝试释放：失败时写回原状态，成功时 updateInstanceSpec 已用
+	// inst.Status=prevStatus 的内存值 Save 覆盖，这里作为"兜底还原"，CAS 只会在
+	// 当前 DB 还是 "scaling" 时生效，因此重复恢复是幂等的。
+	defer func() {
+		if _, rerr := s.instanceRepo.CompareAndSetStatus(context.Background(), inst.ID, scalingStatus, prevStatus); rerr != nil && s.log != nil {
+			s.log.Warn("scale_release_lock_failed",
+				zap.String("instance_id", inst.ID.String()),
+				zap.Error(rerr))
+		}
+	}()
 
 	switch req.ScaleType {
 	case "horizontal":

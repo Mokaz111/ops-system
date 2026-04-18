@@ -13,10 +13,12 @@ import (
 )
 
 var (
-	ErrInstanceNotFound         = errors.New("instance not found")
-	ErrInstanceNameRequired     = errors.New("instance_name required")
-	ErrInvalidInstanceType      = errors.New("invalid instance_type")
+	ErrInstanceNotFound          = errors.New("instance not found")
+	ErrInstanceNameRequired      = errors.New("instance_name required")
+	ErrInvalidInstanceType       = errors.New("invalid instance_type")
 	ErrTenantNotFoundForInstance = errors.New("tenant not found for instance")
+	ErrInstanceHasInstallations  = errors.New("instance still has active integration installations")
+	ErrInvalidInstanceStatus     = errors.New("invalid instance status")
 )
 
 var allowedInstanceTypes = map[string]struct{}{
@@ -24,6 +26,16 @@ var allowedInstanceTypes = map[string]struct{}{
 	"logs":    {},
 	"visual":  {},
 	"alert":   {},
+}
+
+// allowedInstanceStatuses 限定 Update 时允许的 status 值，防止手动把状态写成任意字符串
+// 破坏 worker/ScaleService 的状态机。最终状态 deleted/deleting 由 Delete 流程维护，
+// 不允许通过 API 显式设置。
+var allowedInstanceStatuses = map[string]struct{}{
+	"creating": {},
+	"running":  {},
+	"failed":   {},
+	"scaling":  {},
 }
 
 // CreateInstanceRequest 创建实例请求。
@@ -45,19 +57,27 @@ type UpdateInstanceRequest struct {
 
 // InstanceService 实例生命周期管理。
 type InstanceService struct {
-	inst   *repository.InstanceRepository
-	tenant *repository.TenantRepository
-	orch   *OrchestratorService
-	log    *zap.Logger
+	inst         *repository.InstanceRepository
+	tenant       *repository.TenantRepository
+	installation *repository.IntegrationInstallationRepository
+	orch         *OrchestratorService
+	log          *zap.Logger
 }
 
 func NewInstanceService(
 	inst *repository.InstanceRepository,
 	tenant *repository.TenantRepository,
+	installation *repository.IntegrationInstallationRepository,
 	orch *OrchestratorService,
 	log *zap.Logger,
 ) *InstanceService {
-	return &InstanceService{inst: inst, tenant: tenant, orch: orch, log: log}
+	return &InstanceService{
+		inst:         inst,
+		tenant:       tenant,
+		installation: installation,
+		orch:         orch,
+		log:          log,
+	}
 }
 
 // Create 创建实例：校验租户、创建记录、编排部署。
@@ -145,7 +165,7 @@ func (s *InstanceService) List(ctx context.Context, page, pageSize int, tenantID
 	})
 }
 
-// Update 更新实例。
+// Update 更新实例。status 必须落在白名单内，否则返回 ErrInvalidInstanceStatus。
 func (s *InstanceService) Update(ctx context.Context, id uuid.UUID, req *UpdateInstanceRequest) (*model.Instance, error) {
 	inst, err := s.inst.GetByID(ctx, id)
 	if err != nil {
@@ -162,6 +182,9 @@ func (s *InstanceService) Update(ctx context.Context, id uuid.UUID, req *UpdateI
 		inst.Spec = req.Spec
 	}
 	if req.Status != "" {
+		if _, ok := allowedInstanceStatuses[req.Status]; !ok {
+			return nil, ErrInvalidInstanceStatus
+		}
 		inst.Status = req.Status
 	}
 
@@ -172,6 +195,9 @@ func (s *InstanceService) Update(ctx context.Context, id uuid.UUID, req *UpdateI
 }
 
 // Delete 删除实例（先卸载编排、再软删除）。
+//
+// 为避免遗留 k8s / grafana 资源，要求所有活跃 integration installation 先被卸载；
+// 否则返回 ErrInstanceHasInstallations（HTTP 409）让上层先处理。
 func (s *InstanceService) Delete(ctx context.Context, id uuid.UUID) error {
 	inst, err := s.inst.GetByID(ctx, id)
 	if err != nil {
@@ -179,6 +205,16 @@ func (s *InstanceService) Delete(ctx context.Context, id uuid.UUID) error {
 	}
 	if inst == nil {
 		return ErrInstanceNotFound
+	}
+
+	if s.installation != nil {
+		n, err := s.installation.CountActiveByInstanceID(ctx, id)
+		if err != nil {
+			return err
+		}
+		if n > 0 {
+			return ErrInstanceHasInstallations
+		}
 	}
 
 	if s.orch != nil {

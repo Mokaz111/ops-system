@@ -103,3 +103,18 @@ func (r *IntegrationInstallationRepository) CountActiveByTemplateVersion(
 		Count(&total).Error
 	return total, err
 }
+
+// CountActiveByInstanceID 统计某实例上仍活跃（未卸载）的安装记录数。
+// 用于实例删除前的引用检查，避免级联遗留 k8s / grafana 资源。
+func (r *IntegrationInstallationRepository) CountActiveByInstanceID(
+	ctx context.Context,
+	instanceID uuid.UUID,
+) (int64, error) {
+	var total int64
+	err := r.db.WithContext(ctx).
+		Model(&model.IntegrationInstallation{}).
+		Where("instance_id = ?", instanceID).
+		Where("status NOT IN ?", []string{"uninstalled", "uninstall_failed"}).
+		Count(&total).Error
+	return total, err
+}
