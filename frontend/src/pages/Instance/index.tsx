@@ -42,6 +42,7 @@ import FilterToolbar from '../../components/common/FilterToolbar';
 import DataTableCard from '../../components/common/DataTableCard';
 import { instanceAPI } from '../../api/instance';
 import { clusterAPI, type Cluster } from '../../api/cluster';
+import { grafanaHostAPI, type GrafanaHost } from '../../api/grafanaHost';
 import { extractApiError } from '../../api';
 import type { Instance, InstanceSpec } from '../../types/api';
 
@@ -97,6 +98,7 @@ export default function InstancePage() {
   const [saving, setSaving] = useState(false);
 
   const [clusters, setClusters] = useState<Cluster[]>([]);
+  const [grafanaHosts, setGrafanaHosts] = useState<GrafanaHost[]>([]);
   const [createForm, setCreateForm] = useState({
     tenant_id: '',
     cluster_id: '',
@@ -107,6 +109,7 @@ export default function InstancePage() {
     memory: '4',
     storage: '50',
     retention: '15',
+    grafana_host_id: '',
   });
   const [scaleForm, setScaleForm] = useState({
     scale_type: 'vertical' as 'horizontal' | 'vertical' | 'storage',
@@ -148,6 +151,14 @@ export default function InstancePage() {
         /* cluster list optional */
       }
     })();
+    (async () => {
+      try {
+        const { data: res } = await grafanaHostAPI.list({ page: 1, page_size: 100 });
+        setGrafanaHosts(res.data?.items || []);
+      } catch {
+        /* grafana host list optional */
+      }
+    })();
   }, []);
 
   const clusterNameById = useMemo(() => {
@@ -156,6 +167,13 @@ export default function InstancePage() {
       return acc;
     }, {});
   }, [clusters]);
+
+  const grafanaHostNameById = useMemo(() => {
+    return grafanaHosts.reduce<Record<string, string>>((acc, h) => {
+      acc[h.id] = h.name;
+      return acc;
+    }, {});
+  }, [grafanaHosts]);
 
   const statusStats = useMemo(() => {
     return instances.reduce(
@@ -193,6 +211,7 @@ export default function InstancePage() {
         instance_type: createForm.instance_type,
         template_type: createForm.template_type,
         spec,
+        grafana_host_id: createForm.grafana_host_id || undefined,
       });
       enqueueSnackbar('实例创建成功', { variant: 'success' });
       setCreateOpen(false);
@@ -372,6 +391,7 @@ export default function InstancePage() {
                 <TableCell>规格</TableCell>
                 <TableCell>命名空间</TableCell>
                 <TableCell>目标集群</TableCell>
+                <TableCell>关联 Grafana</TableCell>
                 <TableCell>状态</TableCell>
                 <TableCell>创建时间</TableCell>
                 <TableCell align="right">操作</TableCell>
@@ -380,7 +400,7 @@ export default function InstancePage() {
             <TableBody>
               {instances.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={9}>
+                  <TableCell colSpan={10}>
                     <EmptyState title="暂无实例" description="点击右上角按钮创建第一个实例" />
                   </TableCell>
                 </TableRow>
@@ -406,6 +426,9 @@ export default function InstancePage() {
                       <TableCell sx={{ fontSize: '0.8125rem', color: 'text.secondary' }}>{inst.namespace || '-'}</TableCell>
                       <TableCell sx={{ fontSize: '0.8125rem', color: 'text.secondary' }}>
                         {inst.cluster_id ? (clusterNameById[inst.cluster_id] || inst.cluster_id.slice(0, 8)) : '默认'}
+                      </TableCell>
+                      <TableCell sx={{ fontSize: '0.8125rem', color: 'text.secondary' }}>
+                        {inst.grafana_host_id ? (grafanaHostNameById[inst.grafana_host_id] || inst.grafana_host_id.slice(0, 8)) : '默认'}
                       </TableCell>
                       <TableCell><StatusChip status={inst.status} /></TableCell>
                       <TableCell sx={{ color: 'text.secondary', fontSize: '0.8125rem' }}>
@@ -537,6 +560,29 @@ export default function InstancePage() {
                     <MenuItem key={c.id} value={c.id}>
                       {c.display_name || c.name}
                       {c.in_cluster ? ' · in-cluster' : ''}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            </Grid>
+            <Grid size={{ xs: 12 }}>
+              <FormControl fullWidth size="small">
+                <InputLabel>关联 Grafana（可选）</InputLabel>
+                <Select
+                  value={createForm.grafana_host_id}
+                  label="关联 Grafana（可选）"
+                  onChange={(e) => setCreateForm({ ...createForm, grafana_host_id: e.target.value })}
+                >
+                  <MenuItem value="">继承租户默认</MenuItem>
+                  {grafanaHosts.map((h) => (
+                    <MenuItem key={h.id} value={h.id}>
+                      {h.name}
+                      <Chip
+                        size="small"
+                        label={h.scope === 'platform' ? '平台' : '租户'}
+                        variant="outlined"
+                        sx={{ ml: 1, height: 18, fontSize: '0.65rem' }}
+                      />
                     </MenuItem>
                   ))}
                 </Select>

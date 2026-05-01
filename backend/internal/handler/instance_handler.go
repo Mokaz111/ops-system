@@ -26,46 +26,49 @@ func NewInstanceHandler(svc *service.InstanceService, scaleSvc *service.ScaleSer
 }
 
 type instanceResp struct {
-	ID           uuid.UUID  `json:"id"`
-	TenantID     uuid.UUID  `json:"tenant_id"`
-	ClusterID    *uuid.UUID `json:"cluster_id,omitempty"`
-	InstanceName string     `json:"instance_name"`
-	InstanceType string     `json:"instance_type"`
-	TemplateType string     `json:"template_type"`
-	ReleaseName  string     `json:"release_name"`
-	Namespace    string     `json:"namespace"`
-	Spec         string     `json:"spec"`
-	Status       string     `json:"status"`
-	URL          string     `json:"url"`
-	CreatedAt    time.Time  `json:"created_at"`
-	UpdatedAt    time.Time  `json:"updated_at"`
+	ID            uuid.UUID  `json:"id"`
+	TenantID      uuid.UUID  `json:"tenant_id"`
+	ClusterID     *uuid.UUID `json:"cluster_id,omitempty"`
+	InstanceName  string     `json:"instance_name"`
+	InstanceType  string     `json:"instance_type"`
+	TemplateType  string     `json:"template_type"`
+	ReleaseName   string     `json:"release_name"`
+	Namespace     string     `json:"namespace"`
+	Spec          string     `json:"spec"`
+	Status        string     `json:"status"`
+	GrafanaHostID *uuid.UUID `json:"grafana_host_id,omitempty"`
+	URL           string     `json:"url"`
+	CreatedAt     time.Time  `json:"created_at"`
+	UpdatedAt     time.Time  `json:"updated_at"`
 }
 
 func toInstanceResp(i *model.Instance) instanceResp {
 	return instanceResp{
-		ID:           i.ID,
-		TenantID:     i.TenantID,
-		ClusterID:    i.ClusterID,
-		InstanceName: i.InstanceName,
-		InstanceType: i.InstanceType,
-		TemplateType: i.TemplateType,
-		ReleaseName:  i.ReleaseName,
-		Namespace:    i.Namespace,
-		Spec:         i.Spec,
-		Status:       i.Status,
-		URL:          i.URL,
-		CreatedAt:    i.CreatedAt,
-		UpdatedAt:    i.UpdatedAt,
+		ID:            i.ID,
+		TenantID:      i.TenantID,
+		ClusterID:     i.ClusterID,
+		InstanceName:  i.InstanceName,
+		InstanceType:  i.InstanceType,
+		TemplateType:  i.TemplateType,
+		ReleaseName:   i.ReleaseName,
+		Namespace:     i.Namespace,
+		Spec:          i.Spec,
+		Status:        i.Status,
+		GrafanaHostID: i.GrafanaHostID,
+		URL:           i.URL,
+		CreatedAt:     i.CreatedAt,
+		UpdatedAt:     i.UpdatedAt,
 	}
 }
 
 type createInstanceBody struct {
-	TenantID     uuid.UUID  `json:"tenant_id" binding:"required"`
-	ClusterID    *uuid.UUID `json:"cluster_id"`
-	InstanceName string     `json:"instance_name" binding:"required"`
-	InstanceType string     `json:"instance_type" binding:"required"`
-	TemplateType string     `json:"template_type"`
-	Spec         string     `json:"spec"`
+	TenantID      uuid.UUID  `json:"tenant_id" binding:"required"`
+	ClusterID     *uuid.UUID `json:"cluster_id"`
+	InstanceName  string     `json:"instance_name" binding:"required"`
+	InstanceType  string     `json:"instance_type" binding:"required"`
+	TemplateType  string     `json:"template_type"`
+	Spec          string     `json:"spec"`
+	GrafanaHostID *uuid.UUID `json:"grafana_host_id"`
 }
 
 // List GET /api/v1/instances
@@ -122,12 +125,13 @@ func (h *InstanceHandler) Create(c *gin.Context) {
 		return
 	}
 	inst, err := h.svc.Create(c.Request.Context(), &service.CreateInstanceRequest{
-		TenantID:     body.TenantID,
-		ClusterID:    body.ClusterID,
-		InstanceName: body.InstanceName,
-		InstanceType: body.InstanceType,
-		TemplateType: body.TemplateType,
-		Spec:         body.Spec,
+		TenantID:      body.TenantID,
+		ClusterID:     body.ClusterID,
+		InstanceName:  body.InstanceName,
+		InstanceType:  body.InstanceType,
+		TemplateType:  body.TemplateType,
+		Spec:          body.Spec,
+		GrafanaHostID: body.GrafanaHostID,
 	})
 	if err != nil {
 		h.handleErr(c, err)
@@ -162,9 +166,10 @@ func (h *InstanceHandler) Get(c *gin.Context) {
 }
 
 type updateInstanceBody struct {
-	InstanceName string `json:"instance_name"`
-	Spec         string `json:"spec"`
-	Status       string `json:"status"`
+	InstanceName  string     `json:"instance_name"`
+	Spec          string     `json:"spec"`
+	Status        string     `json:"status"`
+	GrafanaHostID *uuid.UUID `json:"grafana_host_id"`
 }
 
 // Update PUT /api/v1/instances/:id
@@ -180,9 +185,10 @@ func (h *InstanceHandler) Update(c *gin.Context) {
 		return
 	}
 	inst, err := h.svc.Update(c.Request.Context(), id, &service.UpdateInstanceRequest{
-		InstanceName: body.InstanceName,
-		Spec:         body.Spec,
-		Status:       body.Status,
+		InstanceName:  body.InstanceName,
+		Spec:          body.Spec,
+		Status:        body.Status,
+		GrafanaHostID: body.GrafanaHostID,
 	})
 	if err != nil {
 		h.handleErr(c, err)

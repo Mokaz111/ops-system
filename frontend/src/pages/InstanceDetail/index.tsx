@@ -558,6 +558,14 @@ export default function InstanceDetailPage() {
                       <Typography variant="body2">{instance.namespace || '-'}</Typography>
                     </Grid>
                     <Grid size={{ xs: 6, md: 3 }}>
+                      <Typography variant="body2" color="text.secondary">关联 Grafana</Typography>
+                      <Typography variant="body2">
+                        {instance.grafana_host_id
+                          ? (grafanaHosts.find(h => h.id === instance.grafana_host_id)?.name || instance.grafana_host_id.slice(0, 8))
+                          : '默认'}
+                      </Typography>
+                    </Grid>
+                    <Grid size={{ xs: 6, md: 3 }}>
                       <Typography variant="body2" color="text.secondary">CPU</Typography>
                       <Typography variant="body2">{spec.cpu} Core</Typography>
                     </Grid>

@@ -23,6 +23,7 @@ type Tenant struct {
 	Status       string         `json:"status" gorm:"type:varchar(20);default:creating"`
 	N9ETeamID    int64          `json:"n9e_team_id"`
 	GrafanaOrgID int64          `json:"grafana_org_id"`
+	GrafanaHostID *uuid.UUID    `json:"grafana_host_id" gorm:"type:uuid;index"`
 	CreatedAt    time.Time      `json:"created_at"`
 	UpdatedAt    time.Time      `json:"updated_at"`
 	DeletedAt    gorm.DeletedAt `json:"-" gorm:"index"`

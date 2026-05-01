@@ -90,11 +90,35 @@ func NewRouter(cfg *config.Config, log *zap.Logger, db *gorm.DB) *gin.Engine {
 
 			vmSync := vm.NewSyncService(&cfg.VM, log)
 			grafanaClient := grafana.NewClient(&cfg.Grafana, log)
+
+			// Grafana resolver：按 host id 动态构造 client；供 TenantService 和 integration applier 共用。
+			grafanaResolver := func(ctx context.Context, hostID *uuid.UUID) (*grafana.Client, error) {
+				if hostID == nil {
+					return grafanaClient, nil
+				}
+				host, err := grafanaHostRepo.GetByID(ctx, *hostID)
+				if err != nil {
+					return grafanaClient, err
+				}
+				if host == nil || host.Status != "active" || strings.TrimSpace(host.URL) == "" {
+					return grafanaClient, nil
+				}
+				subCfg := config.GrafanaConfig{
+					Enabled:                 true,
+					BaseURL:                 host.URL,
+					APIKey:                  host.AdminTokenEnc,
+					HTTPTimeoutSeconds:      cfg.Grafana.HTTPTimeoutSeconds,
+					PrometheusDatasourceURL: cfg.Grafana.PrometheusDatasourceURL,
+					OrgNamePrefix:           cfg.Grafana.OrgNamePrefix,
+				}
+				return grafana.NewClient(&subCfg, log), nil
+			}
+
 			orch, err := service.NewOrchestratorService(cfg, log)
 			if err != nil {
 				log.Fatal("orchestrator_init", zap.Error(err))
 			}
-			tenantSvc := service.NewTenantService(deptRepo, tenantRepo, instanceRepo, vmSync, grafanaClient, orch, log)
+			tenantSvc := service.NewTenantService(deptRepo, tenantRepo, instanceRepo, vmSync, grafanaResolver, orch, log)
 			tenantH := handler.NewTenantHandler(tenantSvc, userSvc)
 
 			instanceSvc := service.NewInstanceService(instanceRepo, tenantRepo, integrationInstallRepo, orch, log)
@@ -189,34 +213,11 @@ func NewRouter(cfg *config.Config, log *zap.Logger, db *gorm.DB) *gin.Engine {
 				return cli, nil
 			})
 
-			// Grafana resolver：按 host id 动态构造 client；hostID 为 nil 或查询失败时回退平台 client。
-			grafanaResolver := integrationpkg.GrafanaClientResolver(func(ctx context.Context, hostID *uuid.UUID) (*grafana.Client, error) {
-				if hostID == nil {
-					return grafanaClient, nil
-				}
-				host, err := grafanaHostRepo.GetByID(ctx, *hostID)
-				if err != nil {
-					return grafanaClient, err
-				}
-				if host == nil || host.Status != "active" || strings.TrimSpace(host.URL) == "" {
-					return grafanaClient, nil
-				}
-				subCfg := config.GrafanaConfig{
-					Enabled:                 true,
-					BaseURL:                 host.URL,
-					APIKey:                  host.AdminTokenEnc,
-					HTTPTimeoutSeconds:      cfg.Grafana.HTTPTimeoutSeconds,
-					PrometheusDatasourceURL: cfg.Grafana.PrometheusDatasourceURL,
-					OrgNamePrefix:           cfg.Grafana.OrgNamePrefix,
-				}
-				return grafana.NewClient(&subCfg, log), nil
-			})
-
 			var integrationApplier integrationpkg.Applier
 			if k8sClient != nil || (grafanaClient != nil && grafanaClient.Enabled()) {
 				integrationApplier = integrationpkg.NewCompositeApplier(
 					k8sClient, k8sResolver,
-					grafanaClient, grafanaResolver,
+					grafanaClient, integrationpkg.GrafanaClientResolver(grafanaResolver),
 					log,
 				)
 				log.Info("integration_applier_enabled",

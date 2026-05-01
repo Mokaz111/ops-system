@@ -35,28 +35,30 @@ var allowedTemplateTypes = map[string]struct{}{
 }
 
 type CreateTenantRequest struct {
-	TenantName   string
-	DeptID       uuid.UUID
-	TemplateType string
-	QuotaConfig  string
+	TenantName    string
+	DeptID        uuid.UUID
+	TemplateType  string
+	QuotaConfig   string
+	GrafanaHostID *uuid.UUID
 }
 
 type UpdateTenantRequest struct {
-	TenantName   string
-	TemplateType string
-	QuotaConfig  string
-	Status       string
+	TenantName    string
+	TemplateType  string
+	QuotaConfig   string
+	Status        string
+	GrafanaHostID *uuid.UUID
 }
 
 // TenantService 租户业务（不直接依赖 N9E，告警由 N9E 独立管理）。
 type TenantService struct {
-	dept    *repository.DepartmentRepository
-	tenant  *repository.TenantRepository
-	inst    *repository.InstanceRepository
-	vmSync  *vm.SyncService
-	grafana *grafana.Client
-	orch    *OrchestratorService
-	log     *zap.Logger
+	dept            *repository.DepartmentRepository
+	tenant          *repository.TenantRepository
+	inst            *repository.InstanceRepository
+	vmSync          *vm.SyncService
+	grafanaResolver func(ctx context.Context, hostID *uuid.UUID) (*grafana.Client, error)
+	orch            *OrchestratorService
+	log             *zap.Logger
 }
 
 func NewTenantService(
@@ -64,14 +66,28 @@ func NewTenantService(
 	tenant *repository.TenantRepository,
 	inst *repository.InstanceRepository,
 	vmSync *vm.SyncService,
-	grafanaClient *grafana.Client,
+	grafanaResolver func(ctx context.Context, hostID *uuid.UUID) (*grafana.Client, error),
 	orch *OrchestratorService,
 	log *zap.Logger,
 ) *TenantService {
 	return &TenantService{
 		dept: dept, tenant: tenant, inst: inst,
-		vmSync: vmSync, grafana: grafanaClient, orch: orch, log: log,
+		vmSync: vmSync, grafanaResolver: grafanaResolver, orch: orch, log: log,
 	}
+}
+
+func (s *TenantService) resolveGrafana(ctx context.Context, hostID *uuid.UUID) *grafana.Client {
+	if s.grafanaResolver == nil {
+		return nil
+	}
+	client, err := s.grafanaResolver(ctx, hostID)
+	if err != nil {
+		if s.log != nil {
+			s.log.Warn("grafana_resolver_failed", zap.Error(err))
+		}
+		return nil
+	}
+	return client
 }
 
 func (s *TenantService) InsertURL(vmuserID string) string {
@@ -124,13 +140,14 @@ func (s *TenantService) Create(ctx context.Context, req *CreateTenantRequest) (*
 	}
 
 	t := &model.Tenant{
-		TenantName:   strings.TrimSpace(req.TenantName),
-		DeptID:       req.DeptID,
-		VMUserID:     vmuserID,
-		VMUserKey:    vmKey,
-		TemplateType: req.TemplateType,
-		QuotaConfig:  quotaCfg,
-		Status:       "provisioning",
+		TenantName:    strings.TrimSpace(req.TenantName),
+		DeptID:        req.DeptID,
+		VMUserID:      vmuserID,
+		VMUserKey:     vmKey,
+		TemplateType:  req.TemplateType,
+		QuotaConfig:   quotaCfg,
+		GrafanaHostID: req.GrafanaHostID,
+		Status:        "provisioning",
 	}
 	if err := s.tenant.Create(ctx, t); err != nil {
 		return nil, err
@@ -142,8 +159,9 @@ func (s *TenantService) Create(ctx context.Context, req *CreateTenantRequest) (*
 			return nil, ErrTenantProvisionFailed
 		}
 	}
-	if s.grafana != nil && s.grafana.Enabled() {
-		if err := s.grafana.SyncTenantOnCreate(ctx, t); err != nil {
+	gClient := s.resolveGrafana(ctx, t.GrafanaHostID)
+	if gClient != nil && gClient.Enabled() {
+		if err := gClient.SyncTenantOnCreate(ctx, t); err != nil {
 			s.markStatus(ctx, t, "provision_failed")
 			return nil, ErrTenantProvisionFailed
 		}
@@ -255,6 +273,9 @@ func (s *TenantService) Update(ctx context.Context, id uuid.UUID, req *UpdateTen
 	if req.Status != "" {
 		t.Status = req.Status
 	}
+	if req.GrafanaHostID != nil {
+		t.GrafanaHostID = req.GrafanaHostID
+	}
 	if err := s.tenant.Update(ctx, t); err != nil {
 		return nil, err
 	}
@@ -281,8 +302,9 @@ func (s *TenantService) Delete(ctx context.Context, id uuid.UUID) error {
 	if err := s.tenant.Update(ctx, t); err != nil {
 		return err
 	}
-	if s.grafana != nil {
-		if err := s.grafana.SyncTenantOnDelete(ctx, t); err != nil {
+	gClient := s.resolveGrafana(ctx, t.GrafanaHostID)
+	if gClient != nil {
+		if err := gClient.SyncTenantOnDelete(ctx, t); err != nil {
 			s.markStatus(ctx, t, "deprovision_failed")
 			return ErrTenantDeprovisionFailed
 		}

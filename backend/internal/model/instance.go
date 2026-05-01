@@ -19,6 +19,7 @@ type Instance struct {
 	Namespace    string         `json:"namespace" gorm:"type:varchar(100)"`
 	Spec         string         `json:"spec" gorm:"type:jsonb"`
 	Status       string         `json:"status" gorm:"type:varchar(20);default:creating"`
+	GrafanaHostID *uuid.UUID    `json:"grafana_host_id" gorm:"type:uuid;index"`
 	URL          string         `json:"url"`
 	CreatedAt    time.Time      `json:"created_at"`
 	UpdatedAt    time.Time      `json:"updated_at"`
