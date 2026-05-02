@@ -24,6 +24,7 @@ const LogQueryPage = lazy(() => import('./pages/LogQuery'));
 const DashboardMgmtPage = lazy(() => import('./pages/DashboardMgmt'));
 const ClusterPage = lazy(() => import('./pages/Cluster'));
 const GrafanaHostPage = lazy(() => import('./pages/GrafanaHost'));
+const GrafanaInstancePage = lazy(() => import('./pages/GrafanaInstance'));
 
 function Lazy({ children }: { children: React.ReactNode }) {
   return <Suspense fallback={<LoadingScreen />}>{children}</Suspense>;
@@ -62,6 +63,7 @@ const routeComponentMap: Record<AppRouteKey, React.ReactNode | null> = {
   'log-instances': <Lazy><LogInstancePage /></Lazy>,
   'log-query': <Lazy><LogQueryPage /></Lazy>,
   grafana: <Lazy><GrafanaPage /></Lazy>,
+  'grafana-instances': <Lazy><GrafanaInstancePage /></Lazy>,
   'grafana-hosts': <Lazy><GrafanaHostPage /></Lazy>,
   'dashboard-mgmt': <Lazy><DashboardMgmtPage /></Lazy>,
   alerts: <Lazy><AlertPage /></Lazy>,

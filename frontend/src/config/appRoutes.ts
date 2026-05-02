@@ -9,6 +9,7 @@ export type AppRouteKey =
   | 'log-instances'
   | 'log-query'
   | 'grafana'
+  | 'grafana-instances'
   | 'grafana-hosts'
   | 'dashboard-mgmt'
   | 'alerts'
@@ -36,7 +37,7 @@ export const appRouteMeta: AppRouteMeta[] = [
   { key: 'departments', path: 'departments', label: '部门管理', showInSidebar: true, sidebarSection: 'resource' },
   { key: 'tenants', path: 'tenants', label: '租户管理', showInSidebar: true, sidebarSection: 'resource' },
 
-  { key: 'instances', path: 'instances', label: '监控实例', showInSidebar: true, sidebarSection: 'monitor' },
+  { key: 'instances', path: 'instances', label: 'VictoriaMetrics管理', showInSidebar: true, sidebarSection: 'monitor' },
   { key: 'instance-detail', path: 'instances/:instanceId' },
   { key: 'integrations', path: 'integrations', label: '接入中心', showInSidebar: true, sidebarSection: 'monitor' },
   { key: 'metrics', path: 'metrics', label: '指标库', showInSidebar: true, sidebarSection: 'monitor' },
@@ -45,6 +46,7 @@ export const appRouteMeta: AppRouteMeta[] = [
   { key: 'log-query', path: 'logs/query', label: '日志查询', showInSidebar: true, sidebarSection: 'logs' },
 
   { key: 'grafana', path: 'grafana', label: 'Grafana 管理', showInSidebar: true, sidebarSection: 'visualization' },
+  { key: 'grafana-instances', path: 'grafana-instances', label: 'Grafana 实例', showInSidebar: true, sidebarSection: 'visualization' },
   { key: 'grafana-hosts', path: 'grafana-hosts', label: 'Grafana 主机', showInSidebar: true, sidebarSection: 'visualization' },
   { key: 'dashboard-mgmt', path: 'dashboards', label: 'Dashboard 管理', showInSidebar: true, sidebarSection: 'visualization' },
 

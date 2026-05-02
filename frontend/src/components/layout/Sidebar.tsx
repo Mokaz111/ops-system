@@ -25,6 +25,7 @@ import ManageSearchOutlinedIcon from '@mui/icons-material/ManageSearchOutlined';
 import GridViewOutlinedIcon from '@mui/icons-material/GridViewOutlined';
 import HubOutlinedIcon from '@mui/icons-material/HubOutlined';
 import DnsOutlinedIcon from '@mui/icons-material/DnsOutlined';
+import VisibilityOutlinedIcon from '@mui/icons-material/VisibilityOutlined';
 import { appRouteMeta, type AppRouteKey } from '../../config/appRoutes';
 import { useAuthStore } from '../../stores/useAuthStore';
 
@@ -41,6 +42,7 @@ const iconMap: Record<AppRouteKey, React.ReactNode> = {
   'log-instances': <DescriptionOutlinedIcon />,
   'log-query': <ManageSearchOutlinedIcon />,
   grafana: <BarChartOutlinedIcon />,
+  'grafana-instances': <VisibilityOutlinedIcon />,
   'grafana-hosts': <DnsOutlinedIcon />,
   'dashboard-mgmt': <GridViewOutlinedIcon />,
   alerts: <NotificationsOutlinedIcon />,

@@ -30,7 +30,6 @@ import {
 import SearchIcon from '@mui/icons-material/Search';
 import DeleteOutlinedIcon from '@mui/icons-material/DeleteOutlined';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
-import ScaleIcon from '@mui/icons-material/TuneOutlined';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import { useSnackbar } from 'notistack';
 import PageHeader from '../../components/common/PageHeader';
@@ -41,17 +40,9 @@ import LoadingScreen from '../../components/common/LoadingScreen';
 import FilterToolbar from '../../components/common/FilterToolbar';
 import DataTableCard from '../../components/common/DataTableCard';
 import { instanceAPI } from '../../api/instance';
-import { clusterAPI, type Cluster } from '../../api/cluster';
 import { grafanaHostAPI, type GrafanaHost } from '../../api/grafanaHost';
 import { extractApiError } from '../../api';
 import type { Instance, InstanceSpec } from '../../types/api';
-
-const typeLabels: Record<string, { label: string; color: 'primary' | 'secondary' | 'success' | 'warning' }> = {
-  metrics: { label: 'Metrics', color: 'primary' },
-  logs: { label: 'Logs', color: 'secondary' },
-  visual: { label: 'Grafana', color: 'success' },
-  alert: { label: 'Alert', color: 'warning' },
-};
 
 function parseSpec(spec: string): InstanceSpec {
   try {
@@ -59,10 +50,6 @@ function parseSpec(spec: string): InstanceSpec {
   } catch {
     return { cpu: 0, memory: 0, storage: 0, retention: 0 };
   }
-}
-
-function isInstanceLevelScalable(inst: Instance): boolean {
-  return inst.status === 'running' && inst.instance_type !== 'visual' && inst.template_type === 'dedicated_single';
 }
 
 const statusFilterItems = [
@@ -73,7 +60,7 @@ const statusFilterItems = [
   { key: 'error', label: '异常' },
 ];
 
-export default function InstancePage() {
+export default function GrafanaInstancePage() {
   const navigate = useNavigate();
   const { enqueueSnackbar } = useSnackbar();
   const [instances, setInstances] = useState<Instance[]>([]);
@@ -86,29 +73,17 @@ export default function InstancePage() {
 
   const [createOpen, setCreateOpen] = useState(false);
   const [deleteDialog, setDeleteDialog] = useState<{ open: boolean; instance?: Instance }>({ open: false });
-  const [scaleDialog, setScaleDialog] = useState<{ open: boolean; instance?: Instance }>({ open: false });
   const [saving, setSaving] = useState(false);
 
-  const [clusters, setClusters] = useState<Cluster[]>([]);
   const [grafanaHosts, setGrafanaHosts] = useState<GrafanaHost[]>([]);
   const [createForm, setCreateForm] = useState({
     tenant_id: '',
-    cluster_id: '',
     instance_name: '',
-    instance_type: 'metrics',
-    template_type: 'dedicated_single',
+    grafana_host_id: '',
     cpu: '2',
     memory: '4',
     storage: '50',
     retention: '15',
-    grafana_host_id: '',
-  });
-  const [scaleForm, setScaleForm] = useState({
-    scale_type: 'vertical' as 'horizontal' | 'vertical' | 'storage',
-    replicas: 1,
-    cpu: 2,
-    memory: 4,
-    storage: 50,
   });
 
   const fetchInstances = useCallback(async () => {
@@ -118,13 +93,13 @@ export default function InstancePage() {
         page: page + 1,
         page_size: pageSize,
         search,
-        instance_type: 'metrics',
+        instance_type: 'visual',
         status: statusFilter || undefined,
       });
       setInstances(res.data?.items || []);
       setTotal(res.data?.total || 0);
     } catch (err) {
-      enqueueSnackbar(extractApiError(err, '获取实例列表失败'), { variant: 'error' });
+      enqueueSnackbar(extractApiError(err, '获取 Grafana 实例列表失败'), { variant: 'error' });
     } finally {
       setLoading(false);
     }
@@ -137,14 +112,6 @@ export default function InstancePage() {
   useEffect(() => {
     (async () => {
       try {
-        const { data: res } = await clusterAPI.list({ page: 1, page_size: 100 });
-        setClusters(res.data?.items || []);
-      } catch {
-        /* cluster list optional */
-      }
-    })();
-    (async () => {
-      try {
         const { data: res } = await grafanaHostAPI.list({ page: 1, page_size: 100 });
         setGrafanaHosts(res.data?.items || []);
       } catch {
@@ -152,13 +119,6 @@ export default function InstancePage() {
       }
     })();
   }, []);
-
-  const clusterNameById = useMemo(() => {
-    return clusters.reduce<Record<string, string>>((acc, c) => {
-      acc[c.id] = c.display_name || c.name;
-      return acc;
-    }, {});
-  }, [clusters]);
 
   const grafanaHostNameById = useMemo(() => {
     return grafanaHosts.reduce<Record<string, string>>((acc, h) => {
@@ -191,14 +151,13 @@ export default function InstancePage() {
       });
       await instanceAPI.create({
         tenant_id: createForm.tenant_id,
-        cluster_id: createForm.cluster_id || undefined,
         instance_name: createForm.instance_name,
-        instance_type: createForm.instance_type,
-        template_type: createForm.template_type,
+        instance_type: 'visual',
+        template_type: 'dedicated_single',
         spec,
         grafana_host_id: createForm.grafana_host_id || undefined,
       });
-      enqueueSnackbar('实例创建成功', { variant: 'success' });
+      enqueueSnackbar('Grafana 实例创建成功', { variant: 'success' });
       setCreateOpen(false);
       fetchInstances();
     } catch (err) {
@@ -208,33 +167,11 @@ export default function InstancePage() {
     }
   };
 
-  const handleScale = async () => {
-    if (!scaleDialog.instance) return;
-    setSaving(true);
-    try {
-      const payload = {
-        scale_type: scaleForm.scale_type,
-        replicas: scaleForm.scale_type === 'horizontal' ? Math.max(1, scaleForm.replicas) : undefined,
-        cpu: scaleForm.scale_type === 'vertical' ? String(scaleForm.cpu) : undefined,
-        memory: scaleForm.scale_type === 'vertical' ? `${scaleForm.memory}Gi` : undefined,
-        storage: scaleForm.scale_type === 'storage' ? `${scaleForm.storage}Gi` : undefined,
-      };
-      await instanceAPI.scale(scaleDialog.instance.id, payload);
-      enqueueSnackbar('伸缩请求已提交', { variant: 'success' });
-      setScaleDialog({ open: false });
-      fetchInstances();
-    } catch (err) {
-      enqueueSnackbar(extractApiError(err, '伸缩失败'), { variant: 'error' });
-    } finally {
-      setSaving(false);
-    }
-  };
-
   const handleDelete = async () => {
     if (!deleteDialog.instance) return;
     try {
       await instanceAPI.delete(deleteDialog.instance.id);
-      enqueueSnackbar('实例删除成功', { variant: 'success' });
+      enqueueSnackbar('Grafana 实例删除成功', { variant: 'success' });
       setDeleteDialog({ open: false });
       fetchInstances();
     } catch (err) {
@@ -247,15 +184,15 @@ export default function InstancePage() {
   return (
     <Box>
       <PageHeader
-        title="VictoriaMetrics管理"
-        subtitle="管理 VictoriaMetrics 指标实例，支持扩缩容与生命周期操作"
+        title="Grafana 实例"
+        subtitle="管理 Grafana 可视化实例，创建后可关联 Grafana 主机进行 Dashboard 下发"
         actionLabel="创建实例"
         onAction={() => setCreateOpen(true)}
       />
 
       <Card sx={{ mb: 2 }}>
         <Box sx={{ p: 2 }}>
-          <Typography variant="subtitle2" sx={{ mb: 1.5 }}>VictoriaMetrics 实例概览（当前页）</Typography>
+          <Typography variant="subtitle2" sx={{ mb: 1.5 }}>Grafana 实例概览（当前页）</Typography>
           <Grid container spacing={1.5}>
             <Grid size={{ xs: 6, md: 3 }}>
               <Card variant="outlined" sx={{ p: 1.5 }}>
@@ -343,10 +280,8 @@ export default function InstancePage() {
               <TableRow>
                 <TableCell>实例名称</TableCell>
                 <TableCell>类型</TableCell>
-                <TableCell>模板</TableCell>
                 <TableCell>规格</TableCell>
                 <TableCell>命名空间</TableCell>
-                <TableCell>目标集群</TableCell>
                 <TableCell>关联 Grafana</TableCell>
                 <TableCell>状态</TableCell>
                 <TableCell>创建时间</TableCell>
@@ -356,33 +291,23 @@ export default function InstancePage() {
             <TableBody>
               {instances.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={10}>
-                    <EmptyState title="暂无实例" description="点击右上角按钮创建第一个实例" />
+                  <TableCell colSpan={8}>
+                    <EmptyState title="暂无 Grafana 实例" description="点击右上角按钮创建第一个 Grafana 实例" />
                   </TableCell>
                 </TableRow>
               ) : (
                 instances.map((inst) => {
                   const spec = parseSpec(inst.spec);
-                  const typeMeta = typeLabels[inst.instance_type];
                   return (
                     <TableRow key={inst.id}>
                       <TableCell sx={{ fontWeight: 500 }}>{inst.instance_name}</TableCell>
                       <TableCell>
-                        <Chip
-                          label={typeMeta?.label || inst.instance_type}
-                          size="small"
-                          color={typeMeta?.color || 'default'}
-                          variant="outlined"
-                        />
+                        <Chip label="Grafana" size="small" color="success" variant="outlined" />
                       </TableCell>
-                      <TableCell sx={{ fontSize: '0.8125rem' }}>{inst.template_type}</TableCell>
                       <TableCell sx={{ fontFamily: 'monospace', fontSize: '0.8125rem' }}>
                         {spec.cpu}C / {spec.memory}G / {spec.storage}Gi
                       </TableCell>
                       <TableCell sx={{ fontSize: '0.8125rem', color: 'text.secondary' }}>{inst.namespace || '-'}</TableCell>
-                      <TableCell sx={{ fontSize: '0.8125rem', color: 'text.secondary' }}>
-                        {inst.cluster_id ? (clusterNameById[inst.cluster_id] || inst.cluster_id.slice(0, 8)) : '默认'}
-                      </TableCell>
                       <TableCell sx={{ fontSize: '0.8125rem', color: 'text.secondary' }}>
                         {inst.grafana_host_id ? (grafanaHostNameById[inst.grafana_host_id] || inst.grafana_host_id.slice(0, 8)) : '默认'}
                       </TableCell>
@@ -396,7 +321,7 @@ export default function InstancePage() {
                             <InfoOutlinedIcon fontSize="small" />
                           </IconButton>
                         </Tooltip>
-                        <Tooltip title={inst.url ? '打开监控' : '暂无监控地址'}>
+                        <Tooltip title={inst.url ? '打开 Grafana' : '暂无地址'}>
                           <span>
                             <IconButton
                               size="small"
@@ -407,34 +332,6 @@ export default function InstancePage() {
                             </IconButton>
                           </span>
                         </Tooltip>
-                        {isInstanceLevelScalable(inst) ? (
-                          <Tooltip title="伸缩">
-                            <IconButton
-                              size="small"
-                              onClick={() => {
-                                const s = parseSpec(inst.spec);
-                                setScaleForm({
-                                  scale_type: 'vertical',
-                                  replicas: s.replicas || 1,
-                                  cpu: s.cpu || 1,
-                                  memory: s.memory || 1,
-                                  storage: s.storage || 1,
-                                });
-                                setScaleDialog({ open: true, instance: inst });
-                              }}
-                            >
-                              <ScaleIcon fontSize="small" />
-                            </IconButton>
-                          </Tooltip>
-                        ) : (
-                          <Tooltip title="共享版/独享集群版由平台管理员在集群层扩容">
-                            <span>
-                              <IconButton size="small" disabled aria-label="该模板不支持实例级伸缩">
-                                <ScaleIcon fontSize="small" />
-                              </IconButton>
-                            </span>
-                          </Tooltip>
-                        )}
                         <Tooltip title="删除">
                           <IconButton
                             size="small"
@@ -455,7 +352,7 @@ export default function InstancePage() {
       </DataTableCard>
 
       <Dialog open={createOpen} onClose={() => setCreateOpen(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>创建实例</DialogTitle>
+        <DialogTitle>创建 Grafana 实例</DialogTitle>
         <DialogContent sx={{ pt: '16px !important' }}>
           <TextField
             fullWidth
@@ -474,75 +371,27 @@ export default function InstancePage() {
             sx={{ mb: 2.5 }}
             required
           />
-          <Grid container spacing={2} sx={{ mb: 2.5 }}>
-            <Grid size={{ xs: 6 }}>
-              <FormControl fullWidth size="small">
-                <InputLabel>实例类型</InputLabel>
-                <Select
-                  value={createForm.instance_type}
-                  label="实例类型"
-                  onChange={(e) => setCreateForm({ ...createForm, instance_type: e.target.value })}
-                >
-                  <MenuItem value="metrics">VictoriaMetrics</MenuItem>
-                </Select>
-              </FormControl>
-            </Grid>
-            <Grid size={{ xs: 6 }}>
-              <FormControl fullWidth size="small">
-                <InputLabel>模板类型</InputLabel>
-                <Select
-                  value={createForm.template_type}
-                  label="模板类型"
-                  onChange={(e) => setCreateForm({ ...createForm, template_type: e.target.value })}
-                >
-                  <MenuItem value="shared">共享版</MenuItem>
-                  <MenuItem value="dedicated_single">独享单节点</MenuItem>
-                  <MenuItem value="dedicated_cluster">独享集群</MenuItem>
-                </Select>
-              </FormControl>
-            </Grid>
-            <Grid size={{ xs: 12 }}>
-              <FormControl fullWidth size="small">
-                <InputLabel>目标集群（可选）</InputLabel>
-                <Select
-                  value={createForm.cluster_id}
-                  label="目标集群（可选）"
-                  onChange={(e) => setCreateForm({ ...createForm, cluster_id: e.target.value })}
-                >
-                  <MenuItem value="">使用平台默认集群</MenuItem>
-                  {clusters.map((c) => (
-                    <MenuItem key={c.id} value={c.id}>
-                      {c.display_name || c.name}
-                      {c.in_cluster ? ' · in-cluster' : ''}
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-            </Grid>
-            <Grid size={{ xs: 12 }}>
-              <FormControl fullWidth size="small">
-                <InputLabel>关联 Grafana（可选）</InputLabel>
-                <Select
-                  value={createForm.grafana_host_id}
-                  label="关联 Grafana（可选）"
-                  onChange={(e) => setCreateForm({ ...createForm, grafana_host_id: e.target.value })}
-                >
-                  <MenuItem value="">继承租户默认</MenuItem>
-                  {grafanaHosts.map((h) => (
-                    <MenuItem key={h.id} value={h.id}>
-                      {h.name}
-                      <Chip
-                        size="small"
-                        label={h.scope === 'platform' ? '平台' : '租户'}
-                        variant="outlined"
-                        sx={{ ml: 1, height: 18, fontSize: '0.65rem' }}
-                      />
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-            </Grid>
-          </Grid>
+          <FormControl fullWidth size="small" sx={{ mb: 2.5 }}>
+            <InputLabel>关联 Grafana 主机</InputLabel>
+            <Select
+              value={createForm.grafana_host_id}
+              label="关联 Grafana 主机"
+              onChange={(e) => setCreateForm({ ...createForm, grafana_host_id: e.target.value })}
+            >
+              <MenuItem value="">继承租户默认</MenuItem>
+              {grafanaHosts.map((h) => (
+                <MenuItem key={h.id} value={h.id}>
+                  {h.name}
+                  <Chip
+                    size="small"
+                    label={h.scope === 'platform' ? '平台' : '租户'}
+                    variant="outlined"
+                    sx={{ ml: 1, height: 18, fontSize: '0.65rem' }}
+                  />
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
           <Typography variant="subtitle2" sx={{ mb: 1.5, color: 'text.secondary' }}>资源配置</Typography>
           <Grid container spacing={2}>
             <Grid size={{ xs: 3 }}>
@@ -599,64 +448,10 @@ export default function InstancePage() {
         </DialogActions>
       </Dialog>
 
-      <Dialog open={scaleDialog.open} onClose={() => setScaleDialog({ open: false })} maxWidth="xs" fullWidth>
-        <DialogTitle>实例伸缩 - {scaleDialog.instance?.instance_name}</DialogTitle>
-        <DialogContent sx={{ pt: '16px !important' }}>
-          <FormControl fullWidth size="small" sx={{ mb: 2 }}>
-            <InputLabel>伸缩类型</InputLabel>
-            <Select
-              value={scaleForm.scale_type}
-              label="伸缩类型"
-              onChange={(e) => setScaleForm({ ...scaleForm, scale_type: e.target.value as 'horizontal' | 'vertical' | 'storage' })}
-            >
-              <MenuItem value="vertical">垂直伸缩（CPU/内存）</MenuItem>
-              <MenuItem value="storage">存储扩容</MenuItem>
-            </Select>
-          </FormControl>
-          {scaleForm.scale_type === 'vertical' && (
-            <>
-              <TextField
-                fullWidth
-                size="small"
-                label="CPU (核)"
-                type="number"
-                value={scaleForm.cpu}
-                onChange={(e) => setScaleForm({ ...scaleForm, cpu: parseInt(e.target.value, 10) || 1 })}
-                sx={{ mb: 2 }}
-              />
-              <TextField
-                fullWidth
-                size="small"
-                label="内存 (Gi)"
-                type="number"
-                value={scaleForm.memory}
-                onChange={(e) => setScaleForm({ ...scaleForm, memory: parseInt(e.target.value, 10) || 1 })}
-              />
-            </>
-          )}
-          {scaleForm.scale_type === 'storage' && (
-            <TextField
-              fullWidth
-              size="small"
-              label="存储 (Gi)"
-              type="number"
-              value={scaleForm.storage}
-              onChange={(e) => setScaleForm({ ...scaleForm, storage: parseInt(e.target.value, 10) || 1 })}
-            />
-          )}
-        </DialogContent>
-        <DialogActions sx={{ px: 3, pb: 2 }}>
-          <Button onClick={() => setScaleDialog({ open: false })}>取消</Button>
-          <Button variant="contained" onClick={handleScale} disabled={saving}>
-            {saving ? '提交中...' : '确认伸缩'}
-          </Button>
-        </DialogActions>
-      </Dialog>
-
       <ConfirmDialog
         open={deleteDialog.open}
-        title="删除实例"
-        message={`确定要删除实例「${deleteDialog.instance?.instance_name}」吗？关联的 Helm Release 也将被卸载。`}
+        title="删除 Grafana 实例"
+        message={`确定要删除 Grafana 实例「${deleteDialog.instance?.instance_name}」吗？关联的 Helm Release 也将被卸载。`}
         severity="error"
         confirmLabel="删除"
         onConfirm={handleDelete}
