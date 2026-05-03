@@ -154,8 +154,11 @@ type GrafanaConfig struct {
 	// BaseURL 如 http://grafana.platform:3000
 	BaseURL string `mapstructure:"base_url"`
 	// APIKey 服务账号 API Key（Viewer/Editor/Admin 依实际权限）。
-	APIKey             string `mapstructure:"api_key"`
-	HTTPTimeoutSeconds int    `mapstructure:"http_timeout_seconds"`
+	APIKey string `mapstructure:"api_key"`
+	// AdminUser / AdminPassword 用于 Basic Auth（Admin API 必需），非 Service Account Token。
+	AdminUser           string `mapstructure:"admin_user"`
+	AdminPassword       string `mapstructure:"admin_password"`
+	HTTPTimeoutSeconds  int    `mapstructure:"http_timeout_seconds"`
 	// PrometheusDatasourceURL 租户组织内默认 Prometheus 数据源（如 VM select）。
 	PrometheusDatasourceURL string `mapstructure:"prometheus_datasource_url"`
 	// OrgNamePrefix 若非空，组织名 = 前缀 + vmuser_id，否则使用租户名。

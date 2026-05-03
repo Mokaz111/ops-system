@@ -7,7 +7,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// GrafanaHost Grafana 主机注册表（平台共享 or 租户自带）。
+// GrafanaHost Grafana 纳管实例注册表（平台共享 or 租户自带）。
 type GrafanaHost struct {
 	ID            uuid.UUID      `json:"id" gorm:"type:uuid;primaryKey"`
 	Name          string         `json:"name" gorm:"type:varchar(255);not null"`
@@ -15,6 +15,7 @@ type GrafanaHost struct {
 	TenantID      *uuid.UUID     `json:"tenant_id" gorm:"type:uuid;index"`
 	URL           string         `json:"url" gorm:"type:varchar(500)"`
 	AdminUser     string         `json:"admin_user" gorm:"type:varchar(100)"`
+	AdminPassword string         `json:"-" gorm:"type:varchar(255)"`
 	AdminTokenEnc string         `json:"-" gorm:"type:text"`
 	Status        string         `json:"status" gorm:"type:varchar(20);default:active"`
 	CreatedAt     time.Time      `json:"created_at"`

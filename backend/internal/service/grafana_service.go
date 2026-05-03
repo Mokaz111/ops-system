@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 
+	"ops-system/backend/internal/config"
 	"ops-system/backend/internal/grafana"
 	"ops-system/backend/internal/repository"
 
@@ -42,15 +43,108 @@ type GrafanaDatasource struct {
 	IsDefault bool   `json:"is_default"`
 }
 
-// GrafanaService Grafana 管理（组织/用户/数据源/Dashboard）。
-type GrafanaService struct {
-	client    *grafana.Client
-	tenantRepo *repository.TenantRepository
-	log       *zap.Logger
+// GrafanaDashboard Grafana Dashboard 摘要。
+type GrafanaDashboard struct {
+	ID          int64    `json:"id"`
+	UID         string   `json:"uid"`
+	Title       string   `json:"title"`
+	URL         string   `json:"url"`
+	Type        string   `json:"type"`
+	Tags        []string `json:"tags"`
+	FolderID    int64    `json:"folder_id"`
+	FolderTitle string   `json:"folder_title"`
 }
 
-func NewGrafanaService(client *grafana.Client, tenantRepo *repository.TenantRepository, log *zap.Logger) *GrafanaService {
-	return &GrafanaService{client: client, tenantRepo: tenantRepo, log: log}
+// GrafanaPlugin Grafana 插件信息。
+type GrafanaPlugin struct {
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	Type    string `json:"type"`
+	Version string `json:"version"`
+	Enabled bool   `json:"enabled"`
+	Pinned  bool   `json:"pinned"`
+}
+
+// UpdateDatasourceRequest 更新数据源请求。
+type UpdateDatasourceRequest struct {
+	Name      string `json:"name"`
+	Type      string `json:"type"`
+	URL       string `json:"url"`
+	Access    string `json:"access"`
+	IsDefault bool   `json:"is_default"`
+}
+
+// DatasourceTestResult 数据源连通性测试结果。
+type DatasourceTestResult map[string]any
+
+// TestDatasource 测试数据源连通性。
+func (s *GrafanaService) TestDatasource(ctx context.Context, orgID int64, body map[string]any) (*DatasourceTestResult, error) {
+	if err := s.ensureEnabled(); err != nil {
+		return nil, err
+	}
+	out, err := s.client.TestDatasource(ctx, orgID, body)
+	if err != nil {
+		return nil, err
+	}
+	r := DatasourceTestResult(out)
+	return &r, nil
+}
+
+// AdminSettings 获取 Grafana 服务器配置（需要 Basic Auth）。
+func (s *GrafanaService) AdminSettings(ctx context.Context) (map[string]any, error) {
+	if err := s.ensureEnabled(); err != nil {
+		return nil, err
+	}
+	return s.client.AdminSettings(ctx)
+}
+
+// GrafanaHealthStatus 健康检查结果。
+type GrafanaHealthStatus struct {
+	Status  string `json:"status"`
+	Message string `json:"message,omitempty"`
+}
+
+// GrafanaStats 全局统计信息（来自 Admin API）。
+type GrafanaStats struct {
+	Users       int64 `json:"users"`
+	Orgs        int64 `json:"orgs"`
+	Dashboards  int64 `json:"dashboards"`
+	Datasources int64 `json:"datasources"`
+	ActiveUsers int64 `json:"active_users"`
+}
+
+// GrafanaService Grafana 管理（组织/用户/数据源/Dashboard）。
+type GrafanaService struct {
+	client     *grafana.Client
+	hostRepo   *repository.GrafanaHostRepository
+	tenantRepo *repository.TenantRepository
+	log        *zap.Logger
+}
+
+func NewGrafanaService(client *grafana.Client, hostRepo *repository.GrafanaHostRepository, tenantRepo *repository.TenantRepository, log *zap.Logger) *GrafanaService {
+	return &GrafanaService{client: client, hostRepo: hostRepo, tenantRepo: tenantRepo, log: log}
+}
+
+// ForHost 根据 grafana_host_id 返回对应 Grafana 实例的 Service；nil 返回自身。
+func (s *GrafanaService) ForHost(ctx context.Context, hostID *uuid.UUID) (*GrafanaService, error) {
+	if hostID == nil || s.hostRepo == nil {
+		return s, nil
+	}
+	host, err := s.hostRepo.GetByID(ctx, *hostID)
+	if err != nil {
+		return nil, err
+	}
+	if host == nil || host.Status != "active" || host.URL == "" {
+		return s, nil
+	}
+	resolved := grafana.NewClient(&config.GrafanaConfig{
+		Enabled:       true,
+		BaseURL:       host.URL,
+		APIKey:        host.AdminTokenEnc,
+		AdminUser:     host.AdminUser,
+		AdminPassword: host.AdminPassword,
+	}, s.log)
+	return &GrafanaService{client: resolved, hostRepo: s.hostRepo, tenantRepo: s.tenantRepo, log: s.log}, nil
 }
 
 func (s *GrafanaService) ensureEnabled() error {
@@ -188,4 +282,132 @@ func (s *GrafanaService) CreateOrgForTenant(ctx context.Context, tenantID uuid.U
 	}
 	_ = s.tenantRepo.Update(ctx, t)
 	return t.GrafanaOrgID, nil
+}
+
+// ListDashboards 列出指定组织下的所有 Dashboard。
+func (s *GrafanaService) ListDashboards(ctx context.Context, orgID int64) ([]GrafanaDashboard, error) {
+	if err := s.ensureEnabled(); err != nil {
+		return nil, err
+	}
+	items, err := s.client.ListDashboards(ctx, orgID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]GrafanaDashboard, 0, len(items))
+	for _, d := range items {
+		out = append(out, GrafanaDashboard{
+			ID:          d.ID,
+			UID:         d.UID,
+			Title:       d.Title,
+			URL:         d.URL,
+			Type:        d.Type,
+			Tags:        d.Tags,
+			FolderID:    d.FolderID,
+			FolderTitle: d.FolderTitle,
+		})
+	}
+	return out, nil
+}
+
+// GetDashboard 获取 Dashboard 完整 JSON。
+func (s *GrafanaService) GetDashboard(ctx context.Context, orgID int64, uid string) (map[string]interface{}, error) {
+	if err := s.ensureEnabled(); err != nil {
+		return nil, err
+	}
+	return s.client.GetDashboardByUID(ctx, orgID, uid)
+}
+
+// DeleteDashboard 删除指定 Dashboard。
+func (s *GrafanaService) DeleteDashboard(ctx context.Context, orgID int64, uid string) error {
+	if err := s.ensureEnabled(); err != nil {
+		return err
+	}
+	return s.client.DeleteDashboardByUID(ctx, orgID, uid)
+}
+
+// ListPlugins 列出所有已安装插件。
+func (s *GrafanaService) ListPlugins(ctx context.Context) ([]GrafanaPlugin, error) {
+	if err := s.ensureEnabled(); err != nil {
+		return nil, err
+	}
+	items, err := s.client.ListPlugins(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]GrafanaPlugin, 0, len(items))
+	for _, p := range items {
+		out = append(out, GrafanaPlugin{
+			ID:      p.ID,
+			Name:    p.Name,
+			Type:    p.Type,
+			Version: p.Version,
+			Enabled: p.Enabled,
+			Pinned:  p.Pinned,
+		})
+	}
+	return out, nil
+}
+
+// InstallPlugin 安装 Grafana 插件。
+func (s *GrafanaService) InstallPlugin(ctx context.Context, pluginID, version string) error {
+	if err := s.ensureEnabled(); err != nil {
+		return err
+	}
+	return s.client.InstallPlugin(ctx, pluginID, version)
+}
+
+// UninstallPlugin 卸载 Grafana 插件。
+func (s *GrafanaService) UninstallPlugin(ctx context.Context, pluginID string) error {
+	if err := s.ensureEnabled(); err != nil {
+		return err
+	}
+	return s.client.UninstallPlugin(ctx, pluginID)
+}
+
+// UpdateDatasource 更新数据源配置。
+func (s *GrafanaService) UpdateDatasource(ctx context.Context, orgID int64, dsID int64, req *UpdateDatasourceRequest) error {
+	if err := s.ensureEnabled(); err != nil {
+		return err
+	}
+	body := map[string]any{
+		"name":      req.Name,
+		"type":      req.Type,
+		"url":       req.URL,
+		"access":    req.Access,
+		"isDefault": req.IsDefault,
+	}
+	return s.client.UpdateDatasource(ctx, orgID, dsID, body)
+}
+
+// AdminStats 获取 Grafana 全局统计（需要 admin_user + admin_password Basic Auth）。
+func (s *GrafanaService) AdminStats(ctx context.Context) (*GrafanaStats, error) {
+	if err := s.ensureEnabled(); err != nil {
+		return nil, err
+	}
+	st, err := s.client.AdminStats(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return &GrafanaStats{
+		Users:       st.Users,
+		Orgs:        st.Orgs,
+		Dashboards:  st.Dashboards,
+		Datasources: st.Datasources,
+		ActiveUsers: st.ActiveUsers,
+	}, nil
+}
+
+// HealthCheck 检查 Grafana 健康状态。
+func (s *GrafanaService) HealthCheck(ctx context.Context) (*GrafanaHealthStatus, error) {
+	if err := s.ensureEnabled(); err != nil {
+		return nil, err
+	}
+	h, err := s.client.HealthCheck(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return &GrafanaHealthStatus{
+		Status:  h.Status,
+		Message: h.Message,
+	}, nil
 }

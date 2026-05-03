@@ -15,7 +15,7 @@ var (
 	ErrGrafanaHostNotFound = errors.New("grafana host not found")
 )
 
-// GrafanaHostService Grafana 主机注册业务。
+// GrafanaHostService Grafana 纳管实例注册业务。
 // M1 仅完成注册 CRUD，健康检查与下发调用在 M5 接入。
 type GrafanaHostService struct {
 	repo *repository.GrafanaHostRepository
@@ -31,11 +31,12 @@ type CreateGrafanaHostRequest struct {
 	Scope       string     `json:"scope" binding:"required"` // platform / tenant
 	TenantID    *uuid.UUID `json:"tenant_id"`
 	URL         string     `json:"url" binding:"required"`
-	AdminUser   string     `json:"admin_user"`
-	AdminToken  string     `json:"admin_token"`
+	AdminUser    string     `json:"admin_user"`
+	AdminPassword string    `json:"admin_password"`
+	AdminToken   string     `json:"admin_token"`
 }
 
-// Create 注册 Grafana 主机。
+// Create 注册 Grafana 纳管实例。
 // 注：M1 暂不做 token 加密，直接落库；M5 替换为 KMS/AES。
 func (s *GrafanaHostService) Create(ctx context.Context, req *CreateGrafanaHostRequest) (*model.GrafanaHost, error) {
 	if req.Name == "" || req.URL == "" {
@@ -53,6 +54,7 @@ func (s *GrafanaHostService) Create(ctx context.Context, req *CreateGrafanaHostR
 		TenantID:      req.TenantID,
 		URL:           req.URL,
 		AdminUser:     req.AdminUser,
+		AdminPassword: req.AdminPassword,
 		AdminTokenEnc: req.AdminToken,
 		Status:        "active",
 	}
@@ -76,10 +78,11 @@ func (s *GrafanaHostService) Get(ctx context.Context, id uuid.UUID) (*model.Graf
 
 // UpdateGrafanaHostRequest 更新。
 type UpdateGrafanaHostRequest struct {
-	Name       string `json:"name"`
-	URL        string `json:"url"`
-	AdminUser  string `json:"admin_user"`
-	AdminToken string `json:"admin_token"`
+	Name         string `json:"name"`
+	URL          string `json:"url"`
+	AdminUser    string `json:"admin_user"`
+	AdminPassword string `json:"admin_password"`
+	AdminToken   string `json:"admin_token"`
 	Status     string `json:"status"`
 }
 
@@ -100,6 +103,9 @@ func (s *GrafanaHostService) Update(ctx context.Context, id uuid.UUID, req *Upda
 	}
 	if req.AdminUser != "" {
 		m.AdminUser = req.AdminUser
+	}
+	if req.AdminPassword != "" {
+		m.AdminPassword = req.AdminPassword
 	}
 	if req.AdminToken != "" {
 		m.AdminTokenEnc = req.AdminToken

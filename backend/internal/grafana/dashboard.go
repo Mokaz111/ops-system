@@ -98,6 +98,42 @@ func contains(s, sub string) bool {
 	return false
 }
 
+// GrafanaDashboardSummary Grafana /api/search 返回的 Dashboard 摘要。
+type GrafanaDashboardSummary struct {
+	ID          int64    `json:"id"`
+	UID         string   `json:"uid"`
+	Title       string   `json:"title"`
+	URL         string   `json:"url"`
+	Type        string   `json:"type"`
+	Tags        []string `json:"tags"`
+	FolderID    int64    `json:"folderId"`
+	FolderTitle string   `json:"folderTitle"`
+}
+
+// ListDashboards 列出指定组织下的所有 Dashboard。
+func (c *Client) ListDashboards(ctx context.Context, orgID int64) ([]GrafanaDashboardSummary, error) {
+	if !c.Enabled() || orgID <= 0 {
+		return nil, nil
+	}
+	var items []GrafanaDashboardSummary
+	if err := c.doJSON(ctx, "GET", "/api/search?type=dash-db", nil, orgID, &items); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+// GetDashboardByUID 根据 UID 获取 Dashboard 完整 JSON。
+func (c *Client) GetDashboardByUID(ctx context.Context, orgID int64, uid string) (map[string]interface{}, error) {
+	if !c.Enabled() || orgID <= 0 || uid == "" {
+		return nil, nil
+	}
+	var out map[string]interface{}
+	if err := c.doJSON(ctx, "GET", "/api/dashboards/uid/"+uid, nil, orgID, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ImportDashboardsFromDir 从内嵌或外部目录批量导入 Dashboard（预留扩展点）。
 func (c *Client) ImportDashboardsFromDir(ctx context.Context, orgID int64, dashboards [][]byte) error {
 	if !c.Enabled() || orgID <= 0 {

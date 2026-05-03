@@ -10,7 +10,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// GrafanaHostRepository Grafana 主机注册表持久化。
+// GrafanaHostRepository Grafana 纳管实例注册表持久化。
 type GrafanaHostRepository struct {
 	db *gorm.DB
 }
