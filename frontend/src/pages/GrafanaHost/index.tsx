@@ -81,7 +81,7 @@ export default function GrafanaHostPage() {
       setHosts(hostsRes.data.data?.items || []);
       setTenants(tenantsRes.data.data?.items || []);
     } catch (err) {
-      enqueueSnackbar(extractApiError(err, '获取 Grafana 主机列表失败'), { variant: 'error' });
+      enqueueSnackbar(extractApiError(err, '获取纳管实例列表失败'), { variant: 'error' });
     } finally {
       setLoading(false);
     }
@@ -121,7 +121,7 @@ export default function GrafanaHostPage() {
       return;
     }
     if (form.scope === 'tenant' && !form.tenant_id) {
-      enqueueSnackbar('租户级主机必须选择所属租户', { variant: 'warning' });
+      enqueueSnackbar('租户级实例必须选择所属租户', { variant: 'warning' });
       return;
     }
     setSaving(true);
@@ -133,7 +133,7 @@ export default function GrafanaHostPage() {
           admin_user: form.admin_user,
           admin_token: form.admin_token || undefined,
         });
-        enqueueSnackbar('Grafana 主机更新成功', { variant: 'success' });
+        enqueueSnackbar('纳管实例更新成功', { variant: 'success' });
       } else {
         await grafanaHostAPI.create({
           name: form.name,
@@ -143,7 +143,7 @@ export default function GrafanaHostPage() {
           admin_user: form.admin_user,
           admin_token: form.admin_token || undefined,
         });
-        enqueueSnackbar('Grafana 主机登记成功', { variant: 'success' });
+        enqueueSnackbar('纳管实例登记成功', { variant: 'success' });
       }
       setDialogOpen(false);
       fetch();
@@ -158,7 +158,7 @@ export default function GrafanaHostPage() {
     if (!deleteDialog.host) return;
     try {
       await grafanaHostAPI.delete(deleteDialog.host.id);
-      enqueueSnackbar('Grafana 主机删除成功', { variant: 'success' });
+      enqueueSnackbar('纳管实例删除成功', { variant: 'success' });
       setDeleteDialog({ open: false });
       fetch();
     } catch (err) {
@@ -171,15 +171,15 @@ export default function GrafanaHostPage() {
   return (
     <Box>
       <PageHeader
-        title="Grafana 主机"
+        title="Grafana 纳管实例"
         subtitle="登记平台或租户自建的 Grafana 实例；安装模板时可选择目标 Grafana"
-        actionLabel={isAdmin ? '登记 Grafana 主机' : undefined}
+        actionLabel={isAdmin ? '登记纳管实例' : undefined}
         onAction={isAdmin ? openCreate : undefined}
       />
 
       {!isAdmin && (
         <Alert severity="info" sx={{ mb: 2 }}>
-          仅管理员可登记/编辑/删除 Grafana 主机。当前仅提供只读视图。
+          仅管理员可登记/编辑/删除纳管实例。当前仅提供只读视图。
         </Alert>
       )}
 
@@ -201,7 +201,7 @@ export default function GrafanaHostPage() {
               {hosts.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={7}>
-                    <EmptyState title="暂无 Grafana 主机" description="未登记时将使用 config.yaml 中的平台默认 Grafana" />
+                    <EmptyState title="暂无纳管实例" description="未登记时将使用 config.yaml 中的平台默认 Grafana" />
                   </TableCell>
                 </TableRow>
               ) : (
@@ -262,7 +262,7 @@ export default function GrafanaHostPage() {
       </Card>
 
       <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>{editingId ? '编辑 Grafana 主机' : '登记 Grafana 主机'}</DialogTitle>
+        <DialogTitle>{editingId ? '编辑纳管实例' : '登记纳管实例'}</DialogTitle>
         <DialogContent sx={{ pt: '16px !important' }}>
           <TextField
             fullWidth
@@ -344,8 +344,8 @@ export default function GrafanaHostPage() {
 
       <ConfirmDialog
         open={deleteDialog.open}
-        title="删除 Grafana 主机"
-        message={`确定要删除 Grafana 主机「${deleteDialog.host?.name}」吗？关联的模板安装将回退到平台默认 Grafana。`}
+        title="删除纳管实例"
+        message={`确定要删除纳管实例「${deleteDialog.host?.name}」吗？关联的模板安装将回退到平台默认 Grafana。`}
         severity="error"
         confirmLabel="删除"
         onConfirm={handleDelete}
