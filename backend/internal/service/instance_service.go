@@ -19,6 +19,7 @@ var (
 	ErrTenantNotFoundForInstance = errors.New("tenant not found for instance")
 	ErrInstanceHasInstallations  = errors.New("instance still has active integration installations")
 	ErrInvalidInstanceStatus     = errors.New("invalid instance status")
+	ErrInstanceNotReady          = errors.New("instance is not in a ready state for this operation")
 )
 
 var allowedInstanceTypes = map[string]struct{}{
@@ -245,6 +246,60 @@ type InstanceMetrics struct {
 	MemoryUsagePercent float64 `json:"memory_usage_percent"`
 	DiskUsagePercent   float64 `json:"disk_usage_percent"`
 	Note               string  `json:"note"`
+}
+
+// Rebuild 重建实例（卸载 Helm release 后重新部署）。
+// 仅状态为 running/failed 的实例允许重建，避免与创建流程并发。
+func (s *InstanceService) Rebuild(ctx context.Context, id uuid.UUID) error {
+	inst, err := s.inst.GetByID(ctx, id)
+	if err != nil {
+		return err
+	}
+	if inst == nil {
+		return ErrInstanceNotFound
+	}
+	if inst.Status != "running" && inst.Status != "failed" {
+		return ErrInstanceNotReady
+	}
+
+	if s.orch == nil {
+		return nil
+	}
+
+	// 先卸载，再重新部署
+	_ = s.orch.DeleteTenant(ctx, &model.Tenant{
+		ID:           inst.TenantID,
+		TemplateType: inst.TemplateType,
+	})
+	return s.orch.DeployTenant(ctx, &model.Tenant{
+		ID:           inst.TenantID,
+		TenantName:   inst.InstanceName,
+		TemplateType: inst.TemplateType,
+	})
+}
+
+// Upgrade 升级实例（Helm upgrade）。
+func (s *InstanceService) Upgrade(ctx context.Context, id uuid.UUID) error {
+	inst, err := s.inst.GetByID(ctx, id)
+	if err != nil {
+		return err
+	}
+	if inst == nil {
+		return ErrInstanceNotFound
+	}
+	if inst.Status != "running" {
+		return ErrInstanceNotReady
+	}
+
+	if s.orch == nil {
+		return nil
+	}
+
+	return s.orch.DeployTenant(ctx, &model.Tenant{
+		ID:           inst.TenantID,
+		TenantName:   inst.InstanceName,
+		TemplateType: inst.TemplateType,
+	})
 }
 
 // GetMetrics 占位指标。

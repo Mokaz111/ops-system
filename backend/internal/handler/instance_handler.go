@@ -16,13 +16,14 @@ import (
 
 // InstanceHandler 实例 HTTP。
 type InstanceHandler struct {
-	svc      *service.InstanceService
-	scaleSvc *service.ScaleService
-	userSvc  *service.UserService
+	svc           *service.InstanceService
+	scaleSvc      *service.ScaleService
+	userSvc       *service.UserService
+	grafanaHostSvc *service.GrafanaHostService
 }
 
-func NewInstanceHandler(svc *service.InstanceService, scaleSvc *service.ScaleService, userSvc *service.UserService) *InstanceHandler {
-	return &InstanceHandler{svc: svc, scaleSvc: scaleSvc, userSvc: userSvc}
+func NewInstanceHandler(svc *service.InstanceService, scaleSvc *service.ScaleService, userSvc *service.UserService, grafanaHostSvc *service.GrafanaHostService) *InstanceHandler {
+	return &InstanceHandler{svc: svc, scaleSvc: scaleSvc, userSvc: userSvc, grafanaHostSvc: grafanaHostSvc}
 }
 
 type instanceResp struct {
@@ -84,14 +85,14 @@ func (h *InstanceHandler) List(c *gin.Context) {
 			return
 		}
 		if u.TenantID == nil {
-			response.Error(c, http.StatusForbidden, http.StatusForbidden, "forbidden")
+			response.Error(c, http.StatusForbidden, http.StatusForbidden, response.ErrCodeForbidden, "forbidden")
 			return
 		}
 		tenantID = u.TenantID
 	} else if s := c.Query("tenant_id"); s != "" {
 		id, err := uuid.Parse(s)
 		if err != nil {
-			response.Error(c, http.StatusBadRequest, http.StatusBadRequest, "invalid tenant_id")
+			response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid tenant_id")
 			return
 		}
 		tenantID = &id
@@ -121,7 +122,7 @@ func (h *InstanceHandler) List(c *gin.Context) {
 func (h *InstanceHandler) Create(c *gin.Context) {
 	var body createInstanceBody
 	if err := c.ShouldBindJSON(&body); err != nil {
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, err.Error())
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, response.TranslateBindingError(err))
 		return
 	}
 	inst, err := h.svc.Create(c.Request.Context(), &service.CreateInstanceRequest{
@@ -144,7 +145,7 @@ func (h *InstanceHandler) Create(c *gin.Context) {
 func (h *InstanceHandler) Get(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, "invalid id")
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid id")
 		return
 	}
 	inst, err := h.svc.Get(c.Request.Context(), id)
@@ -158,7 +159,7 @@ func (h *InstanceHandler) Get(c *gin.Context) {
 			return
 		}
 		if u.TenantID == nil || *u.TenantID != inst.TenantID {
-			response.Error(c, http.StatusForbidden, http.StatusForbidden, "forbidden")
+			response.Error(c, http.StatusForbidden, http.StatusForbidden, response.ErrCodeForbidden, "forbidden")
 			return
 		}
 	}
@@ -176,12 +177,12 @@ type updateInstanceBody struct {
 func (h *InstanceHandler) Update(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, "invalid id")
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid id")
 		return
 	}
 	var body updateInstanceBody
 	if err := c.ShouldBindJSON(&body); err != nil {
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, err.Error())
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, response.TranslateBindingError(err))
 		return
 	}
 	inst, err := h.svc.Update(c.Request.Context(), id, &service.UpdateInstanceRequest{
@@ -201,7 +202,7 @@ func (h *InstanceHandler) Update(c *gin.Context) {
 func (h *InstanceHandler) Delete(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, "invalid id")
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid id")
 		return
 	}
 	if err := h.svc.Delete(c.Request.Context(), id); err != nil {
@@ -223,12 +224,12 @@ type scaleBody struct {
 func (h *InstanceHandler) Scale(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, "invalid id")
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid id")
 		return
 	}
 	var body scaleBody
 	if err := c.ShouldBindJSON(&body); err != nil {
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, err.Error())
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, response.TranslateBindingError(err))
 		return
 	}
 	operator := ""
@@ -253,7 +254,7 @@ func (h *InstanceHandler) Scale(c *gin.Context) {
 func (h *InstanceHandler) ListScaleEvents(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, "invalid id")
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid id")
 		return
 	}
 	// 先拉 instance 做租户校验，防止 IDOR：非 admin 只能看自己租户实例的伸缩历史。
@@ -280,11 +281,39 @@ func (h *InstanceHandler) ListScaleEvents(c *gin.Context) {
 	response.JSON(c, gin.H{"items": list, "total": total, "page": page, "page_size": ps})
 }
 
+// Rebuild POST /api/v1/instances/:id/rebuild
+func (h *InstanceHandler) Rebuild(c *gin.Context) {
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid id")
+		return
+	}
+	if err := h.svc.Rebuild(c.Request.Context(), id); err != nil {
+		h.handleErr(c, err)
+		return
+	}
+	response.JSON(c, nil)
+}
+
+// Upgrade POST /api/v1/instances/:id/upgrade
+func (h *InstanceHandler) Upgrade(c *gin.Context) {
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid id")
+		return
+	}
+	if err := h.svc.Upgrade(c.Request.Context(), id); err != nil {
+		h.handleErr(c, err)
+		return
+	}
+	response.JSON(c, nil)
+}
+
 // Metrics GET /api/v1/instances/:id/metrics
 func (h *InstanceHandler) Metrics(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, "invalid id")
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid id")
 		return
 	}
 	if !isAdmin(c) {
@@ -298,7 +327,7 @@ func (h *InstanceHandler) Metrics(c *gin.Context) {
 			return
 		}
 		if u.TenantID == nil || *u.TenantID != inst.TenantID {
-			response.Error(c, http.StatusForbidden, http.StatusForbidden, "forbidden")
+			response.Error(c, http.StatusForbidden, http.StatusForbidden, response.ErrCodeForbidden, "forbidden")
 			return
 		}
 	}
@@ -311,29 +340,84 @@ func (h *InstanceHandler) Metrics(c *gin.Context) {
 	response.JSON(c, m)
 }
 
+// LoginGrafana POST /api/v1/instances/:id/login
+func (h *InstanceHandler) LoginGrafana(c *gin.Context) {
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid id")
+		return
+	}
+	inst, err := h.svc.Get(c.Request.Context(), id)
+	if err != nil {
+		h.handleErr(c, err)
+		return
+	}
+
+	var grafanaURL, adminUser, adminPassword string
+
+	if inst.GrafanaHostID != nil {
+		host, err := h.grafanaHostSvc.Get(c.Request.Context(), *inst.GrafanaHostID)
+		if err != nil {
+			h.handleErr(c, err)
+			return
+		}
+		grafanaURL = host.URL
+		adminUser = host.AdminUser
+		adminPassword = host.AdminPassword
+		if adminPassword == "" {
+			adminPassword = host.AdminTokenEnc
+		}
+	} else {
+		// 查找平台默认 GrafanaHost（scope=platform 且无 tenant_id）
+		hosts, _, err := h.grafanaHostSvc.List(c.Request.Context(), "platform", nil, 1, 1)
+		if err != nil || len(hosts) == 0 {
+			response.Error(c, http.StatusNotFound, http.StatusNotFound, response.ErrCodeNotFound, "no grafana host configured for this instance")
+			return
+		}
+		grafanaURL = hosts[0].URL
+		adminUser = hosts[0].AdminUser
+		adminPassword = hosts[0].AdminPassword
+		if adminPassword == "" {
+			adminPassword = hosts[0].AdminTokenEnc
+		}
+	}
+
+	if grafanaURL == "" {
+		response.Error(c, http.StatusNotFound, http.StatusNotFound, response.ErrCodeNotFound, "grafana url not configured")
+		return
+	}
+
+	response.JSON(c, gin.H{
+		"url":      grafanaURL,
+		"user":     adminUser,
+		"password": adminPassword,
+	})
+}
+
 func (h *InstanceHandler) handleErr(c *gin.Context, err error) {
 	switch {
 	case errors.Is(err, service.ErrInstanceNotFound):
-		response.Error(c, http.StatusNotFound, http.StatusNotFound, err.Error())
+		response.Error(c, http.StatusNotFound, http.StatusNotFound, response.ErrCodeInstanceNotFound, err.Error())
 	case errors.Is(err, service.ErrScaleInstanceNotFound):
-		response.Error(c, http.StatusNotFound, http.StatusNotFound, err.Error())
+		response.Error(c, http.StatusNotFound, http.StatusNotFound, response.ErrCodeScaleInstanceNotFound, err.Error())
 	case errors.Is(err, service.ErrTenantNotFoundForInstance):
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, err.Error())
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeTenantNotFoundForInstance, err.Error())
 	case errors.Is(err, service.ErrInstanceNameRequired),
 		errors.Is(err, service.ErrInvalidInstanceType),
-		errors.Is(err, service.ErrInvalidInstanceStatus):
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, err.Error())
+		errors.Is(err, service.ErrInvalidInstanceStatus),
+		errors.Is(err, service.ErrInstanceNotReady):
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, err.Error())
 	case errors.Is(err, service.ErrInstanceHasInstallations),
 		errors.Is(err, service.ErrInstanceBusy):
-		response.Error(c, http.StatusConflict, http.StatusConflict, err.Error())
+		response.Error(c, http.StatusConflict, http.StatusConflict, response.ErrCodeConflict, err.Error())
 	case errors.Is(err, service.ErrInvalidScaleType),
 		errors.Is(err, service.ErrScaleNotSupported),
 		errors.Is(err, service.ErrScaleManagedByPlatform),
 		errors.Is(err, service.ErrScaleTypeNotAllowed):
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, err.Error())
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, err.Error())
 	case errors.Is(err, service.ErrInvalidPagination):
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, err.Error())
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeInvalidPagination, err.Error())
 	default:
-		response.Error(c, http.StatusInternalServerError, http.StatusInternalServerError, "internal server error")
+		response.Error(c, http.StatusInternalServerError, http.StatusInternalServerError, response.ErrCodeInternal, "internal server error")
 	}
 }
