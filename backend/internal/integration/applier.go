@@ -31,7 +31,7 @@ type AppliedRef struct {
 	Name          string `json:"name,omitempty"`           // K8s 资源 / Grafana dashboard title
 	UID           string `json:"uid,omitempty"`            // K8s UID / Grafana dashboard uid
 	GrafanaOrg    int64  `json:"grafana_org,omitempty"`    // Grafana 组织 ID
-	GrafanaHostID string `json:"grafana_host_id,omitempty"` // Grafana 主机 id（空=默认平台）
+	GrafanaHostID string `json:"grafana_host_id,omitempty"` // Grafana 实例 id（空=默认平台）
 	ClusterID     string `json:"cluster_id,omitempty"`     // 目标集群 id（空=默认集群）
 	Action        string `json:"action,omitempty"`         // created / updated / imported
 	Status        string `json:"status,omitempty"`         // success / failed

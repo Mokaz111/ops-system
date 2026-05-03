@@ -30,7 +30,7 @@ func parsePositiveIntQuery(c *gin.Context, key, defaultValue string) (int, bool)
 	raw := c.DefaultQuery(key, defaultValue)
 	v, err := strconv.Atoi(raw)
 	if err != nil || v < 1 {
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, "invalid "+key)
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid "+key)
 		return 0, false
 	}
 	return v, true
@@ -50,17 +50,17 @@ func parsePageAndSize(c *gin.Context, defaultPageSize int) (int, int, bool) {
 
 func currentUser(c *gin.Context, userSvc *service.UserService) (*model.User, bool) {
 	if userSvc == nil {
-		response.Error(c, http.StatusInternalServerError, http.StatusInternalServerError, "user service not configured")
+		response.Error(c, http.StatusInternalServerError, http.StatusInternalServerError, response.ErrCodeInternal, "user service not configured")
 		return nil, false
 	}
 	id, ok := userIDFromContext(c)
 	if !ok {
-		response.Error(c, http.StatusUnauthorized, http.StatusUnauthorized, "unauthorized")
+		response.Error(c, http.StatusUnauthorized, http.StatusUnauthorized, response.ErrCodeUnauthorized, "unauthorized")
 		return nil, false
 	}
 	u, err := userSvc.Get(c.Request.Context(), id)
 	if err != nil {
-		response.Error(c, http.StatusUnauthorized, http.StatusUnauthorized, "unauthorized")
+		response.Error(c, http.StatusUnauthorized, http.StatusUnauthorized, response.ErrCodeUnauthorized, "unauthorized")
 		return nil, false
 	}
 	return u, true
@@ -79,7 +79,7 @@ func resolveTenantScope(c *gin.Context, userSvc *service.UserService) (*uuid.UUI
 		}
 		id, err := uuid.Parse(raw)
 		if err != nil {
-			response.Error(c, http.StatusBadRequest, http.StatusBadRequest, "invalid tenant_id")
+			response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid tenant_id")
 			return nil, false
 		}
 		return &id, true
@@ -89,17 +89,17 @@ func resolveTenantScope(c *gin.Context, userSvc *service.UserService) (*uuid.UUI
 		return nil, false
 	}
 	if u.TenantID == nil {
-		response.Error(c, http.StatusForbidden, http.StatusForbidden, "forbidden")
+		response.Error(c, http.StatusForbidden, http.StatusForbidden, response.ErrCodeForbidden, "forbidden")
 		return nil, false
 	}
 	if raw != "" {
 		id, err := uuid.Parse(raw)
 		if err != nil {
-			response.Error(c, http.StatusBadRequest, http.StatusBadRequest, "invalid tenant_id")
+			response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid tenant_id")
 			return nil, false
 		}
 		if id != *u.TenantID {
-			response.Error(c, http.StatusForbidden, http.StatusForbidden, "forbidden")
+			response.Error(c, http.StatusForbidden, http.StatusForbidden, response.ErrCodeForbidden, "forbidden")
 			return nil, false
 		}
 	}
@@ -116,7 +116,7 @@ func assertTenantAccess(c *gin.Context, userSvc *service.UserService, ownerTenan
 		return false
 	}
 	if u.TenantID == nil || *u.TenantID != ownerTenant {
-		response.Error(c, http.StatusForbidden, http.StatusForbidden, "forbidden")
+		response.Error(c, http.StatusForbidden, http.StatusForbidden, response.ErrCodeForbidden, "forbidden")
 		return false
 	}
 	return true

@@ -44,7 +44,7 @@ func (h *LogInstanceHandler) List(c *gin.Context) {
 func (h *LogInstanceHandler) Get(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, "invalid id")
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid id")
 		return
 	}
 	m, err := h.svc.Get(c.Request.Context(), id)
@@ -62,7 +62,7 @@ func (h *LogInstanceHandler) Get(c *gin.Context) {
 func (h *LogInstanceHandler) Create(c *gin.Context) {
 	var body service.CreateLogInstanceRequest
 	if err := c.ShouldBindJSON(&body); err != nil {
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, err.Error())
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, response.TranslateBindingError(err))
 		return
 	}
 	m, err := h.svc.Create(c.Request.Context(), &body)
@@ -77,12 +77,12 @@ func (h *LogInstanceHandler) Create(c *gin.Context) {
 func (h *LogInstanceHandler) Update(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, "invalid id")
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid id")
 		return
 	}
 	var body service.UpdateLogInstanceRequest
 	if err := c.ShouldBindJSON(&body); err != nil {
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, err.Error())
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, response.TranslateBindingError(err))
 		return
 	}
 	m, err := h.svc.Update(c.Request.Context(), id, &body)
@@ -97,7 +97,7 @@ func (h *LogInstanceHandler) Update(c *gin.Context) {
 func (h *LogInstanceHandler) Delete(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, "invalid id")
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid id")
 		return
 	}
 	if err := h.svc.Delete(c.Request.Context(), id); err != nil {
@@ -113,7 +113,7 @@ func (h *LogInstanceHandler) Delete(c *gin.Context) {
 func (h *LogInstanceHandler) Query(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, "invalid id")
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid id")
 		return
 	}
 	m, err := h.svc.Get(c.Request.Context(), id)
@@ -133,11 +133,11 @@ func (h *LogInstanceHandler) Query(c *gin.Context) {
 func (h *LogInstanceHandler) handleErr(c *gin.Context, err error) {
 	switch {
 	case errors.Is(err, service.ErrLogInstanceNotFound):
-		response.Error(c, http.StatusNotFound, http.StatusNotFound, err.Error())
+		response.Error(c, http.StatusNotFound, http.StatusNotFound, response.ErrCodeLogInstanceNotFound, err.Error())
 	case errors.Is(err, service.ErrLogInstanceName),
 		errors.Is(err, service.ErrInvalidPagination):
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, err.Error())
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, err.Error())
 	default:
-		response.Error(c, http.StatusInternalServerError, http.StatusInternalServerError, "internal server error")
+		response.Error(c, http.StatusInternalServerError, http.StatusInternalServerError, response.ErrCodeInternal, "internal server error")
 	}
 }

@@ -62,7 +62,7 @@ func (h *IntegrationHandler) ListTemplates(c *gin.Context) {
 func (h *IntegrationHandler) GetTemplate(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, "invalid id")
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid id")
 		return
 	}
 	m, err := h.tplSvc.Get(c.Request.Context(), id)
@@ -81,7 +81,7 @@ func (h *IntegrationHandler) CreateTemplate(c *gin.Context) {
 	}
 	var body service.CreateIntegrationTemplateRequest
 	if err := c.ShouldBindJSON(&body); err != nil {
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, err.Error())
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, response.TranslateBindingError(err))
 		return
 	}
 	m, err := h.tplSvc.Create(c.Request.Context(), u.Username, &body)
@@ -96,12 +96,12 @@ func (h *IntegrationHandler) CreateTemplate(c *gin.Context) {
 func (h *IntegrationHandler) UpdateTemplate(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, "invalid id")
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid id")
 		return
 	}
 	var body service.UpdateIntegrationTemplateRequest
 	if err := c.ShouldBindJSON(&body); err != nil {
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, err.Error())
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, response.TranslateBindingError(err))
 		return
 	}
 	m, err := h.tplSvc.Update(c.Request.Context(), id, &body)
@@ -116,7 +116,7 @@ func (h *IntegrationHandler) UpdateTemplate(c *gin.Context) {
 func (h *IntegrationHandler) DeleteTemplate(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, "invalid id")
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid id")
 		return
 	}
 	if err := h.tplSvc.Delete(c.Request.Context(), id); err != nil {
@@ -130,7 +130,7 @@ func (h *IntegrationHandler) DeleteTemplate(c *gin.Context) {
 func (h *IntegrationHandler) ListVersions(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, "invalid id")
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid id")
 		return
 	}
 	list, err := h.tplSvc.ListVersions(c.Request.Context(), id)
@@ -145,12 +145,12 @@ func (h *IntegrationHandler) ListVersions(c *gin.Context) {
 func (h *IntegrationHandler) DeleteVersion(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, "invalid id")
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid id")
 		return
 	}
 	version := c.Param("version")
 	if version == "" {
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, "version required")
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "version required")
 		return
 	}
 	if err := h.tplSvc.DeleteVersion(c.Request.Context(), id, version); err != nil {
@@ -164,12 +164,12 @@ func (h *IntegrationHandler) DeleteVersion(c *gin.Context) {
 func (h *IntegrationHandler) CreateVersion(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, "invalid id")
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid id")
 		return
 	}
 	var body service.CreateVersionRequest
 	if err := c.ShouldBindJSON(&body); err != nil {
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, err.Error())
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, response.TranslateBindingError(err))
 		return
 	}
 	v, err := h.tplSvc.CreateVersion(c.Request.Context(), id, &body)
@@ -185,7 +185,7 @@ func (h *IntegrationHandler) CreateVersion(c *gin.Context) {
 func (h *IntegrationHandler) InstallPlan(c *gin.Context) {
 	var body service.InstallRequest
 	if err := c.ShouldBindJSON(&body); err != nil {
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, err.Error())
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, response.TranslateBindingError(err))
 		return
 	}
 	if !h.installPlanTenantGuard(c, &body) {
@@ -207,7 +207,7 @@ func (h *IntegrationHandler) Install(c *gin.Context) {
 	}
 	var body service.InstallRequest
 	if err := c.ShouldBindJSON(&body); err != nil {
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, err.Error())
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, response.TranslateBindingError(err))
 		return
 	}
 	// 非 admin 只能在自己的 tenant 下安装。
@@ -243,7 +243,7 @@ func (h *IntegrationHandler) ListInstallations(c *gin.Context) {
 	if raw := c.Query("instance_id"); raw != "" {
 		id, err := uuid.Parse(raw)
 		if err != nil {
-			response.Error(c, http.StatusBadRequest, http.StatusBadRequest, "invalid instance_id")
+			response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid instance_id")
 			return
 		}
 		f.InstanceID = &id
@@ -251,7 +251,7 @@ func (h *IntegrationHandler) ListInstallations(c *gin.Context) {
 	if raw := c.Query("template_id"); raw != "" {
 		id, err := uuid.Parse(raw)
 		if err != nil {
-			response.Error(c, http.StatusBadRequest, http.StatusBadRequest, "invalid template_id")
+			response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid template_id")
 			return
 		}
 		f.TemplateID = &id
@@ -269,7 +269,7 @@ func (h *IntegrationHandler) ListInstallations(c *gin.Context) {
 func (h *IntegrationHandler) GetInstallation(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, "invalid id")
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid id")
 		return
 	}
 	m, err := h.installSvc.Get(c.Request.Context(), id)
@@ -287,7 +287,7 @@ func (h *IntegrationHandler) GetInstallation(c *gin.Context) {
 func (h *IntegrationHandler) ListInstallationRevisions(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, "invalid id")
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid id")
 		return
 	}
 	// 先按 id 加载 installation 做 tenant 校验，再返回 revisions。
@@ -315,7 +315,7 @@ func (h *IntegrationHandler) Uninstall(c *gin.Context) {
 	}
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, "invalid id")
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid id")
 		return
 	}
 	m, err := h.installSvc.Get(c.Request.Context(), id)
@@ -339,19 +339,19 @@ func (h *IntegrationHandler) handleErr(c *gin.Context, err error) {
 		errors.Is(err, service.ErrIntegrationVersionNotFound),
 		errors.Is(err, service.ErrIntegrationInstallationNotFound),
 		errors.Is(err, service.ErrIntegrationInstanceNotFound):
-		response.Error(c, http.StatusNotFound, http.StatusNotFound, err.Error())
+		response.Error(c, http.StatusNotFound, http.StatusNotFound, response.ErrCodeNotFound, err.Error())
 	case errors.Is(err, service.ErrIntegrationTemplateName),
 		errors.Is(err, service.ErrInvalidPagination):
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, err.Error())
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, err.Error())
 	case errors.Is(err, service.ErrIntegrationTenantMismatch):
-		response.Error(c, http.StatusForbidden, http.StatusForbidden, err.Error())
+		response.Error(c, http.StatusForbidden, http.StatusForbidden, response.ErrCodeTenantMismatch, err.Error())
 	case errors.Is(err, service.ErrIntegrationTemplateNameExists),
 		errors.Is(err, service.ErrIntegrationTemplateInUse),
 		errors.Is(err, service.ErrIntegrationVersionExists),
 		errors.Is(err, service.ErrIntegrationVersionInUse),
 		errors.Is(err, service.ErrIntegrationVersionLastOne):
-		response.Error(c, http.StatusConflict, http.StatusConflict, err.Error())
+		response.Error(c, http.StatusConflict, http.StatusConflict, response.ErrCodeConflict, err.Error())
 	default:
-		response.Error(c, http.StatusInternalServerError, http.StatusInternalServerError, "internal server error")
+		response.Error(c, http.StatusInternalServerError, http.StatusInternalServerError, response.ErrCodeInternal, "internal server error")
 	}
 }

@@ -61,7 +61,7 @@ func (h *DepartmentHandler) Tree(c *gin.Context) {
 func (h *DepartmentHandler) Create(c *gin.Context) {
 	var body createDepartmentBody
 	if err := c.ShouldBindJSON(&body); err != nil {
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, err.Error())
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, response.TranslateBindingError(err))
 		return
 	}
 	d, err := h.svc.Create(c.Request.Context(), &service.CreateDepartmentRequest{
@@ -82,7 +82,7 @@ func (h *DepartmentHandler) Create(c *gin.Context) {
 func (h *DepartmentHandler) Get(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, "invalid id")
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid id")
 		return
 	}
 	d, err := h.svc.Get(c.Request.Context(), id)
@@ -97,12 +97,12 @@ func (h *DepartmentHandler) Get(c *gin.Context) {
 func (h *DepartmentHandler) Update(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, "invalid id")
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid id")
 		return
 	}
 	var body service.UpdateDepartmentRequest
 	if err := c.ShouldBindJSON(&body); err != nil {
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, err.Error())
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, response.TranslateBindingError(err))
 		return
 	}
 	d, err := h.svc.Update(c.Request.Context(), id, &body)
@@ -117,7 +117,7 @@ func (h *DepartmentHandler) Update(c *gin.Context) {
 func (h *DepartmentHandler) Delete(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, "invalid id")
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid id")
 		return
 	}
 	if err := h.svc.Delete(c.Request.Context(), id); err != nil {
@@ -131,7 +131,7 @@ func (h *DepartmentHandler) Delete(c *gin.Context) {
 func (h *DepartmentHandler) ListUsers(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, "invalid id")
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid id")
 		return
 	}
 	page, ps, ok := parsePageAndSize(c, 20)
@@ -154,21 +154,21 @@ func (h *DepartmentHandler) ListUsers(c *gin.Context) {
 func (h *DepartmentHandler) handleErr(c *gin.Context, err error) {
 	switch {
 	case errors.Is(err, service.ErrDepartmentNotFound):
-		response.Error(c, http.StatusNotFound, http.StatusNotFound, err.Error())
+		response.Error(c, http.StatusNotFound, http.StatusNotFound, response.ErrCodeDepartmentNotFound, err.Error())
 	case errors.Is(err, service.ErrParentNotFound):
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, err.Error())
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeParentNotFound, err.Error())
 	case errors.Is(err, service.ErrDepartmentHasChild):
-		response.Error(c, http.StatusConflict, http.StatusConflict, err.Error())
+		response.Error(c, http.StatusConflict, http.StatusConflict, response.ErrCodeDeptHasChild, err.Error())
 	case errors.Is(err, service.ErrDepartmentHasTenant):
-		response.Error(c, http.StatusConflict, http.StatusConflict, err.Error())
+		response.Error(c, http.StatusConflict, http.StatusConflict, response.ErrCodeDeptHasTenant, err.Error())
 	case errors.Is(err, service.ErrInvalidPagination):
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, err.Error())
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeInvalidPagination, err.Error())
 	case errors.Is(err, service.ErrDeptNameRequired),
 		errors.Is(err, service.ErrInvalidParentID),
 		errors.Is(err, service.ErrParentSelf),
 		errors.Is(err, service.ErrParentCycle):
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, err.Error())
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, err.Error())
 	default:
-		response.Error(c, http.StatusInternalServerError, http.StatusInternalServerError, "internal server error")
+		response.Error(c, http.StatusInternalServerError, http.StatusInternalServerError, response.ErrCodeInternal, "internal server error")
 	}
 }

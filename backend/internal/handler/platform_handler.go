@@ -62,12 +62,12 @@ type initSharedClusterBody struct {
 // InitSharedCluster POST /api/v1/platform/scaling/bootstrap/shared/init
 func (h *PlatformHandler) InitSharedCluster(c *gin.Context) {
 	if h.bootstrapSvc == nil {
-		response.Error(c, http.StatusServiceUnavailable, http.StatusServiceUnavailable, "platform bootstrap service not configured")
+		response.Error(c, http.StatusServiceUnavailable, http.StatusServiceUnavailable, response.ErrCodeServiceUnavail, "platform bootstrap service not configured")
 		return
 	}
 	var body initSharedClusterBody
 	if err := c.ShouldBindJSON(&body); err != nil && !errors.Is(err, io.EOF) {
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, "invalid request body")
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid request body")
 		return
 	}
 	plan, err := h.bootstrapSvc.InitSharedVMStack(c.Request.Context(), &service.InitSharedClusterRequest{
@@ -100,21 +100,21 @@ func (h *PlatformHandler) ListAudits(c *gin.Context) {
 		return
 	}
 	if h.audit == nil {
-		response.Error(c, http.StatusInternalServerError, http.StatusInternalServerError, "audit repository not configured")
+		response.Error(c, http.StatusInternalServerError, http.StatusInternalServerError, response.ErrCodeInternal, "audit repository not configured")
 		return
 	}
 	status := strings.TrimSpace(c.Query("status"))
 	switch status {
 	case "", "success", "failed", "replayed":
 	default:
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, "invalid status")
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid status")
 		return
 	}
 	var startTime *time.Time
 	if raw := strings.TrimSpace(c.Query("start_time")); raw != "" {
 		t, err := time.Parse(time.RFC3339, raw)
 		if err != nil {
-			response.Error(c, http.StatusBadRequest, http.StatusBadRequest, "invalid start_time, expect RFC3339")
+			response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid start_time, expect RFC3339")
 			return
 		}
 		startTime = &t
@@ -123,7 +123,7 @@ func (h *PlatformHandler) ListAudits(c *gin.Context) {
 	if raw := strings.TrimSpace(c.Query("end_time")); raw != "" {
 		t, err := time.Parse(time.RFC3339, raw)
 		if err != nil {
-			response.Error(c, http.StatusBadRequest, http.StatusBadRequest, "invalid end_time, expect RFC3339")
+			response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid end_time, expect RFC3339")
 			return
 		}
 		endTime = &t
@@ -139,7 +139,7 @@ func (h *PlatformHandler) ListAudits(c *gin.Context) {
 		Limit:     ps,
 	})
 	if err != nil {
-		response.Error(c, http.StatusInternalServerError, http.StatusInternalServerError, "internal server error")
+		response.Error(c, http.StatusInternalServerError, http.StatusInternalServerError, response.ErrCodeInternal, "internal server error")
 		return
 	}
 	response.JSON(c, gin.H{
@@ -159,14 +159,14 @@ func (h *PlatformHandler) ListVMClusterTargets(c *gin.Context) {
 func (h *PlatformHandler) ScaleVMCluster(c *gin.Context) {
 	var body scaleVMClusterBody
 	if err := c.ShouldBindJSON(&body); err != nil {
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, "invalid request body")
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid request body")
 		return
 	}
 	var idemKey string
 	if !body.DryRun {
 		rawKey := strings.TrimSpace(c.GetHeader("Idempotency-Key"))
 		if rawKey == "" {
-			response.Error(c, http.StatusBadRequest, http.StatusBadRequest, "Idempotency-Key is required when dry_run=false")
+			response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "Idempotency-Key is required when dry_run=false")
 			return
 		}
 		idemKey = c.GetString(middleware.ContextUserIDKey) + ":platform_scale_vmcluster:" + rawKey
@@ -289,9 +289,9 @@ func (h *PlatformHandler) writeAudit(
 func (h *PlatformHandler) handleErr(c *gin.Context, err error) {
 	switch {
 	case errors.Is(err, service.ErrK8sOperatorNotConfigured):
-		response.Error(c, http.StatusServiceUnavailable, http.StatusServiceUnavailable, err.Error())
+		response.Error(c, http.StatusServiceUnavailable, http.StatusServiceUnavailable, response.ErrCodeK8sNotConfigured, err.Error())
 	case errors.Is(err, service.ErrHelmOperatorNotConfigured):
-		response.Error(c, http.StatusServiceUnavailable, http.StatusServiceUnavailable, err.Error())
+		response.Error(c, http.StatusServiceUnavailable, http.StatusServiceUnavailable, response.ErrCodeHelmNotConfigured, err.Error())
 	case errors.Is(err, service.ErrInvalidPlatformScope),
 		errors.Is(err, service.ErrPlatformTargetRequired),
 		errors.Is(err, service.ErrPlatformTargetNotFound),
@@ -300,8 +300,8 @@ func (h *PlatformHandler) handleErr(c *gin.Context, err error) {
 		errors.Is(err, service.ErrInvalidStorageSize),
 		errors.Is(err, service.ErrInvalidNamespace),
 		errors.Is(err, service.ErrInvalidReleaseName):
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, err.Error())
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, err.Error())
 	default:
-		response.Error(c, http.StatusInternalServerError, http.StatusInternalServerError, "internal server error")
+		response.Error(c, http.StatusInternalServerError, http.StatusInternalServerError, response.ErrCodeInternal, "internal server error")
 	}
 }

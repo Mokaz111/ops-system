@@ -38,7 +38,7 @@ func (h *ClusterHandler) List(c *gin.Context) {
 func (h *ClusterHandler) Get(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, "invalid id")
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid id")
 		return
 	}
 	m, err := h.svc.Get(c.Request.Context(), id)
@@ -53,7 +53,7 @@ func (h *ClusterHandler) Get(c *gin.Context) {
 func (h *ClusterHandler) Create(c *gin.Context) {
 	var body service.CreateClusterRequest
 	if err := c.ShouldBindJSON(&body); err != nil {
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, err.Error())
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, response.TranslateBindingError(err))
 		return
 	}
 	m, err := h.svc.Create(c.Request.Context(), &body)
@@ -68,12 +68,12 @@ func (h *ClusterHandler) Create(c *gin.Context) {
 func (h *ClusterHandler) Update(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, "invalid id")
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid id")
 		return
 	}
 	var body service.UpdateClusterRequest
 	if err := c.ShouldBindJSON(&body); err != nil {
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, err.Error())
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, response.TranslateBindingError(err))
 		return
 	}
 	m, err := h.svc.Update(c.Request.Context(), id, &body)
@@ -88,7 +88,7 @@ func (h *ClusterHandler) Update(c *gin.Context) {
 func (h *ClusterHandler) Delete(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, "invalid id")
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid id")
 		return
 	}
 	if err := h.svc.Delete(c.Request.Context(), id); err != nil {
@@ -101,10 +101,10 @@ func (h *ClusterHandler) Delete(c *gin.Context) {
 func (h *ClusterHandler) handleErr(c *gin.Context, err error) {
 	switch {
 	case errors.Is(err, service.ErrClusterNotFound):
-		response.Error(c, http.StatusNotFound, http.StatusNotFound, err.Error())
+		response.Error(c, http.StatusNotFound, http.StatusNotFound, response.ErrCodeClusterNotFound, err.Error())
 	case errors.Is(err, service.ErrClusterInvalid), errors.Is(err, service.ErrInvalidPagination):
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, err.Error())
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, err.Error())
 	default:
-		response.Error(c, http.StatusInternalServerError, http.StatusInternalServerError, "internal server error")
+		response.Error(c, http.StatusInternalServerError, http.StatusInternalServerError, response.ErrCodeInternal, "internal server error")
 	}
 }

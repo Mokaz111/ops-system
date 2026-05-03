@@ -67,14 +67,14 @@ func (h *AlertHandler) ListRules(c *gin.Context) {
 			return
 		}
 		if u.TenantID == nil {
-			response.Error(c, http.StatusForbidden, http.StatusForbidden, "forbidden")
+			response.Error(c, http.StatusForbidden, http.StatusForbidden, response.ErrCodeForbidden, "forbidden")
 			return
 		}
 		tenantID = u.TenantID
 	} else if s := c.Query("tenant_id"); s != "" {
 		id, err := uuid.Parse(s)
 		if err != nil {
-			response.Error(c, http.StatusBadRequest, http.StatusBadRequest, "invalid tenant_id")
+			response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid tenant_id")
 			return
 		}
 		tenantID = &id
@@ -100,7 +100,7 @@ func (h *AlertHandler) ListRules(c *gin.Context) {
 func (h *AlertHandler) CreateRule(c *gin.Context) {
 	var body createAlertRuleBody
 	if err := c.ShouldBindJSON(&body); err != nil {
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, err.Error())
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, response.TranslateBindingError(err))
 		return
 	}
 	rule, err := h.alertSvc.CreateRule(c.Request.Context(), &service.CreateAlertRuleRequest{
@@ -125,12 +125,12 @@ func (h *AlertHandler) CreateRule(c *gin.Context) {
 func (h *AlertHandler) UpdateRule(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, "invalid id")
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid id")
 		return
 	}
 	var body updateAlertRuleBody
 	if err := c.ShouldBindJSON(&body); err != nil {
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, err.Error())
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, response.TranslateBindingError(err))
 		return
 	}
 	rule, err := h.alertSvc.UpdateRule(c.Request.Context(), id, &service.UpdateAlertRuleRequest{
@@ -154,7 +154,7 @@ func (h *AlertHandler) UpdateRule(c *gin.Context) {
 func (h *AlertHandler) DeleteRule(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, "invalid id")
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid id")
 		return
 	}
 	if err := h.alertSvc.DeleteRule(c.Request.Context(), id); err != nil {
@@ -179,14 +179,14 @@ func (h *AlertHandler) ListEvents(c *gin.Context) {
 			return
 		}
 		if u.TenantID == nil {
-			response.Error(c, http.StatusForbidden, http.StatusForbidden, "forbidden")
+			response.Error(c, http.StatusForbidden, http.StatusForbidden, response.ErrCodeForbidden, "forbidden")
 			return
 		}
 		tenantID = u.TenantID
 	} else if s := c.Query("tenant_id"); s != "" {
 		id, err := uuid.Parse(s)
 		if err != nil {
-			response.Error(c, http.StatusBadRequest, http.StatusBadRequest, "invalid tenant_id")
+			response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid tenant_id")
 			return
 		}
 		tenantID = &id
@@ -195,7 +195,7 @@ func (h *AlertHandler) ListEvents(c *gin.Context) {
 	if s := c.Query("rule_id"); s != "" {
 		id, err := uuid.Parse(s)
 		if err != nil {
-			response.Error(c, http.StatusBadRequest, http.StatusBadRequest, "invalid rule_id")
+			response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid rule_id")
 			return
 		}
 		ruleID = &id
@@ -206,7 +206,7 @@ func (h *AlertHandler) ListEvents(c *gin.Context) {
 	if s := c.Query("start_time"); s != "" {
 		t, err := time.Parse(time.RFC3339, s)
 		if err != nil {
-			response.Error(c, http.StatusBadRequest, http.StatusBadRequest, "invalid start_time")
+			response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid start_time")
 			return
 		}
 		startTime = &t
@@ -214,7 +214,7 @@ func (h *AlertHandler) ListEvents(c *gin.Context) {
 	if s := c.Query("end_time"); s != "" {
 		t, err := time.Parse(time.RFC3339, s)
 		if err != nil {
-			response.Error(c, http.StatusBadRequest, http.StatusBadRequest, "invalid end_time")
+			response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid end_time")
 			return
 		}
 		endTime = &t
@@ -237,7 +237,7 @@ func (h *AlertHandler) ListEvents(c *gin.Context) {
 func (h *AlertHandler) GetEvent(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, "invalid id")
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid id")
 		return
 	}
 	event, err := h.eventSvc.GetEvent(c.Request.Context(), id)
@@ -251,7 +251,7 @@ func (h *AlertHandler) GetEvent(c *gin.Context) {
 			return
 		}
 		if u.TenantID == nil || *u.TenantID != event.TenantID {
-			response.Error(c, http.StatusForbidden, http.StatusForbidden, "forbidden")
+			response.Error(c, http.StatusForbidden, http.StatusForbidden, response.ErrCodeForbidden, "forbidden")
 			return
 		}
 	}
@@ -262,12 +262,12 @@ func (h *AlertHandler) GetEvent(c *gin.Context) {
 func (h *AlertHandler) AckEvent(c *gin.Context) {
 	eventID, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, "invalid id")
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid id")
 		return
 	}
 	userID, ok := userIDFromContext(c)
 	if !ok {
-		response.Error(c, http.StatusUnauthorized, http.StatusUnauthorized, "unauthorized")
+		response.Error(c, http.StatusUnauthorized, http.StatusUnauthorized, response.ErrCodeUnauthorized, "unauthorized")
 		return
 	}
 	if !isAdmin(c) {
@@ -281,7 +281,7 @@ func (h *AlertHandler) AckEvent(c *gin.Context) {
 			return
 		}
 		if u.TenantID == nil || *u.TenantID != event.TenantID {
-			response.Error(c, http.StatusForbidden, http.StatusForbidden, "forbidden")
+			response.Error(c, http.StatusForbidden, http.StatusForbidden, response.ErrCodeForbidden, "forbidden")
 			return
 		}
 	}
@@ -324,14 +324,14 @@ func (h *AlertHandler) ListChannels(c *gin.Context) {
 			return
 		}
 		if u.TenantID == nil {
-			response.Error(c, http.StatusForbidden, http.StatusForbidden, "forbidden")
+			response.Error(c, http.StatusForbidden, http.StatusForbidden, response.ErrCodeForbidden, "forbidden")
 			return
 		}
 		tenantID = u.TenantID
 	} else if s := c.Query("tenant_id"); s != "" {
 		id, err := uuid.Parse(s)
 		if err != nil {
-			response.Error(c, http.StatusBadRequest, http.StatusBadRequest, "invalid tenant_id")
+			response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid tenant_id")
 			return
 		}
 		tenantID = &id
@@ -356,7 +356,7 @@ func (h *AlertHandler) ListChannels(c *gin.Context) {
 func (h *AlertHandler) CreateChannel(c *gin.Context) {
 	var body createChannelBody
 	if err := c.ShouldBindJSON(&body); err != nil {
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, err.Error())
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, response.TranslateBindingError(err))
 		return
 	}
 	ch, err := h.channelSvc.Create(c.Request.Context(), &service.CreateChannelRequest{
@@ -377,12 +377,12 @@ func (h *AlertHandler) CreateChannel(c *gin.Context) {
 func (h *AlertHandler) UpdateChannel(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, "invalid id")
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid id")
 		return
 	}
 	var body updateChannelBody
 	if err := c.ShouldBindJSON(&body); err != nil {
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, err.Error())
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, response.TranslateBindingError(err))
 		return
 	}
 	ch, err := h.channelSvc.Update(c.Request.Context(), id, &service.UpdateChannelRequest{
@@ -402,7 +402,7 @@ func (h *AlertHandler) UpdateChannel(c *gin.Context) {
 func (h *AlertHandler) DeleteChannel(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, "invalid id")
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid id")
 		return
 	}
 	if err := h.channelSvc.Delete(c.Request.Context(), id); err != nil {
@@ -423,14 +423,14 @@ func (h *AlertHandler) Summary(c *gin.Context) {
 			return
 		}
 		if u.TenantID == nil {
-			response.Error(c, http.StatusForbidden, http.StatusForbidden, "forbidden")
+			response.Error(c, http.StatusForbidden, http.StatusForbidden, response.ErrCodeForbidden, "forbidden")
 			return
 		}
 		tenantID = *u.TenantID
 	} else {
 		id, err := uuid.Parse(c.Query("tenant_id"))
 		if err != nil {
-			response.Error(c, http.StatusBadRequest, http.StatusBadRequest, "invalid tenant_id")
+			response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid tenant_id")
 			return
 		}
 		tenantID = id
@@ -452,14 +452,14 @@ func (h *AlertHandler) Trend(c *gin.Context) {
 			return
 		}
 		if u.TenantID == nil {
-			response.Error(c, http.StatusForbidden, http.StatusForbidden, "forbidden")
+			response.Error(c, http.StatusForbidden, http.StatusForbidden, response.ErrCodeForbidden, "forbidden")
 			return
 		}
 		tenantID = *u.TenantID
 	} else {
 		id, err := uuid.Parse(c.Query("tenant_id"))
 		if err != nil {
-			response.Error(c, http.StatusBadRequest, http.StatusBadRequest, "invalid tenant_id")
+			response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid tenant_id")
 			return
 		}
 		tenantID = id
@@ -487,14 +487,14 @@ func (h *AlertHandler) StatsByLevel(c *gin.Context) {
 			return
 		}
 		if u.TenantID == nil {
-			response.Error(c, http.StatusForbidden, http.StatusForbidden, "forbidden")
+			response.Error(c, http.StatusForbidden, http.StatusForbidden, response.ErrCodeForbidden, "forbidden")
 			return
 		}
 		tenantID = *u.TenantID
 	} else {
 		id, err := uuid.Parse(c.Query("tenant_id"))
 		if err != nil {
-			response.Error(c, http.StatusBadRequest, http.StatusBadRequest, "invalid tenant_id")
+			response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid tenant_id")
 			return
 		}
 		tenantID = id
@@ -520,14 +520,14 @@ func (h *AlertHandler) StatsByRule(c *gin.Context) {
 			return
 		}
 		if u.TenantID == nil {
-			response.Error(c, http.StatusForbidden, http.StatusForbidden, "forbidden")
+			response.Error(c, http.StatusForbidden, http.StatusForbidden, response.ErrCodeForbidden, "forbidden")
 			return
 		}
 		tenantID = *u.TenantID
 	} else {
 		id, err := uuid.Parse(c.Query("tenant_id"))
 		if err != nil {
-			response.Error(c, http.StatusBadRequest, http.StatusBadRequest, "invalid tenant_id")
+			response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid tenant_id")
 			return
 		}
 		tenantID = id
@@ -551,12 +551,12 @@ func (h *AlertHandler) StatsByRule(c *gin.Context) {
 func (h *AlertHandler) parseTimeRange(c *gin.Context) (time.Time, time.Time, bool) {
 	start, err := time.Parse(time.RFC3339, c.Query("start"))
 	if err != nil {
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, "invalid start")
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid start")
 		return time.Time{}, time.Time{}, false
 	}
 	end, err := time.Parse(time.RFC3339, c.Query("end"))
 	if err != nil {
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, "invalid end")
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid end")
 		return time.Time{}, time.Time{}, false
 	}
 	return start, end, true
@@ -567,9 +567,9 @@ func (h *AlertHandler) handleErr(c *gin.Context, err error) {
 	case errors.Is(err, service.ErrAlertRuleNotFound),
 		errors.Is(err, service.ErrAlertEventNotFound),
 		errors.Is(err, service.ErrChannelNotFound):
-		response.Error(c, http.StatusNotFound, http.StatusNotFound, err.Error())
+		response.Error(c, http.StatusNotFound, http.StatusNotFound, response.ErrCodeNotFound, err.Error())
 	case errors.Is(err, service.ErrTenantNotFound):
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, err.Error())
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeTenantNotFound, err.Error())
 	case errors.Is(err, service.ErrRuleNameRequired),
 		errors.Is(err, service.ErrInvalidRuleType),
 		errors.Is(err, service.ErrInvalidAlertLevel),
@@ -577,10 +577,10 @@ func (h *AlertHandler) handleErr(c *gin.Context, err error) {
 		errors.Is(err, service.ErrChannelNameRequired),
 		errors.Is(err, service.ErrInvalidChannelType),
 		errors.Is(err, service.ErrInvalidPagination):
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, err.Error())
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, err.Error())
 	case errors.Is(err, service.ErrEventAlreadyAcked):
-		response.Error(c, http.StatusConflict, http.StatusConflict, err.Error())
+		response.Error(c, http.StatusConflict, http.StatusConflict, response.ErrCodeEventAlreadyAcked, err.Error())
 	default:
-		response.Error(c, http.StatusInternalServerError, http.StatusInternalServerError, "internal server error")
+		response.Error(c, http.StatusInternalServerError, http.StatusInternalServerError, response.ErrCodeInternal, "internal server error")
 	}
 }

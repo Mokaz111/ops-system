@@ -56,7 +56,7 @@ type updateUserBody struct {
 func (h *UserHandler) Bootstrap(c *gin.Context) {
 	var body bootstrapBody
 	if err := c.ShouldBindJSON(&body); err != nil {
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, err.Error())
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, response.TranslateBindingError(err))
 		return
 	}
 	u, err := h.userSvc.Bootstrap(c.Request.Context(), &service.CreateUserRequest{
@@ -97,7 +97,7 @@ func (h *UserHandler) List(c *gin.Context) {
 	if !isAdmin(c) {
 		callerID, ok := userIDFromContext(c)
 		if !ok {
-			response.Error(c, http.StatusUnauthorized, http.StatusUnauthorized, "unauthorized")
+			response.Error(c, http.StatusUnauthorized, http.StatusUnauthorized, response.ErrCodeUnauthorized, "unauthorized")
 			return
 		}
 		u, err := h.userSvc.Get(c.Request.Context(), callerID)
@@ -117,7 +117,7 @@ func (h *UserHandler) List(c *gin.Context) {
 	if s := c.Query("dept_id"); s != "" {
 		id, err := uuid.Parse(s)
 		if err != nil {
-			response.Error(c, http.StatusBadRequest, http.StatusBadRequest, "invalid dept_id")
+			response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid dept_id")
 			return
 		}
 		deptID = &id
@@ -125,7 +125,7 @@ func (h *UserHandler) List(c *gin.Context) {
 	if s := c.Query("tenant_id"); s != "" {
 		id, err := uuid.Parse(s)
 		if err != nil {
-			response.Error(c, http.StatusBadRequest, http.StatusBadRequest, "invalid tenant_id")
+			response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid tenant_id")
 			return
 		}
 		tenantID = &id
@@ -154,12 +154,12 @@ func (h *UserHandler) List(c *gin.Context) {
 // Create POST /api/v1/users（需管理员；未配置 jwt.secret 时不校验角色）
 func (h *UserHandler) Create(c *gin.Context) {
 	if h.jwtSecret != "" && !isAdmin(c) {
-		response.Error(c, http.StatusForbidden, http.StatusForbidden, "admin only")
+		response.Error(c, http.StatusForbidden, http.StatusForbidden, response.ErrCodeForbidden, "admin only")
 		return
 	}
 	var body createUserBody
 	if err := c.ShouldBindJSON(&body); err != nil {
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, err.Error())
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, response.TranslateBindingError(err))
 		return
 	}
 	u, err := h.userSvc.Create(c.Request.Context(), &service.CreateUserRequest{
@@ -183,13 +183,13 @@ func (h *UserHandler) Create(c *gin.Context) {
 func (h *UserHandler) Get(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, "invalid id")
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid id")
 		return
 	}
 	if h.jwtSecret != "" && !isAdmin(c) {
 		caller, ok := userIDFromContext(c)
 		if !ok || caller != id {
-			response.Error(c, http.StatusForbidden, http.StatusForbidden, "forbidden")
+			response.Error(c, http.StatusForbidden, http.StatusForbidden, response.ErrCodeForbidden, "forbidden")
 			return
 		}
 	}
@@ -205,23 +205,23 @@ func (h *UserHandler) Get(c *gin.Context) {
 func (h *UserHandler) Update(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, "invalid id")
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid id")
 		return
 	}
 	if h.jwtSecret != "" {
 		caller, ok := userIDFromContext(c)
 		if !ok {
-			response.Error(c, http.StatusUnauthorized, http.StatusUnauthorized, "unauthorized")
+			response.Error(c, http.StatusUnauthorized, http.StatusUnauthorized, response.ErrCodeUnauthorized, "unauthorized")
 			return
 		}
 		if !isAdmin(c) && caller != id {
-			response.Error(c, http.StatusForbidden, http.StatusForbidden, "forbidden")
+			response.Error(c, http.StatusForbidden, http.StatusForbidden, response.ErrCodeForbidden, "forbidden")
 			return
 		}
 	}
 	var body updateUserBody
 	if err := c.ShouldBindJSON(&body); err != nil {
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, err.Error())
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, response.TranslateBindingError(err))
 		return
 	}
 	u, err := h.userSvc.Update(c.Request.Context(), id, &service.UpdateUserRequest{
@@ -244,11 +244,11 @@ func (h *UserHandler) Update(c *gin.Context) {
 func (h *UserHandler) Delete(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, "invalid id")
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid id")
 		return
 	}
 	if h.jwtSecret != "" && !isAdmin(c) {
-		response.Error(c, http.StatusForbidden, http.StatusForbidden, "admin only")
+		response.Error(c, http.StatusForbidden, http.StatusForbidden, response.ErrCodeForbidden, "admin only")
 		return
 	}
 	if err := h.userSvc.Delete(c.Request.Context(), id); err != nil {
@@ -261,16 +261,16 @@ func (h *UserHandler) Delete(c *gin.Context) {
 func (h *UserHandler) handleErr(c *gin.Context, err error) {
 	switch {
 	case errors.Is(err, service.ErrUserNotFound):
-		response.Error(c, http.StatusNotFound, http.StatusNotFound, err.Error())
+		response.Error(c, http.StatusNotFound, http.StatusNotFound, response.ErrCodeUserNotFound, err.Error())
 	case errors.Is(err, service.ErrUsernameExists),
 		errors.Is(err, service.ErrUsernameRequired),
 		errors.Is(err, service.ErrPasswordTooShort):
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, err.Error())
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, err.Error())
 	case errors.Is(err, service.ErrBootstrapNotAllowed):
-		response.Error(c, http.StatusForbidden, http.StatusForbidden, err.Error())
+		response.Error(c, http.StatusForbidden, http.StatusForbidden, response.ErrCodeBootstrapNotAllowed, err.Error())
 	case errors.Is(err, service.ErrInvalidPagination):
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, err.Error())
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeInvalidPagination, err.Error())
 	default:
-		response.Error(c, http.StatusInternalServerError, http.StatusInternalServerError, "internal server error")
+		response.Error(c, http.StatusInternalServerError, http.StatusInternalServerError, response.ErrCodeInternal, "internal server error")
 	}
 }

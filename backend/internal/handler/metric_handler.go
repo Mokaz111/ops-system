@@ -30,7 +30,7 @@ func (h *MetricHandler) List(c *gin.Context) {
 	if raw := c.Query("template_id"); raw != "" {
 		id, err := uuid.Parse(raw)
 		if err != nil {
-			response.Error(c, http.StatusBadRequest, http.StatusBadRequest, "invalid template_id")
+			response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid template_id")
 			return
 		}
 		tplID = &id
@@ -48,7 +48,7 @@ func (h *MetricHandler) List(c *gin.Context) {
 func (h *MetricHandler) Get(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, "invalid id")
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid id")
 		return
 	}
 	m, err := h.svc.Get(c.Request.Context(), id)
@@ -63,7 +63,7 @@ func (h *MetricHandler) Get(c *gin.Context) {
 func (h *MetricHandler) Create(c *gin.Context) {
 	var body service.CreateMetricRequest
 	if err := c.ShouldBindJSON(&body); err != nil {
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, err.Error())
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, response.TranslateBindingError(err))
 		return
 	}
 	m, err := h.svc.Create(c.Request.Context(), &body)
@@ -78,12 +78,12 @@ func (h *MetricHandler) Create(c *gin.Context) {
 func (h *MetricHandler) Update(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, "invalid id")
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid id")
 		return
 	}
 	var body service.UpdateMetricRequest
 	if err := c.ShouldBindJSON(&body); err != nil {
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, err.Error())
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, response.TranslateBindingError(err))
 		return
 	}
 	m, err := h.svc.Update(c.Request.Context(), id, &body)
@@ -98,7 +98,7 @@ func (h *MetricHandler) Update(c *gin.Context) {
 func (h *MetricHandler) Delete(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, "invalid id")
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid id")
 		return
 	}
 	if err := h.svc.Delete(c.Request.Context(), id); err != nil {
@@ -112,7 +112,7 @@ func (h *MetricHandler) Delete(c *gin.Context) {
 func (h *MetricHandler) Related(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, "invalid id")
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid id")
 		return
 	}
 	list, err := h.svc.Related(c.Request.Context(), id)
@@ -127,7 +127,7 @@ func (h *MetricHandler) Related(c *gin.Context) {
 func (h *MetricHandler) Reparse(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("templateId"))
 	if err != nil {
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, "invalid templateId")
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid templateId")
 		return
 	}
 	res, err := h.svc.Reparse(c.Request.Context(), id, c.Query("version"))
@@ -143,12 +143,12 @@ func (h *MetricHandler) handleErr(c *gin.Context, err error) {
 	case errors.Is(err, service.ErrMetricNotFound),
 		errors.Is(err, service.ErrIntegrationTemplateNotFound),
 		errors.Is(err, service.ErrIntegrationVersionNotFound):
-		response.Error(c, http.StatusNotFound, http.StatusNotFound, err.Error())
+		response.Error(c, http.StatusNotFound, http.StatusNotFound, response.ErrCodeNotFound, err.Error())
 	case errors.Is(err, service.ErrMetricNameExists):
-		response.Error(c, http.StatusConflict, http.StatusConflict, err.Error())
+		response.Error(c, http.StatusConflict, http.StatusConflict, response.ErrCodeMetricNameExists, err.Error())
 	case errors.Is(err, service.ErrInvalidPagination):
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, err.Error())
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeInvalidPagination, err.Error())
 	default:
-		response.Error(c, http.StatusInternalServerError, http.StatusInternalServerError, "internal server error")
+		response.Error(c, http.StatusInternalServerError, http.StatusInternalServerError, response.ErrCodeInternal, "internal server error")
 	}
 }

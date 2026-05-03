@@ -83,7 +83,7 @@ func (h *TenantHandler) List(c *gin.Context) {
 			return
 		}
 		if u.TenantID == nil {
-			response.Error(c, http.StatusForbidden, http.StatusForbidden, "forbidden")
+			response.Error(c, http.StatusForbidden, http.StatusForbidden, response.ErrCodeForbidden, "forbidden")
 			return
 		}
 		t, err := h.svc.Get(c.Request.Context(), *u.TenantID)
@@ -104,7 +104,7 @@ func (h *TenantHandler) List(c *gin.Context) {
 	if s := c.Query("dept_id"); s != "" {
 		id, err := uuid.Parse(s)
 		if err != nil {
-			response.Error(c, http.StatusBadRequest, http.StatusBadRequest, "invalid dept_id")
+			response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid dept_id")
 			return
 		}
 		deptID = &id
@@ -134,7 +134,7 @@ func (h *TenantHandler) List(c *gin.Context) {
 func (h *TenantHandler) Create(c *gin.Context) {
 	var body createTenantBody
 	if err := c.ShouldBindJSON(&body); err != nil {
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, err.Error())
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, response.TranslateBindingError(err))
 		return
 	}
 	t, err := h.svc.Create(c.Request.Context(), &service.CreateTenantRequest{
@@ -155,7 +155,7 @@ func (h *TenantHandler) Create(c *gin.Context) {
 func (h *TenantHandler) Get(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, "invalid id")
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid id")
 		return
 	}
 	if !isAdmin(c) {
@@ -164,7 +164,7 @@ func (h *TenantHandler) Get(c *gin.Context) {
 			return
 		}
 		if u.TenantID == nil || *u.TenantID != id {
-			response.Error(c, http.StatusForbidden, http.StatusForbidden, "forbidden")
+			response.Error(c, http.StatusForbidden, http.StatusForbidden, response.ErrCodeForbidden, "forbidden")
 			return
 		}
 	}
@@ -178,7 +178,7 @@ func (h *TenantHandler) Get(c *gin.Context) {
 }
 
 type updateTenantBody struct {
-	TenantName    string     `json:"tenant_name" binding:"required"`
+	TenantName    string     `json:"tenant_name"`
 	TemplateType  string     `json:"template_type"`
 	QuotaConfig   string     `json:"quota_config"`
 	Status        string     `json:"status"`
@@ -189,12 +189,12 @@ type updateTenantBody struct {
 func (h *TenantHandler) Update(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, "invalid id")
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid id")
 		return
 	}
 	var body updateTenantBody
 	if err := c.ShouldBindJSON(&body); err != nil {
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, err.Error())
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, response.TranslateBindingError(err))
 		return
 	}
 	t, err := h.svc.Update(c.Request.Context(), id, &service.UpdateTenantRequest{
@@ -215,7 +215,7 @@ func (h *TenantHandler) Update(c *gin.Context) {
 func (h *TenantHandler) Delete(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, "invalid id")
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid id")
 		return
 	}
 	if err := h.svc.Delete(c.Request.Context(), id); err != nil {
@@ -229,7 +229,7 @@ func (h *TenantHandler) Delete(c *gin.Context) {
 func (h *TenantHandler) Metrics(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, "invalid id")
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid id")
 		return
 	}
 	if !isAdmin(c) {
@@ -238,7 +238,7 @@ func (h *TenantHandler) Metrics(c *gin.Context) {
 			return
 		}
 		if u.TenantID == nil || *u.TenantID != id {
-			response.Error(c, http.StatusForbidden, http.StatusForbidden, "forbidden")
+			response.Error(c, http.StatusForbidden, http.StatusForbidden, response.ErrCodeForbidden, "forbidden")
 			return
 		}
 	}
@@ -254,23 +254,23 @@ func (h *TenantHandler) Metrics(c *gin.Context) {
 func (h *TenantHandler) handleErr(c *gin.Context, err error) {
 	switch {
 	case errors.Is(err, service.ErrTenantNotFound):
-		response.Error(c, http.StatusNotFound, http.StatusNotFound, err.Error())
+		response.Error(c, http.StatusNotFound, http.StatusNotFound, response.ErrCodeTenantNotFound, err.Error())
 	case errors.Is(err, service.ErrDeptNotFound):
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, err.Error())
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeNotFound, err.Error())
 	case errors.Is(err, service.ErrDeptHasTenant):
-		response.Error(c, http.StatusConflict, http.StatusConflict, err.Error())
+		response.Error(c, http.StatusConflict, http.StatusConflict, response.ErrCodeDeptHasTenant, err.Error())
 	case errors.Is(err, service.ErrTenantHasInstances):
-		response.Error(c, http.StatusConflict, http.StatusConflict, err.Error())
+		response.Error(c, http.StatusConflict, http.StatusConflict, response.ErrCodeTenantHasInstances, err.Error())
 	case errors.Is(err, service.ErrInvalidTemplateType),
 		errors.Is(err, service.ErrQuotaConfigNotJSON),
 		errors.Is(err, service.ErrTenantNameRequired):
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, err.Error())
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, err.Error())
 	case errors.Is(err, service.ErrInvalidPagination):
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, err.Error())
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeInvalidPagination, err.Error())
 	case errors.Is(err, service.ErrTenantProvisionFailed),
 		errors.Is(err, service.ErrTenantDeprovisionFailed):
-		response.Error(c, http.StatusServiceUnavailable, http.StatusServiceUnavailable, "tenant orchestration failed, please retry")
+		response.Error(c, http.StatusServiceUnavailable, http.StatusServiceUnavailable, response.ErrCodeTenantProvisionFailed, "tenant orchestration failed, please retry")
 	default:
-		response.Error(c, http.StatusInternalServerError, http.StatusInternalServerError, "internal server error")
+		response.Error(c, http.StatusInternalServerError, http.StatusInternalServerError, response.ErrCodeInternal, "internal server error")
 	}
 }

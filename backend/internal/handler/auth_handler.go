@@ -30,16 +30,16 @@ type loginBody struct {
 func (h *AuthHandler) Login(c *gin.Context) {
 	var body loginBody
 	if err := c.ShouldBindJSON(&body); err != nil {
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, "invalid request body")
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid request body")
 		return
 	}
 	token, u, err := h.authSvc.Login(c.Request.Context(), body.Username, body.Password)
 	if err != nil {
 		if errors.Is(err, service.ErrInvalidCredentials) {
-			response.Error(c, http.StatusUnauthorized, http.StatusUnauthorized, err.Error())
+			response.Error(c, http.StatusUnauthorized, http.StatusUnauthorized, response.ErrCodeInvalidCredentials, err.Error())
 			return
 		}
-		response.Error(c, http.StatusInternalServerError, http.StatusInternalServerError, "internal server error")
+		response.Error(c, http.StatusInternalServerError, http.StatusInternalServerError, response.ErrCodeInternal, "internal server error")
 		return
 	}
 	response.JSON(c, gin.H{
@@ -51,21 +51,21 @@ func (h *AuthHandler) Login(c *gin.Context) {
 // Me GET /api/v1/auth/me
 func (h *AuthHandler) Me(c *gin.Context) {
 	if h.jwtSecret == "" {
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, "configure jwt.secret or OPS_JWT_SECRET before using /auth/me")
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeBadRequest, "configure jwt.secret or OPS_JWT_SECRET before using /auth/me")
 		return
 	}
 	id, ok := userIDFromContext(c)
 	if !ok {
-		response.Error(c, http.StatusUnauthorized, http.StatusUnauthorized, "unauthorized")
+		response.Error(c, http.StatusUnauthorized, http.StatusUnauthorized, response.ErrCodeUnauthorized, "unauthorized")
 		return
 	}
 	u, err := h.userSvc.Get(c.Request.Context(), id)
 	if err != nil {
 		if errors.Is(err, service.ErrUserNotFound) {
-			response.Error(c, http.StatusNotFound, http.StatusNotFound, err.Error())
+			response.Error(c, http.StatusNotFound, http.StatusNotFound, response.ErrCodeUserNotFound, err.Error())
 			return
 		}
-		response.Error(c, http.StatusInternalServerError, http.StatusInternalServerError, "internal server error")
+		response.Error(c, http.StatusInternalServerError, http.StatusInternalServerError, response.ErrCodeInternal, "internal server error")
 		return
 	}
 	response.JSON(c, toUserPublic(u))
