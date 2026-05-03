@@ -44,22 +44,14 @@ import { instanceAPI } from '../../api/instance';
 import { clusterAPI, type Cluster } from '../../api/cluster';
 import { grafanaHostAPI, type GrafanaHost } from '../../api/grafanaHost';
 import { extractApiError } from '../../api';
-import type { Instance, InstanceSpec } from '../../types/api';
-
+import type { Instance } from '../../types/api';
+import { parseSpec } from '../../utils/instance';
 const typeLabels: Record<string, { label: string; color: 'primary' | 'secondary' | 'success' | 'warning' }> = {
   metrics: { label: 'Metrics', color: 'primary' },
   logs: { label: 'Logs', color: 'secondary' },
   visual: { label: 'Grafana', color: 'success' },
   alert: { label: 'Alert', color: 'warning' },
 };
-
-function parseSpec(spec: string): InstanceSpec {
-  try {
-    return JSON.parse(spec);
-  } catch {
-    return { cpu: 0, memory: 0, storage: 0, retention: 0 };
-  }
-}
 
 function isInstanceLevelScalable(inst: Instance): boolean {
   return inst.status === 'running' && inst.instance_type !== 'visual' && inst.template_type === 'dedicated_single';

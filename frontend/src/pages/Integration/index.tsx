@@ -503,9 +503,9 @@ export default function IntegrationPage() {
 
             <Stack direction="row" spacing={2} sx={{ mb: 2 }}>
               <FormControl size="small" sx={{ flex: 1 }}>
-                <InputLabel>Grafana 主机（可选）</InputLabel>
+                <InputLabel>Grafana 实例（可选）</InputLabel>
                 <Select
-                  label="Grafana 主机（可选）"
+                  label="Grafana 实例（可选）"
                   value={grafanaHostId}
                   onChange={(e) => setGrafanaHostId(e.target.value)}
                 >

@@ -25,6 +25,8 @@ const DashboardMgmtPage = lazy(() => import('./pages/DashboardMgmt'));
 const ClusterPage = lazy(() => import('./pages/Cluster'));
 const GrafanaHostPage = lazy(() => import('./pages/GrafanaHost'));
 const GrafanaInstancePage = lazy(() => import('./pages/GrafanaInstance'));
+const VMStatsPage = lazy(() => import('./pages/VMStats'));
+const LogStatsPage = lazy(() => import('./pages/LogStats'));
 
 function Lazy({ children }: { children: React.ReactNode }) {
   return <Suspense fallback={<LoadingScreen />}>{children}</Suspense>;
@@ -71,6 +73,8 @@ const routeComponentMap: Record<AppRouteKey, React.ReactNode | null> = {
   clusters: <Lazy><ClusterPage /></Lazy>,
   settings: <Lazy><SettingsPage /></Lazy>,
   'platform-scaling': <Lazy><PlatformScalingPage /></Lazy>,
+  'vm-stats': <Lazy><VMStatsPage /></Lazy>,
+  'log-stats': <Lazy><LogStatsPage /></Lazy>,
 };
 
 export const router = createBrowserRouter([

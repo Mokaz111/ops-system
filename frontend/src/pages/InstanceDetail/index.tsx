@@ -10,6 +10,10 @@ import {
   Card,
   Chip,
   CircularProgress,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
   Grid,
   LinearProgress,
   Link as MuiLink,
@@ -19,10 +23,14 @@ import {
   TableCell,
   TableHead,
   TableRow,
+  TextField,
   Typography,
 } from '@mui/material';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
+import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
+import RefreshOutlinedIcon from '@mui/icons-material/RefreshOutlined';
+import LoginOutlinedIcon from '@mui/icons-material/LoginOutlined';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExtensionOutlinedIcon from '@mui/icons-material/ExtensionOutlined';
 import NotificationsActiveOutlinedIcon from '@mui/icons-material/NotificationsActiveOutlined';
@@ -33,6 +41,7 @@ import LoadingScreen from '../../components/common/LoadingScreen';
 import EmptyState from '../../components/common/EmptyState';
 import DetailTabs from '../../components/common/DetailTabs';
 import { instanceAPI, type ScaleEvent } from '../../api/instance';
+import { ssoLoginToGrafana } from '../../api/grafanaSso';
 import {
   integrationAPI,
   latestAppliedRefs,
@@ -43,7 +52,8 @@ import {
 import { grafanaHostAPI, type GrafanaHost } from '../../api/grafanaHost';
 import { extractApiError } from '../../api';
 import { isAbortError, makeAbortController } from '../../api/client';
-import type { Instance, InstanceMetrics, InstanceSpec } from '../../types/api';
+import type { Instance, InstanceMetrics } from '../../types/api';
+import { parseSpec } from '../../utils/instance';
 
 const typeLabels: Record<string, { label: string; color: 'primary' | 'secondary' | 'success' | 'warning' }> = {
   metrics: { label: 'Metrics', color: 'primary' },
@@ -51,14 +61,6 @@ const typeLabels: Record<string, { label: string; color: 'primary' | 'secondary'
   visual: { label: 'Grafana', color: 'success' },
   alert: { label: 'Alert', color: 'warning' },
 };
-
-function parseSpec(spec: string): InstanceSpec {
-  try {
-    return JSON.parse(spec);
-  } catch {
-    return { cpu: 0, memory: 0, storage: 0, retention: 0 };
-  }
-}
 
 function ResourceBar({ label, used, total, unit }: { label: string; used: number; total: number; unit: string }) {
   const pct = total > 0 ? Math.min((used / total) * 100, 100) : 0;
@@ -404,6 +406,9 @@ export default function InstanceDetailPage() {
   const [grafanaHosts, setGrafanaHosts] = useState<GrafanaHost[]>([]);
   const [scaleEvents, setScaleEvents] = useState<ScaleEvent[]>([]);
   const [scaleEventsLoading, setScaleEventsLoading] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [editForm, setEditForm] = useState({ instance_name: '', cpu: '', memory: '', storage: '', retention: '' });
+  const [saving, setSaving] = useState(false);
 
   // 详情页一次性拉 4 个独立资源，统一通过同一个 AbortController 兜起：
   //   - 切换实例 / 卸载组件时立即取消在飞请求；
@@ -483,7 +488,7 @@ export default function InstanceDetailPage() {
         if (alive) setGrafanaHosts(res.data?.items || []);
       } catch (err) {
         if (isAbortError(err) || !alive) return;
-        // grafana 主机列表用于 dashboard 链接渲染，缺失不阻塞主流程，静默降级。
+        // Grafana 实例列表用于 dashboard 链接渲染，缺失不阻塞主流程，静默降级。
         setGrafanaHosts([]);
       }
     })();
@@ -510,6 +515,38 @@ export default function InstanceDetailPage() {
   const remoteRead = endpointBase ? `${endpointBase}/api/v1/read` : '-';
   const httpApi = endpointBase ? `${endpointBase}/api/v1` : '-';
 
+  const handleEdit = async () => {
+    setSaving(true);
+    try {
+      const newSpec = JSON.stringify({
+        cpu: parseInt(editForm.cpu, 10),
+        memory: parseInt(editForm.memory, 10),
+        storage: parseInt(editForm.storage, 10),
+        retention: parseInt(editForm.retention, 10),
+      });
+      await instanceAPI.update(instance.id, {
+        instance_name: editForm.instance_name || undefined,
+        spec: newSpec,
+      });
+      enqueueSnackbar('实例更新成功', { variant: 'success' });
+      setEditOpen(false);
+      window.location.reload();
+    } catch (err) {
+      enqueueSnackbar(extractApiError(err, '更新失败'), { variant: 'error' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleRebuild = async () => {
+    try {
+      await instanceAPI.rebuild(instance.id);
+      enqueueSnackbar('重建请求已提交', { variant: 'success' });
+    } catch (err) {
+      enqueueSnackbar(extractApiError(err, '重建失败'), { variant: 'error' });
+    }
+  };
+
   return (
     <Box>
       <PageHeader
@@ -532,6 +569,25 @@ export default function InstanceDetailPage() {
             content: (
               <>
                 <Card sx={{ p: 2.5, mb: 2 }}>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+                    <Typography variant="subtitle2">实例配置</Typography>
+                    <Button
+                      size="small"
+                      startIcon={<EditOutlinedIcon />}
+                      onClick={() => {
+                        setEditForm({
+                          instance_name: instance.instance_name,
+                          cpu: String(spec.cpu),
+                          memory: String(spec.memory),
+                          storage: String(spec.storage),
+                          retention: String(spec.retention),
+                        });
+                        setEditOpen(true);
+                      }}
+                    >
+                      编辑
+                    </Button>
+                  </Box>
                   <Grid container spacing={2}>
                     <Grid size={{ xs: 12, md: 3 }}>
                       <Typography variant="body2" color="text.secondary">实例名称</Typography>
@@ -590,7 +646,7 @@ export default function InstanceDetailPage() {
                   <EndpointRow label="Remote Write" value={remoteWrite} />
                   <EndpointRow label="Remote Read" value={remoteRead} />
                   <EndpointRow label="HTTP API" value={httpApi} />
-                  <Box sx={{ mt: 2 }}>
+                  <Box sx={{ mt: 2, display: 'flex', gap: 1, flexWrap: 'wrap' }}>
                     <Button
                       variant="outlined"
                       startIcon={<OpenInNewIcon />}
@@ -598,6 +654,44 @@ export default function InstanceDetailPage() {
                       disabled={!instance.url}
                     >
                       打开实例监控页面
+                    </Button>
+                    {instance.instance_type === 'visual' && (
+                      <Button
+                        variant="outlined"
+                        startIcon={<LoginOutlinedIcon />}
+                        onClick={() => {
+                          ssoLoginToGrafana(instanceAPI.login(instance.id)).catch((err) =>
+                            enqueueSnackbar(extractApiError(err, '获取登录信息失败'), { variant: 'error' })
+                          );
+                        }}
+                      >
+                        登录 Grafana
+                      </Button>
+                    )}
+                    <Button
+                      variant="outlined"
+                      color="warning"
+                      startIcon={<RefreshOutlinedIcon />}
+                      onClick={handleRebuild}
+                      disabled={instance.status !== 'running' && instance.status !== 'failed'}
+                    >
+                      重建实例
+                    </Button>
+                    <Button
+                      variant="outlined"
+                      color="primary"
+                      startIcon={<RefreshOutlinedIcon />}
+                      onClick={async () => {
+                        try {
+                          await instanceAPI.upgrade(instance.id);
+                          enqueueSnackbar('升级请求已提交', { variant: 'success' });
+                        } catch (err) {
+                          enqueueSnackbar(extractApiError(err, '升级失败'), { variant: 'error' });
+                        }
+                      }}
+                      disabled={instance.status !== 'running'}
+                    >
+                      升级实例
                     </Button>
                   </Box>
                 </Card>
@@ -694,6 +788,41 @@ export default function InstanceDetailPage() {
           },
         ]}
       />
+
+      {/* Edit spec dialog */}
+      <Dialog open={editOpen} onClose={() => setEditOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>编辑实例配置</DialogTitle>
+        <DialogContent sx={{ pt: '16px !important' }}>
+          <TextField
+            fullWidth
+            label="实例名称"
+            value={editForm.instance_name}
+            onChange={(e) => setEditForm({ ...editForm, instance_name: e.target.value })}
+            sx={{ mb: 2.5 }}
+          />
+          <Typography variant="subtitle2" sx={{ mb: 1.5, color: 'text.secondary' }}>资源配置</Typography>
+          <Grid container spacing={2}>
+            <Grid size={{ xs: 6 }}>
+              <TextField fullWidth size="small" label="CPU (核)" type="number" value={editForm.cpu} onChange={(e) => setEditForm({ ...editForm, cpu: e.target.value })} />
+            </Grid>
+            <Grid size={{ xs: 6 }}>
+              <TextField fullWidth size="small" label="内存 (GB)" type="number" value={editForm.memory} onChange={(e) => setEditForm({ ...editForm, memory: e.target.value })} />
+            </Grid>
+            <Grid size={{ xs: 6 }}>
+              <TextField fullWidth size="small" label="存储 (GB)" type="number" value={editForm.storage} onChange={(e) => setEditForm({ ...editForm, storage: e.target.value })} />
+            </Grid>
+            <Grid size={{ xs: 6 }}>
+              <TextField fullWidth size="small" label="保留 (天)" type="number" value={editForm.retention} onChange={(e) => setEditForm({ ...editForm, retention: e.target.value })} />
+            </Grid>
+          </Grid>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button onClick={() => setEditOpen(false)}>取消</Button>
+          <Button variant="contained" onClick={handleEdit} disabled={saving}>
+            {saving ? '保存中...' : '保存'}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 }
