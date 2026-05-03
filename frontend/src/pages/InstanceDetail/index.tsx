@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import {
   Accordion,
   AccordionDetails,
@@ -29,7 +29,8 @@ import {
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
-import RefreshOutlinedIcon from '@mui/icons-material/RefreshOutlined';
+import ReplayIcon from '@mui/icons-material/Replay';
+import SystemUpdateAltIcon from '@mui/icons-material/SystemUpdateAlt';
 import LoginOutlinedIcon from '@mui/icons-material/LoginOutlined';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExtensionOutlinedIcon from '@mui/icons-material/ExtensionOutlined';
@@ -395,8 +396,10 @@ function EndpointRow({ label, value }: { label: string; value: string }) {
 
 export default function InstanceDetailPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { instanceId = '' } = useParams();
   const { enqueueSnackbar } = useSnackbar();
+  const listPath = location.pathname.startsWith('/grafana-instances') ? '/grafana-instances' : '/instances';
   const [loading, setLoading] = useState(true);
   const [metricsLoading, setMetricsLoading] = useState(false);
   const [instance, setInstance] = useState<Instance | null>(null);
@@ -428,7 +431,7 @@ export default function InstanceDetailPage() {
       } catch (err) {
         if (isAbortError(err) || !alive) return;
         enqueueSnackbar(extractApiError(err, '获取实例详情失败'), { variant: 'error' });
-        navigate('/instances');
+        navigate(listPath);
       } finally {
         if (alive) setLoading(false);
       }
@@ -505,7 +508,7 @@ export default function InstanceDetailPage() {
     return (
       <Box>
         <Alert severity="error" sx={{ mb: 2 }}>实例不存在或已删除</Alert>
-        <Button variant="outlined" onClick={() => navigate('/instances')}>返回实例列表</Button>
+        <Button variant="outlined" onClick={() => navigate(listPath)}>返回实例列表</Button>
       </Box>
     );
   }
@@ -553,7 +556,7 @@ export default function InstanceDetailPage() {
         title={instance.instance_name}
         subtitle="实例详情、监控与告警联动"
         extra={(
-          <Button startIcon={<ArrowBackIcon />} variant="outlined" onClick={() => navigate('/instances')}>
+          <Button startIcon={<ArrowBackIcon />} variant="outlined" onClick={() => navigate(listPath)}>
             返回列表
           </Button>
         )}
@@ -671,7 +674,7 @@ export default function InstanceDetailPage() {
                     <Button
                       variant="outlined"
                       color="warning"
-                      startIcon={<RefreshOutlinedIcon />}
+                      startIcon={<ReplayIcon />}
                       onClick={handleRebuild}
                       disabled={instance.status !== 'running' && instance.status !== 'failed'}
                     >
@@ -680,7 +683,7 @@ export default function InstanceDetailPage() {
                     <Button
                       variant="outlined"
                       color="primary"
-                      startIcon={<RefreshOutlinedIcon />}
+                      startIcon={<SystemUpdateAltIcon />}
                       onClick={async () => {
                         try {
                           await instanceAPI.upgrade(instance.id);

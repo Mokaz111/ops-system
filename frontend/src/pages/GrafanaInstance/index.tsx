@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Alert,
   Box,
   Button,
   Card,
@@ -10,7 +9,6 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
-  Divider,
   FormControl,
   Grid,
   IconButton,
@@ -18,7 +16,6 @@ import {
   InputLabel,
   MenuItem,
   Select,
-  Tab,
   Table,
   TableBody,
   TableCell,
@@ -26,7 +23,6 @@ import {
   TableHead,
   TablePagination,
   TableRow,
-  Tabs,
   TextField,
   Tooltip,
   Typography,
@@ -36,7 +32,8 @@ import DeleteOutlinedIcon from '@mui/icons-material/DeleteOutlined';
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
-import RefreshOutlinedIcon from '@mui/icons-material/RefreshOutlined';
+import ReplayIcon from '@mui/icons-material/Replay';
+import SystemUpdateAltIcon from '@mui/icons-material/SystemUpdateAlt';
 import LoginOutlinedIcon from '@mui/icons-material/LoginOutlined';
 import { useSnackbar } from 'notistack';
 import PageHeader from '../../components/common/PageHeader';
@@ -88,8 +85,6 @@ export default function GrafanaInstancePage() {
   const { enqueueSnackbar } = useSnackbar();
   const { user } = useAuthStore();
   const isAdmin = user?.role === 'admin';
-  const [tabIndex, setTabIndex] = useState(0);
-
   // ---- Instance state ----
   const [instances, setInstances] = useState<Instance[]>([]);
   const [instLoading, setInstLoading] = useState(true);
@@ -334,7 +329,7 @@ export default function GrafanaInstancePage() {
     }
   };
 
-  const loading = (tabIndex === 0 && instLoading && instances.length === 0) || (tabIndex === 1 && hostLoading && hosts.length === 0);
+  const loading = (instLoading && instances.length === 0) || (hostLoading && hosts.length === 0);
   if (loading) return <LoadingScreen />;
 
   return (
@@ -342,101 +337,96 @@ export default function GrafanaInstancePage() {
       <PageHeader
         title="Grafana 实例"
         subtitle="管理平台实例与纳管外部 Grafana 实例"
-        actionLabel={tabIndex === 0 ? '创建实例' : isAdmin ? '登记实例' : undefined}
-        onAction={tabIndex === 0 ? () => setCreateOpen(true) : isAdmin ? openHostCreate : undefined}
+        actionLabel="创建实例"
+        onAction={() => setCreateOpen(true)}
       />
-      <Card sx={{ mb: 2 }}>
-        <Tabs value={tabIndex} onChange={(_, v) => setTabIndex(v)} sx={{ px: 2, pt: 1 }}>
-          <Tab label="平台实例" />
-          <Tab label="纳管实例" />
-        </Tabs>
-        <Divider />
+      {/* ===== 统计卡片 ===== */}
+      <Grid container spacing={1.5} sx={{ mb: 2 }}>
+        <Grid size={{ xs: 6, md: 3 }}>
+          <Card variant="outlined" sx={{ p: 1.5 }}>
+            <Typography variant="caption" color="text.secondary">实例总数</Typography>
+            <Typography variant="h6">{statusStats.total + hosts.length}</Typography>
+          </Card>
+        </Grid>
+        <Grid size={{ xs: 6, md: 3 }}>
+          <Card variant="outlined" sx={{ p: 1.5 }}>
+            <Typography variant="caption" color="text.secondary">运行中</Typography>
+            <Typography variant="h6" color="success.main">{statusStats.running}</Typography>
+          </Card>
+        </Grid>
+        <Grid size={{ xs: 6, md: 3 }}>
+          <Card variant="outlined" sx={{ p: 1.5 }}>
+            <Typography variant="caption" color="text.secondary">纳管实例</Typography>
+            <Typography variant="h6" color="primary.main">{hosts.length}</Typography>
+          </Card>
+        </Grid>
+        <Grid size={{ xs: 6, md: 3 }}>
+          <Card variant="outlined" sx={{ p: 1.5 }}>
+            <Typography variant="caption" color="text.secondary">异常</Typography>
+            <Typography variant="h6" color="error.main">{statusStats.error}</Typography>
+          </Card>
+        </Grid>
+      </Grid>
 
-        {/* ===== Tab 0: 平台实例 ===== */}
-        {tabIndex === 0 && (
-          <Box>
-            <Box sx={{ p: 2 }}>
-              <Typography variant="subtitle2" sx={{ mb: 1.5 }}>平台实例概览（当前页）</Typography>
-              <Grid container spacing={1.5}>
-                <Grid size={{ xs: 6, md: 3 }}>
-                  <Card variant="outlined" sx={{ p: 1.5 }}>
-                    <Typography variant="caption" color="text.secondary">实例总数</Typography>
-                    <Typography variant="h6">{statusStats.total}</Typography>
-                  </Card>
-                </Grid>
-                <Grid size={{ xs: 6, md: 3 }}>
-                  <Card variant="outlined" sx={{ p: 1.5 }}>
-                    <Typography variant="caption" color="text.secondary">运行中</Typography>
-                    <Typography variant="h6" color="success.main">{statusStats.running}</Typography>
-                  </Card>
-                </Grid>
-                <Grid size={{ xs: 6, md: 3 }}>
-                  <Card variant="outlined" sx={{ p: 1.5 }}>
-                    <Typography variant="caption" color="text.secondary">创建中</Typography>
-                    <Typography variant="h6" color="warning.main">{statusStats.creating}</Typography>
-                  </Card>
-                </Grid>
-                <Grid size={{ xs: 6, md: 3 }}>
-                  <Card variant="outlined" sx={{ p: 1.5 }}>
-                    <Typography variant="caption" color="text.secondary">异常</Typography>
-                    <Typography variant="h6" color="error.main">{statusStats.error}</Typography>
-                  </Card>
-                </Grid>
-              </Grid>
-            </Box>
+      {/* ===== 统一实例列表 ===== */}
+      <Card>
+        <FilterToolbar>
+          <TextField
+            placeholder="搜索实例名称..."
+            size="small"
+            value={search}
+            onChange={(e) => { setSearch(e.target.value); setPage(0); }}
+            InputProps={{ startAdornment: <InputAdornment position="start"><SearchIcon sx={{ color: 'text.disabled' }} /></InputAdornment> }}
+            sx={{ width: 280 }}
+          />
+          <FormControl size="small" sx={{ minWidth: 140 }}>
+            <InputLabel>状态</InputLabel>
+            <Select value={statusFilter} label="状态" onChange={(e) => { setStatusFilter(e.target.value); setPage(0); }}>
+              {statusFilterItems.map((item) => <MenuItem key={item.key || 'all'} value={item.key}>{item.label}</MenuItem>)}
+            </Select>
+          </FormControl>
+          {isAdmin && (
+            <Button size="small" variant="outlined" onClick={openHostCreate} sx={{ ml: 'auto' }}>登记纳管实例</Button>
+          )}
+        </FilterToolbar>
 
-            <FilterToolbar>
-              <TextField
-                placeholder="搜索实例名称..."
-                size="small"
-                value={search}
-                onChange={(e) => { setSearch(e.target.value); setPage(0); }}
-                InputProps={{ startAdornment: <InputAdornment position="start"><SearchIcon sx={{ color: 'text.disabled' }} /></InputAdornment> }}
-                sx={{ width: 280 }}
-              />
-              <FormControl size="small" sx={{ minWidth: 140 }}>
-                <InputLabel>状态</InputLabel>
-                <Select value={statusFilter} label="状态" onChange={(e) => { setStatusFilter(e.target.value); setPage(0); }}>
-                  {statusFilterItems.map((item) => <MenuItem key={item.key || 'all'} value={item.key}>{item.label}</MenuItem>)}
-                </Select>
-              </FormControl>
-            </FilterToolbar>
-
-            <DataTableCard
-              pagination={total > 0 ? (
-                <TablePagination component="div" count={total} page={page} onPageChange={(_, np) => setPage(np)}
-                  rowsPerPage={pageSize} onRowsPerPageChange={(e) => { setPageSize(parseInt(e.target.value, 10)); setPage(0); }}
-                  rowsPerPageOptions={[10, 20, 50]} labelRowsPerPage="每页行数" />
-              ) : null}
-            >
-              <TableContainer>
-                <Table size="small">
-                  <TableHead>
-                    <TableRow>
-                      <TableCell>实例名称</TableCell>
-                      <TableCell>类型</TableCell>
-                      <TableCell>规格</TableCell>
-                      <TableCell>命名空间</TableCell>
-                      <TableCell>状态</TableCell>
-                      <TableCell>创建时间</TableCell>
-                      <TableCell align="right">操作</TableCell>
-                    </TableRow>
-                  </TableHead>
-                  <TableBody>
-                    {instances.length === 0 ? (
-                      <TableRow><TableCell colSpan={7}><EmptyState title="暂无 Grafana 实例" description="点击右上角按钮创建第一个 Grafana 实例" /></TableCell></TableRow>
-                    ) : instances.map((inst) => {
+        <DataTableCard
+          pagination={total > 0 ? (
+            <TablePagination component="div" count={total + hosts.length} page={page} onPageChange={(_, np) => setPage(np)}
+              rowsPerPage={pageSize} onRowsPerPageChange={(e) => { setPageSize(parseInt(e.target.value, 10)); setPage(0); }}
+              rowsPerPageOptions={[10, 20, 50]} labelRowsPerPage="每页行数" />
+          ) : null}
+        >
+          <TableContainer>
+            <Table size="small">
+              <TableHead>
+                <TableRow>
+                  <TableCell>实例名称</TableCell>
+                  <TableCell>类型</TableCell>
+                  <TableCell>规格</TableCell>
+                  <TableCell>地址</TableCell>
+                  <TableCell>命名空间 / 租户</TableCell>
+                  <TableCell>状态</TableCell>
+                  <TableCell align="right">操作</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {instances.length === 0 && hosts.length === 0 ? (
+                  <TableRow><TableCell colSpan={7}><EmptyState title="暂无 Grafana 实例" description="点击右上角按钮创建第一个 Grafana 实例" /></TableCell></TableRow>
+                ) : (
+                  <>
+                    {instances.map((inst) => {
                       const spec = parseSpec(inst.spec);
                       return (
-                        <TableRow key={inst.id}>
+                        <TableRow key={`inst-${inst.id}`}>
                           <TableCell sx={{ fontWeight: 500 }}>{inst.instance_name}</TableCell>
-                          <TableCell><Chip label="Grafana" size="small" color="success" variant="outlined" /></TableCell>
+                          <TableCell><Chip label="平台实例" size="small" color="primary" variant="outlined" /></TableCell>
                           <TableCell sx={{ fontFamily: 'monospace', fontSize: '0.8125rem' }}>{spec.cpu}C / {spec.memory}G / {spec.storage}Gi</TableCell>
+                          <TableCell sx={{ fontSize: '0.8125rem', color: 'text.secondary' }}>{inst.url || '-'}</TableCell>
                           <TableCell sx={{ fontSize: '0.8125rem', color: 'text.secondary' }}>{inst.namespace || '-'}</TableCell>
                           <TableCell><StatusChip status={inst.status} /></TableCell>
-                          <TableCell sx={{ color: 'text.secondary', fontSize: '0.8125rem' }}>{new Date(inst.created_at).toLocaleDateString()}</TableCell>
                           <TableCell align="right">
-                            <Tooltip title="详情"><IconButton size="small" onClick={() => navigate(`/instances/${inst.id}`)}><InfoOutlinedIcon fontSize="small" /></IconButton></Tooltip>
+                            <Tooltip title="详情"><IconButton size="small" onClick={() => navigate(`/grafana-instances/${inst.id}`)}><InfoOutlinedIcon fontSize="small" /></IconButton></Tooltip>
                             <Tooltip title="登录"><IconButton size="small" color="primary" onClick={() => {
                               ssoLoginToGrafana(instanceAPI.login(inst.id)).catch((err) =>
                                 enqueueSnackbar(extractApiError(err, '获取登录信息失败'), { variant: 'error' })
@@ -447,75 +437,47 @@ export default function GrafanaInstancePage() {
                               setEditDialog({ open: true, instance: inst });
                             }}><EditOutlinedIcon fontSize="small" /></IconButton></Tooltip>
                             <Tooltip title="重建">
-                              <span><IconButton size="small" disabled={inst.status !== 'running' && inst.status !== 'failed'} onClick={() => setRebuildDialog({ open: true, instance: inst })}><RefreshOutlinedIcon fontSize="small" /></IconButton></span>
+                              <span><IconButton size="small" disabled={inst.status !== 'running' && inst.status !== 'failed'} onClick={() => setRebuildDialog({ open: true, instance: inst })}><ReplayIcon fontSize="small" /></IconButton></span>
                             </Tooltip>
-                            <Tooltip title="升级"><IconButton size="small" color="primary" disabled={inst.status !== 'running'} onClick={() => handleUpgrade(inst)}><RefreshOutlinedIcon fontSize="small" /></IconButton></Tooltip>
+                            <Tooltip title="升级"><IconButton size="small" color="primary" disabled={inst.status !== 'running'} onClick={() => handleUpgrade(inst)}><SystemUpdateAltIcon fontSize="small" /></IconButton></Tooltip>
                             <Tooltip title="删除"><IconButton size="small" color="error" onClick={() => setDeleteDialog({ open: true, instance: inst })}><DeleteOutlinedIcon fontSize="small" /></IconButton></Tooltip>
                           </TableCell>
                         </TableRow>
                       );
                     })}
-                  </TableBody>
-                </Table>
-              </TableContainer>
-            </DataTableCard>
-          </Box>
-        )}
-
-        {/* ===== Tab 1: 纳管实例 ===== */}
-        {tabIndex === 1 && (
-          <Box>
-            {!isAdmin && (
-              <Alert severity="info" sx={{ mx: 2, mt: 2 }}>仅管理员可登记/编辑/删除纳管实例。当前仅提供只读视图。</Alert>
-            )}
-            <TableContainer>
-              <Table size="small">
-                <TableHead>
-                  <TableRow>
-                    <TableCell>名称</TableCell>
-                    <TableCell>范围</TableCell>
-                    <TableCell>所属租户</TableCell>
-                    <TableCell>地址</TableCell>
-                    <TableCell>管理员</TableCell>
-                    <TableCell>状态</TableCell>
-                    <TableCell align="right">操作</TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {hosts.length === 0 ? (
-                    <TableRow><TableCell colSpan={7}><EmptyState title="暂无纳管实例" description="点击右上角按钮登记外部 Grafana 实例" /></TableCell></TableRow>
-                  ) : hosts.map((h) => (
-                    <TableRow key={h.id}>
-                      <TableCell sx={{ fontWeight: 500 }}>{h.name}</TableCell>
-                      <TableCell><Chip size="small" label={h.scope === 'platform' ? '平台' : '租户'} color={h.scope === 'platform' ? 'primary' : 'secondary'} variant="outlined" /></TableCell>
-                      <TableCell sx={{ color: 'text.secondary' }}>{h.tenant_id ? (tenantNameById[h.tenant_id] || h.tenant_id.slice(0, 8)) : '-'}</TableCell>
-                      <TableCell sx={{ fontFamily: 'monospace', fontSize: '0.8125rem' }}>
-                        <Typography component="a" href={h.url} target="_blank" rel="noopener noreferrer" sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5, color: 'primary.main', textDecoration: 'none', fontSize: '0.8125rem' }}>
-                          {h.url}<OpenInNewIcon sx={{ fontSize: 14 }} />
-                        </Typography>
-                      </TableCell>
-                      <TableCell sx={{ fontSize: '0.8125rem' }}>{h.admin_user || '-'}</TableCell>
-                      <TableCell><StatusChip status={h.status || 'active'} /></TableCell>
-                      <TableCell align="right">
-                        <Tooltip title="登录"><IconButton size="small" color="primary" onClick={() => {
-                          ssoLoginToGrafana(grafanaHostAPI.login(h.id)).catch((err) =>
-                            enqueueSnackbar(extractApiError(err, '获取登录信息失败'), { variant: 'error' })
-                          );
-                        }}><LoginOutlinedIcon fontSize="small" /></IconButton></Tooltip>
-                        {isAdmin && (
-                          <>
-                            <Tooltip title="编辑"><IconButton size="small" onClick={() => openHostEdit(h)}><EditOutlinedIcon fontSize="small" /></IconButton></Tooltip>
-                            <Tooltip title="删除"><IconButton size="small" color="error" onClick={() => setHostDeleteDialog({ open: true, host: h })}><DeleteOutlinedIcon fontSize="small" /></IconButton></Tooltip>
-                          </>
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </TableContainer>
-          </Box>
-        )}
+                    {hosts.map((h) => (
+                      <TableRow key={`host-${h.id}`}>
+                        <TableCell sx={{ fontWeight: 500 }}>{h.name}</TableCell>
+                        <TableCell><Chip label="纳管实例" size="small" color="success" variant="outlined" /></TableCell>
+                        <TableCell sx={{ fontSize: '0.8125rem', color: 'text.secondary' }}>-</TableCell>
+                        <TableCell sx={{ fontFamily: 'monospace', fontSize: '0.8125rem' }}>
+                          <Typography component="a" href={h.url} target="_blank" rel="noopener noreferrer" sx={{ color: 'primary.main', textDecoration: 'none', fontSize: '0.8125rem' }}>
+                            {h.url}<OpenInNewIcon sx={{ fontSize: 14, ml: 0.5, verticalAlign: 'middle' }} />
+                          </Typography>
+                        </TableCell>
+                        <TableCell sx={{ fontSize: '0.8125rem', color: 'text.secondary' }}>{h.tenant_id ? (tenantNameById[h.tenant_id] || h.tenant_id.slice(0, 8)) : (h.scope === 'platform' ? '平台共享' : '-')}</TableCell>
+                        <TableCell><StatusChip status={h.status || 'active'} /></TableCell>
+                        <TableCell align="right">
+                          <Tooltip title="登录"><IconButton size="small" color="primary" onClick={() => {
+                            ssoLoginToGrafana(grafanaHostAPI.login(h.id)).catch((err) =>
+                              enqueueSnackbar(extractApiError(err, '获取登录信息失败'), { variant: 'error' })
+                            );
+                          }}><LoginOutlinedIcon fontSize="small" /></IconButton></Tooltip>
+                          {isAdmin && (
+                            <>
+                              <Tooltip title="编辑"><IconButton size="small" onClick={() => openHostEdit(h)}><EditOutlinedIcon fontSize="small" /></IconButton></Tooltip>
+                              <Tooltip title="删除"><IconButton size="small" color="error" onClick={() => setHostDeleteDialog({ open: true, host: h })}><DeleteOutlinedIcon fontSize="small" /></IconButton></Tooltip>
+                            </>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </>
+                )}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        </DataTableCard>
       </Card>
 
       {/* ===== Instance Create Dialog ===== */}
