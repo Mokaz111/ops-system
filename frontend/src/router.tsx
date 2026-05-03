@@ -25,6 +25,7 @@ const DashboardMgmtPage = lazy(() => import('./pages/DashboardMgmt'));
 const ClusterPage = lazy(() => import('./pages/Cluster'));
 const GrafanaHostPage = lazy(() => import('./pages/GrafanaHost'));
 const GrafanaInstancePage = lazy(() => import('./pages/GrafanaInstance'));
+const GrafanaInstanceDetailPage = lazy(() => import('./pages/GrafanaInstanceDetail'));
 const VMStatsPage = lazy(() => import('./pages/VMStats'));
 const LogStatsPage = lazy(() => import('./pages/LogStats'));
 
@@ -60,6 +61,7 @@ const routeComponentMap: Record<AppRouteKey, React.ReactNode | null> = {
   tenants: <Lazy><TenantPage /></Lazy>,
   instances: <Lazy><InstancePage /></Lazy>,
   'instance-detail': <Lazy><InstanceDetailPage /></Lazy>,
+  'grafana-instance-detail': <Lazy><GrafanaInstanceDetailPage /></Lazy>,
   integrations: <Lazy><IntegrationPage /></Lazy>,
   metrics: <Lazy><MetricPage /></Lazy>,
   'log-instances': <Lazy><LogInstancePage /></Lazy>,

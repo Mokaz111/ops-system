@@ -4,6 +4,7 @@ export type AppRouteKey =
   | 'tenants'
   | 'instances'
   | 'instance-detail'
+  | 'grafana-instance-detail'
   | 'integrations'
   | 'metrics'
   | 'log-instances'
@@ -64,6 +65,7 @@ export const appRouteMeta: AppRouteMeta[] = [
   { key: 'grafana', path: 'grafana', label: 'Grafana 管理', sidebarSection: 'observability' },
   { key: 'grafana-hosts', path: 'grafana-hosts', label: 'Grafana 纳管实例', sidebarSection: 'observability' },
   { key: 'instance-detail', path: 'instances/:instanceId' },
+  { key: 'grafana-instance-detail', path: 'grafana-instances/:instanceId' },
   { key: 'alerts', path: 'alerts' },
   { key: 'log-query', path: 'logs/query' },
 ];

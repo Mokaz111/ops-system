@@ -43,6 +43,7 @@ const iconMap: Record<AppRouteKey, React.ReactNode> = {
   'log-instances': <DescriptionOutlinedIcon />,
   'log-query': <DescriptionOutlinedIcon />,
   grafana: <BarChartOutlinedIcon />,
+  'grafana-instance-detail': <VisibilityOutlinedIcon />,
   'grafana-instances': <VisibilityOutlinedIcon />,
   'grafana-hosts': <VisibilityOutlinedIcon />,
   'dashboard-mgmt': <GridViewOutlinedIcon />,
