@@ -30,7 +30,7 @@ export const instanceAPI = {
     api.delete<ApiResponse<null>>(`/instances/${id}`),
 
   scale: (id: string, data: ScaleInstanceRequest) =>
-    api.post<ApiResponse<Instance>>(`/instances/${id}/scale`, data),
+    api.post<ApiResponse<null>>(`/instances/${id}/scale`, data),
 
   metrics: (id: string, config?: AxiosRequestConfig) =>
     api.get<ApiResponse<InstanceMetrics>>(`/instances/${id}/metrics`, config),
@@ -41,7 +41,22 @@ export const instanceAPI = {
     config?: AxiosRequestConfig,
   ) =>
     api.get<ApiResponse<PaginatedResponse<ScaleEvent>>>(`/instances/${id}/scale-events`, { ...config, params }),
+
+  rebuild: (id: string) =>
+    api.post<ApiResponse<null>>(`/instances/${id}/rebuild`),
+
+  upgrade: (id: string) =>
+    api.post<ApiResponse<null>>(`/instances/${id}/upgrade`),
+
+  login: (id: string) =>
+    api.post<ApiResponse<GrafanaLoginInfo>>(`/instances/${id}/login`),
 };
+
+export interface GrafanaLoginInfo {
+  url: string;
+  user: string;
+  password: string;
+}
 
 export interface ScaleEvent {
   id: string;

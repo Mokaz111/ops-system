@@ -81,7 +81,7 @@ export interface Instance {
   release_name: string;
   namespace: string;
   spec: string;
-  status: 'creating' | 'running' | 'stopped' | 'error' | 'scaling' | 'deleting';
+  status: 'creating' | 'running' | 'stopped' | 'error' | 'failed' | 'scaling' | 'deleting';
   grafana_host_id?: string | null;
   url: string;
   created_at: string;
@@ -142,6 +142,31 @@ export interface GrafanaDatasource {
   url: string;
   access: string;
   isDefault: boolean;
+}
+
+export interface GrafanaDashboard {
+  id: number;
+  uid: string;
+  title: string;
+  url: string;
+  type: string;
+  tags: string[];
+  folder_id: number;
+  folder_title: string;
+}
+
+export interface GrafanaPlugin {
+  id: string;
+  name: string;
+  type: string;
+  version: string;
+  enabled: boolean;
+  pinned: boolean;
+}
+
+export interface GrafanaHealthStatus {
+  status: string;
+  message?: string;
 }
 
 export interface TenantMetrics {

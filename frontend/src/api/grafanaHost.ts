@@ -16,10 +16,10 @@ export interface GrafanaHost {
 
 export const grafanaHostAPI = {
   list: (params?: PaginationParams & { scope?: string; tenant_id?: string }, config?: AxiosRequestConfig) =>
-    api.get<ApiResponse<PaginatedResponse<GrafanaHost>>>('/grafana/hosts', { ...config, params }),
+    api.get<ApiResponse<PaginatedResponse<GrafanaHost>>>('/grafana/instances', { ...config, params }),
 
   get: (id: string, config?: AxiosRequestConfig) =>
-    api.get<ApiResponse<GrafanaHost>>(`/grafana/hosts/${id}`, config),
+    api.get<ApiResponse<GrafanaHost>>(`/grafana/instances/${id}`, config),
 
   create: (data: {
     name: string;
@@ -27,12 +27,16 @@ export const grafanaHostAPI = {
     tenant_id?: string;
     url: string;
     admin_user?: string;
+    admin_password?: string;
     admin_token?: string;
-  }) => api.post<ApiResponse<GrafanaHost>>('/grafana/hosts', data),
+  }) => api.post<ApiResponse<GrafanaHost>>('/grafana/instances', data),
 
-  update: (id: string, data: Partial<GrafanaHost> & { admin_token?: string }) =>
-    api.put<ApiResponse<GrafanaHost>>(`/grafana/hosts/${id}`, data),
+  update: (id: string, data: Partial<GrafanaHost> & { admin_password?: string; admin_token?: string }) =>
+    api.put<ApiResponse<GrafanaHost>>(`/grafana/instances/${id}`, data),
 
   delete: (id: string) =>
-    api.delete<ApiResponse<null>>(`/grafana/hosts/${id}`),
+    api.delete<ApiResponse<null>>(`/grafana/instances/${id}`),
+
+  login: (id: string) =>
+    api.post<ApiResponse<{ url: string; user: string; password: string }>>(`/grafana/instances/${id}/login`),
 };
