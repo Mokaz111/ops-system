@@ -103,7 +103,7 @@ func AutoMigrate(db *gorm.DB) error {
 		&model.IntegrationInstallationRevision{},
 		&model.Metric{},
 		&model.MetricTemplateMapping{},
-		&model.GrafanaHost{},
+		&model.GrafanaInstance{},
 		&model.Cluster{},
 		&model.ScaleEvent{},
 		&model.AlertRule{},

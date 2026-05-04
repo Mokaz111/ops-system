@@ -9,21 +9,21 @@ import (
 
 // Instance 监控实例（指标/日志/可视化/告警等）。
 type Instance struct {
-	ID           uuid.UUID      `json:"id" gorm:"type:uuid;primaryKey"`
-	TenantID     uuid.UUID      `json:"tenant_id" gorm:"type:uuid;not null;index"`
-	ClusterID    *uuid.UUID     `json:"cluster_id" gorm:"type:uuid;index"` // 目标集群 id，nil=平台默认集群
-	InstanceName string         `json:"instance_name" gorm:"type:varchar(255);not null"`
-	InstanceType string         `json:"instance_type" gorm:"type:varchar(50)"`  // metrics, logs, visual, alert
-	TemplateType string         `json:"template_type" gorm:"type:varchar(50)"`  // shared, dedicated_single, dedicated_cluster
-	ReleaseName  string         `json:"release_name" gorm:"type:varchar(100)"`
-	Namespace    string         `json:"namespace" gorm:"type:varchar(100)"`
-	Spec         string         `json:"spec" gorm:"type:jsonb"`
-	Status       string         `json:"status" gorm:"type:varchar(20);default:creating"`
-	GrafanaHostID *uuid.UUID    `json:"grafana_host_id" gorm:"type:uuid;index"`
-	URL          string         `json:"url"`
-	CreatedAt    time.Time      `json:"created_at"`
-	UpdatedAt    time.Time      `json:"updated_at"`
-	DeletedAt    gorm.DeletedAt `json:"-" gorm:"index"`
+	ID                uuid.UUID      `json:"id" gorm:"type:uuid;primaryKey"`
+	TenantID          uuid.UUID      `json:"tenant_id" gorm:"type:uuid;not null;index"`
+	ClusterID         *uuid.UUID     `json:"cluster_id" gorm:"type:uuid;index"` // 目标集群 id，nil=平台默认集群
+	InstanceName      string         `json:"instance_name" gorm:"type:varchar(255);not null"`
+	InstanceType      string         `json:"instance_type" gorm:"type:varchar(50)"` // metrics, logs, visual, alert
+	TemplateType      string         `json:"template_type" gorm:"type:varchar(50)"` // shared, dedicated_single, dedicated_cluster
+	ReleaseName       string         `json:"release_name" gorm:"type:varchar(100)"`
+	Namespace         string         `json:"namespace" gorm:"type:varchar(100)"`
+	Spec              string         `json:"spec" gorm:"type:jsonb"`
+	Status            string         `json:"status" gorm:"type:varchar(20);default:creating"`
+	GrafanaInstanceID *uuid.UUID     `json:"grafana_instance_id" gorm:"type:uuid;index"`
+	URL               string         `json:"url"`
+	CreatedAt         time.Time      `json:"created_at"`
+	UpdatedAt         time.Time      `json:"updated_at"`
+	DeletedAt         gorm.DeletedAt `json:"-" gorm:"index"`
 }
 
 // TableName 表名。

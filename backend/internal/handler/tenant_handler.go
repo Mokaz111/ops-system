@@ -24,37 +24,37 @@ func NewTenantHandler(svc *service.TenantService, userSvc *service.UserService) 
 }
 
 type tenantResp struct {
-	ID            uuid.UUID  `json:"id"`
-	TenantName    string     `json:"tenant_name"`
-	DeptID        uuid.UUID  `json:"dept_id"`
-	VMUserID      string     `json:"vmuser_id"`
-	VMUserKey     string     `json:"vmuser_key,omitempty"`
-	TemplateType  string     `json:"template_type"`
-	QuotaConfig   string     `json:"quota_config"`
-	Status        string     `json:"status"`
-	N9ETeamID     int64      `json:"n9e_team_id"`
-	GrafanaOrgID  int64      `json:"grafana_org_id"`
-	GrafanaHostID *uuid.UUID `json:"grafana_host_id,omitempty"`
-	CreatedAt     time.Time  `json:"created_at"`
-	UpdatedAt     time.Time  `json:"updated_at"`
-	InsertURL     string     `json:"insert_url,omitempty"`
+	ID                uuid.UUID  `json:"id"`
+	TenantName        string     `json:"tenant_name"`
+	DeptID            uuid.UUID  `json:"dept_id"`
+	VMUserID          string     `json:"vmuser_id"`
+	VMUserKey         string     `json:"vmuser_key,omitempty"`
+	TemplateType      string     `json:"template_type"`
+	QuotaConfig       string     `json:"quota_config"`
+	Status            string     `json:"status"`
+	N9ETeamID         int64      `json:"n9e_team_id"`
+	GrafanaOrgID      int64      `json:"grafana_org_id"`
+	GrafanaInstanceID *uuid.UUID `json:"grafana_instance_id,omitempty"`
+	CreatedAt         time.Time  `json:"created_at"`
+	UpdatedAt         time.Time  `json:"updated_at"`
+	InsertURL         string     `json:"insert_url,omitempty"`
 }
 
 func (h *TenantHandler) toTenantResp(t *model.Tenant, withKey bool) tenantResp {
 	r := tenantResp{
-		ID:            t.ID,
-		TenantName:    t.TenantName,
-		DeptID:        t.DeptID,
-		VMUserID:      t.VMUserID,
-		TemplateType:  t.TemplateType,
-		QuotaConfig:   t.QuotaConfig,
-		Status:        t.Status,
-		N9ETeamID:     t.N9ETeamID,
-		GrafanaOrgID:  t.GrafanaOrgID,
-		GrafanaHostID: t.GrafanaHostID,
-		CreatedAt:     t.CreatedAt,
-		UpdatedAt:     t.UpdatedAt,
-		InsertURL:     h.svc.InsertURL(t.VMUserID),
+		ID:                t.ID,
+		TenantName:        t.TenantName,
+		DeptID:            t.DeptID,
+		VMUserID:          t.VMUserID,
+		TemplateType:      t.TemplateType,
+		QuotaConfig:       t.QuotaConfig,
+		Status:            t.Status,
+		N9ETeamID:         t.N9ETeamID,
+		GrafanaOrgID:      t.GrafanaOrgID,
+		GrafanaInstanceID: t.GrafanaInstanceID,
+		CreatedAt:         t.CreatedAt,
+		UpdatedAt:         t.UpdatedAt,
+		InsertURL:         h.svc.InsertURL(t.VMUserID),
 	}
 	if withKey {
 		r.VMUserKey = t.VMUserKey
@@ -63,11 +63,11 @@ func (h *TenantHandler) toTenantResp(t *model.Tenant, withKey bool) tenantResp {
 }
 
 type createTenantBody struct {
-	TenantName    string     `json:"tenant_name" binding:"required"`
-	DeptID        uuid.UUID  `json:"dept_id" binding:"required"`
-	TemplateType  string     `json:"template_type" binding:"required"`
-	QuotaConfig   string     `json:"quota_config"`
-	GrafanaHostID *uuid.UUID `json:"grafana_host_id"`
+	TenantName        string     `json:"tenant_name" binding:"required"`
+	DeptID            uuid.UUID  `json:"dept_id" binding:"required"`
+	TemplateType      string     `json:"template_type" binding:"required"`
+	QuotaConfig       string     `json:"quota_config"`
+	GrafanaInstanceID *uuid.UUID `json:"grafana_instance_id"`
 }
 
 // List GET /api/v1/tenants
@@ -138,11 +138,11 @@ func (h *TenantHandler) Create(c *gin.Context) {
 		return
 	}
 	t, err := h.svc.Create(c.Request.Context(), &service.CreateTenantRequest{
-		TenantName:    body.TenantName,
-		DeptID:        body.DeptID,
-		TemplateType:  body.TemplateType,
-		QuotaConfig:   body.QuotaConfig,
-		GrafanaHostID: body.GrafanaHostID,
+		TenantName:        body.TenantName,
+		DeptID:            body.DeptID,
+		TemplateType:      body.TemplateType,
+		QuotaConfig:       body.QuotaConfig,
+		GrafanaInstanceID: body.GrafanaInstanceID,
 	})
 	if err != nil {
 		h.handleErr(c, err)
@@ -178,11 +178,11 @@ func (h *TenantHandler) Get(c *gin.Context) {
 }
 
 type updateTenantBody struct {
-	TenantName    string     `json:"tenant_name"`
-	TemplateType  string     `json:"template_type"`
-	QuotaConfig   string     `json:"quota_config"`
-	Status        string     `json:"status"`
-	GrafanaHostID *uuid.UUID `json:"grafana_host_id"`
+	TenantName        string     `json:"tenant_name"`
+	TemplateType      string     `json:"template_type"`
+	QuotaConfig       string     `json:"quota_config"`
+	Status            string     `json:"status"`
+	GrafanaInstanceID *uuid.UUID `json:"grafana_instance_id"`
 }
 
 // Update PUT /api/v1/tenants/:id
@@ -198,11 +198,11 @@ func (h *TenantHandler) Update(c *gin.Context) {
 		return
 	}
 	t, err := h.svc.Update(c.Request.Context(), id, &service.UpdateTenantRequest{
-		TenantName:    body.TenantName,
-		TemplateType:  body.TemplateType,
-		QuotaConfig:   body.QuotaConfig,
-		Status:        body.Status,
-		GrafanaHostID: body.GrafanaHostID,
+		TenantName:        body.TenantName,
+		TemplateType:      body.TemplateType,
+		QuotaConfig:       body.QuotaConfig,
+		Status:            body.Status,
+		GrafanaInstanceID: body.GrafanaInstanceID,
 	})
 	if err != nil {
 		h.handleErr(c, err)

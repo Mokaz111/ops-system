@@ -12,10 +12,10 @@ import (
 	"go.uber.org/zap"
 )
 
-// GrafanaClientResolver 根据 host id 返回对应的 grafana.Client。
-// 当 hostID 为 nil 时可返回平台默认 client。
+// GrafanaClientResolver 根据 Grafana 实例 id 返回对应的 grafana.Client。
+// 当 instanceID 为 nil 时可返回平台默认 client。
 // 返回的 client 可能为 nil（表示回退到默认），err 非空则视为不可用。
-type GrafanaClientResolver func(ctx context.Context, hostID *uuid.UUID) (*grafana.Client, error)
+type GrafanaClientResolver func(ctx context.Context, instanceID *uuid.UUID) (*grafana.Client, error)
 
 // K8sClientResolver 根据 cluster id 返回对应的 k8s.Client。
 // 当 clusterID 为 nil 时返回平台默认 client。
@@ -23,27 +23,27 @@ type K8sClientResolver func(ctx context.Context, clusterID *uuid.UUID) (*k8s.Cli
 
 // AppliedRef 已经 Apply 成功的资源引用，供 Uninstall 时反向清理。
 type AppliedRef struct {
-	Part          string `json:"part"`                     // collector / vmrule / dashboard / n9e
-	Target        string `json:"target"`                   // k8s / grafana
-	APIVersion    string `json:"apiVersion,omitempty"`     // K8s 资源的 apiVersion
-	Kind          string `json:"kind,omitempty"`           // K8s 资源的 Kind
-	Namespace     string `json:"namespace,omitempty"`      // K8s namespace
-	Name          string `json:"name,omitempty"`           // K8s 资源 / Grafana dashboard title
-	UID           string `json:"uid,omitempty"`            // K8s UID / Grafana dashboard uid
-	GrafanaOrg    int64  `json:"grafana_org,omitempty"`    // Grafana 组织 ID
-	GrafanaHostID string `json:"grafana_host_id,omitempty"` // Grafana 实例 id（空=默认平台）
-	ClusterID     string `json:"cluster_id,omitempty"`     // 目标集群 id（空=默认集群）
-	Action        string `json:"action,omitempty"`         // created / updated / imported
-	Status        string `json:"status,omitempty"`         // success / failed
-	Error         string `json:"error,omitempty"`
+	Part              string `json:"part"`                          // collector / vmrule / dashboard / n9e
+	Target            string `json:"target"`                        // k8s / grafana
+	APIVersion        string `json:"apiVersion,omitempty"`          // K8s 资源的 apiVersion
+	Kind              string `json:"kind,omitempty"`                // K8s 资源的 Kind
+	Namespace         string `json:"namespace,omitempty"`           // K8s namespace
+	Name              string `json:"name,omitempty"`                // K8s 资源 / Grafana dashboard title
+	UID               string `json:"uid,omitempty"`                 // K8s UID / Grafana dashboard uid
+	GrafanaOrg        int64  `json:"grafana_org,omitempty"`         // Grafana 组织 ID
+	GrafanaInstanceID string `json:"grafana_instance_id,omitempty"` // Grafana 实例 id（空=默认平台）
+	ClusterID         string `json:"cluster_id,omitempty"`          // 目标集群 id（空=默认集群）
+	Action            string `json:"action,omitempty"`              // created / updated / imported
+	Status            string `json:"status,omitempty"`              // success / failed
+	Error             string `json:"error,omitempty"`
 }
 
 // ApplyOptions 单次安装的应用选项。
 type ApplyOptions struct {
-	DefaultNamespace string
-	GrafanaOrgID     int64
-	GrafanaHostID    *uuid.UUID
-	ClusterID        *uuid.UUID
+	DefaultNamespace  string
+	GrafanaOrgID      int64
+	GrafanaInstanceID *uuid.UUID
+	ClusterID         *uuid.UUID
 }
 
 // PreflightIssue 预检发现的问题。
@@ -103,10 +103,10 @@ func (a *CompositeApplier) Enabled() bool {
 		(a.defaultGrafana != nil && a.defaultGrafana.Enabled()) || a.grafanaResolver != nil
 }
 
-// resolveGrafana 根据 hostID 挑选 client；失败或返回 nil 则回退到默认 client。
-func (a *CompositeApplier) resolveGrafana(ctx context.Context, hostID *uuid.UUID) *grafana.Client {
+// resolveGrafana 根据 instanceID 挑选 client；失败或返回 nil 则回退到默认 client。
+func (a *CompositeApplier) resolveGrafana(ctx context.Context, instanceID *uuid.UUID) *grafana.Client {
 	if a.grafanaResolver != nil {
-		if cli, err := a.grafanaResolver(ctx, hostID); err == nil && cli != nil {
+		if cli, err := a.grafanaResolver(ctx, instanceID); err == nil && cli != nil {
 			return cli
 		} else if err != nil {
 			a.log.Warn("integration_grafana_resolver_failed", zap.Error(err))
@@ -182,7 +182,7 @@ func (a *CompositeApplier) Preflight(ctx context.Context, rendered []RenderedRes
 		}
 	}
 	if hasDashboard {
-		cli := a.resolveGrafana(ctx, opts.GrafanaHostID)
+		cli := a.resolveGrafana(ctx, opts.GrafanaInstanceID)
 		if cli == nil || !cli.Enabled() {
 			issues = append(issues, PreflightIssue{
 				Part:   "dashboard",
@@ -287,10 +287,10 @@ func (a *CompositeApplier) applyDashboard(ctx context.Context, r RenderedResourc
 		Name:       r.Name,
 		GrafanaOrg: opts.GrafanaOrgID,
 	}
-	if opts.GrafanaHostID != nil {
-		ref.GrafanaHostID = opts.GrafanaHostID.String()
+	if opts.GrafanaInstanceID != nil {
+		ref.GrafanaInstanceID = opts.GrafanaInstanceID.String()
 	}
-	cli := a.resolveGrafana(ctx, opts.GrafanaHostID)
+	cli := a.resolveGrafana(ctx, opts.GrafanaInstanceID)
 	if cli == nil || !cli.Enabled() {
 		ref.Status = "failed"
 		ref.Error = "grafana client not configured or disabled"
@@ -340,13 +340,13 @@ func (a *CompositeApplier) Delete(ctx context.Context, refs []AppliedRef) error 
 			if ref.UID == "" {
 				continue
 			}
-			var hostID *uuid.UUID
-			if ref.GrafanaHostID != "" {
-				if id, err := uuid.Parse(ref.GrafanaHostID); err == nil {
-					hostID = &id
+			var instanceID *uuid.UUID
+			if ref.GrafanaInstanceID != "" {
+				if id, err := uuid.Parse(ref.GrafanaInstanceID); err == nil {
+					instanceID = &id
 				}
 			}
-			cli := a.resolveGrafana(ctx, hostID)
+			cli := a.resolveGrafana(ctx, instanceID)
 			if cli == nil || !cli.Enabled() {
 				continue
 			}

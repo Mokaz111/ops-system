@@ -14,7 +14,7 @@ import (
 	"go.uber.org/zap"
 )
 
-// GrafanaHandler Grafana 管理 HTTP 端点（实例中心架构，hostId 在路径中）。
+// GrafanaHandler Grafana 管理 HTTP 端点（instanceId 在路径中）。
 type GrafanaHandler struct {
 	svc *service.GrafanaService
 	log *zap.Logger
@@ -24,9 +24,9 @@ func NewGrafanaHandler(svc *service.GrafanaService, log *zap.Logger) *GrafanaHan
 	return &GrafanaHandler{svc: svc, log: log}
 }
 
-// resolveSvc 根据路径参数 hostId 返回对应 Grafana 实例的 Service。
+// resolveSvc 根据路径参数 instanceId 返回对应 Grafana 实例的 Service。
 func (h *GrafanaHandler) resolveSvc(c *gin.Context) (*service.GrafanaService, error) {
-	raw := c.Param("hostId")
+	raw := c.Param("instanceId")
 	if raw == "" {
 		return h.svc, nil
 	}
@@ -34,16 +34,16 @@ func (h *GrafanaHandler) resolveSvc(c *gin.Context) (*service.GrafanaService, er
 	if err != nil {
 		return nil, err
 	}
-	return h.svc.ForHost(c.Request.Context(), &id)
+	return h.svc.ForInstance(c.Request.Context(), &id)
 }
 
 // ── Organization endpoints ──
 
-// ListOrgs GET /api/v1/grafana/instances/:hostId/orgs
+// ListOrgs GET /api/v1/grafana/instances/:instanceId/orgs
 func (h *GrafanaHandler) ListOrgs(c *gin.Context) {
 	svc, err := h.resolveSvc(c)
 	if err != nil {
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid hostId")
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid instanceId")
 		return
 	}
 	orgs, err := svc.ListOrgs(c.Request.Context())
@@ -58,11 +58,11 @@ type createOrgBody struct {
 	Name string `json:"name" binding:"required"`
 }
 
-// CreateOrg POST /api/v1/grafana/instances/:hostId/orgs
+// CreateOrg POST /api/v1/grafana/instances/:instanceId/orgs
 func (h *GrafanaHandler) CreateOrg(c *gin.Context) {
 	svc, err := h.resolveSvc(c)
 	if err != nil {
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid hostId")
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid instanceId")
 		return
 	}
 	var body createOrgBody
@@ -78,11 +78,11 @@ func (h *GrafanaHandler) CreateOrg(c *gin.Context) {
 	response.JSON(c, gin.H{"org_id": orgID, "name": body.Name})
 }
 
-// DeleteOrg DELETE /api/v1/grafana/instances/:hostId/orgs/:orgId
+// DeleteOrg DELETE /api/v1/grafana/instances/:instanceId/orgs/:orgId
 func (h *GrafanaHandler) DeleteOrg(c *gin.Context) {
 	svc, err := h.resolveSvc(c)
 	if err != nil {
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid hostId")
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid instanceId")
 		return
 	}
 	orgID, err := strconv.ParseInt(c.Param("orgId"), 10, 64)
@@ -99,7 +99,7 @@ func (h *GrafanaHandler) DeleteOrg(c *gin.Context) {
 
 // ── Org users ──
 
-// ListOrgUsers GET /api/v1/grafana/instances/:hostId/orgs/:orgId/users
+// ListOrgUsers GET /api/v1/grafana/instances/:instanceId/orgs/:orgId/users
 func (h *GrafanaHandler) ListOrgUsers(c *gin.Context) {
 	orgID, err := strconv.ParseInt(c.Param("orgId"), 10, 64)
 	if err != nil {
@@ -108,7 +108,7 @@ func (h *GrafanaHandler) ListOrgUsers(c *gin.Context) {
 	}
 	svc, err := h.resolveSvc(c)
 	if err != nil {
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid hostId")
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid instanceId")
 		return
 	}
 	users, err := svc.ListOrgUsers(c.Request.Context(), orgID)
@@ -124,7 +124,7 @@ type addOrgUserBody struct {
 	Role         string `json:"role" binding:"required"`
 }
 
-// AddOrgUser POST /api/v1/grafana/instances/:hostId/orgs/:orgId/users
+// AddOrgUser POST /api/v1/grafana/instances/:instanceId/orgs/:orgId/users
 func (h *GrafanaHandler) AddOrgUser(c *gin.Context) {
 	orgID, err := strconv.ParseInt(c.Param("orgId"), 10, 64)
 	if err != nil {
@@ -133,7 +133,7 @@ func (h *GrafanaHandler) AddOrgUser(c *gin.Context) {
 	}
 	svc, err := h.resolveSvc(c)
 	if err != nil {
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid hostId")
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid instanceId")
 		return
 	}
 	var body addOrgUserBody
@@ -148,7 +148,7 @@ func (h *GrafanaHandler) AddOrgUser(c *gin.Context) {
 	response.JSON(c, nil)
 }
 
-// RemoveOrgUser DELETE /api/v1/grafana/instances/:hostId/orgs/:orgId/users/:userId
+// RemoveOrgUser DELETE /api/v1/grafana/instances/:instanceId/orgs/:orgId/users/:userId
 func (h *GrafanaHandler) RemoveOrgUser(c *gin.Context) {
 	orgID, err := strconv.ParseInt(c.Param("orgId"), 10, 64)
 	if err != nil {
@@ -162,7 +162,7 @@ func (h *GrafanaHandler) RemoveOrgUser(c *gin.Context) {
 	}
 	svc, err := h.resolveSvc(c)
 	if err != nil {
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid hostId")
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid instanceId")
 		return
 	}
 	if err := svc.RemoveOrgUser(c.Request.Context(), orgID, userID); err != nil {
@@ -174,7 +174,7 @@ func (h *GrafanaHandler) RemoveOrgUser(c *gin.Context) {
 
 // ── Datasources ──
 
-// ListDatasources GET /api/v1/grafana/instances/:hostId/orgs/:orgId/datasources
+// ListDatasources GET /api/v1/grafana/instances/:instanceId/orgs/:orgId/datasources
 func (h *GrafanaHandler) ListDatasources(c *gin.Context) {
 	orgID, err := strconv.ParseInt(c.Param("orgId"), 10, 64)
 	if err != nil {
@@ -183,7 +183,7 @@ func (h *GrafanaHandler) ListDatasources(c *gin.Context) {
 	}
 	svc, err := h.resolveSvc(c)
 	if err != nil {
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid hostId")
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid instanceId")
 		return
 	}
 	dss, err := svc.ListDatasources(c.Request.Context(), orgID)
@@ -202,7 +202,7 @@ type createDatasourceBody struct {
 	IsDefault bool   `json:"is_default"`
 }
 
-// CreateDatasource POST /api/v1/grafana/instances/:hostId/orgs/:orgId/datasources
+// CreateDatasource POST /api/v1/grafana/instances/:instanceId/orgs/:orgId/datasources
 func (h *GrafanaHandler) CreateDatasource(c *gin.Context) {
 	orgID, err := strconv.ParseInt(c.Param("orgId"), 10, 64)
 	if err != nil {
@@ -211,7 +211,7 @@ func (h *GrafanaHandler) CreateDatasource(c *gin.Context) {
 	}
 	svc, err := h.resolveSvc(c)
 	if err != nil {
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid hostId")
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid instanceId")
 		return
 	}
 	var body createDatasourceBody
@@ -244,7 +244,7 @@ type updateDatasourceBody struct {
 	IsDefault bool   `json:"is_default"`
 }
 
-// UpdateDatasource PUT /api/v1/grafana/instances/:hostId/orgs/:orgId/datasources/:dsId
+// UpdateDatasource PUT /api/v1/grafana/instances/:instanceId/orgs/:orgId/datasources/:dsId
 func (h *GrafanaHandler) UpdateDatasource(c *gin.Context) {
 	orgID, err := strconv.ParseInt(c.Param("orgId"), 10, 64)
 	if err != nil {
@@ -258,7 +258,7 @@ func (h *GrafanaHandler) UpdateDatasource(c *gin.Context) {
 	}
 	svc, err := h.resolveSvc(c)
 	if err != nil {
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid hostId")
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid instanceId")
 		return
 	}
 	var body updateDatasourceBody
@@ -283,7 +283,7 @@ func (h *GrafanaHandler) UpdateDatasource(c *gin.Context) {
 	response.JSON(c, nil)
 }
 
-// DeleteDatasource DELETE /api/v1/grafana/instances/:hostId/orgs/:orgId/datasources/:dsId
+// DeleteDatasource DELETE /api/v1/grafana/instances/:instanceId/orgs/:orgId/datasources/:dsId
 func (h *GrafanaHandler) DeleteDatasource(c *gin.Context) {
 	orgID, err := strconv.ParseInt(c.Param("orgId"), 10, 64)
 	if err != nil {
@@ -297,7 +297,7 @@ func (h *GrafanaHandler) DeleteDatasource(c *gin.Context) {
 	}
 	svc, err := h.resolveSvc(c)
 	if err != nil {
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid hostId")
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid instanceId")
 		return
 	}
 	if err := svc.DeleteDatasource(c.Request.Context(), orgID, dsID); err != nil {
@@ -314,7 +314,7 @@ type testDatasourceBody struct {
 	Access string `json:"access"`
 }
 
-// TestDatasource POST /api/v1/grafana/instances/:hostId/orgs/:orgId/datasources/test
+// TestDatasource POST /api/v1/grafana/instances/:instanceId/orgs/:orgId/datasources/test
 func (h *GrafanaHandler) TestDatasource(c *gin.Context) {
 	orgID, err := strconv.ParseInt(c.Param("orgId"), 10, 64)
 	if err != nil {
@@ -323,7 +323,7 @@ func (h *GrafanaHandler) TestDatasource(c *gin.Context) {
 	}
 	svc, err := h.resolveSvc(c)
 	if err != nil {
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid hostId")
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid instanceId")
 		return
 	}
 	var body testDatasourceBody
@@ -350,7 +350,7 @@ func (h *GrafanaHandler) TestDatasource(c *gin.Context) {
 
 // ── Dashboards ──
 
-// ImportDashboard POST /api/v1/grafana/instances/:hostId/orgs/:orgId/dashboards/import
+// ImportDashboard POST /api/v1/grafana/instances/:instanceId/orgs/:orgId/dashboards/import
 func (h *GrafanaHandler) ImportDashboard(c *gin.Context) {
 	orgID, err := strconv.ParseInt(c.Param("orgId"), 10, 64)
 	if err != nil {
@@ -359,7 +359,7 @@ func (h *GrafanaHandler) ImportDashboard(c *gin.Context) {
 	}
 	svc, err := h.resolveSvc(c)
 	if err != nil {
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid hostId")
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid instanceId")
 		return
 	}
 	body, err := io.ReadAll(c.Request.Body)
@@ -374,7 +374,7 @@ func (h *GrafanaHandler) ImportDashboard(c *gin.Context) {
 	response.JSON(c, nil)
 }
 
-// ListDashboards GET /api/v1/grafana/instances/:hostId/orgs/:orgId/dashboards
+// ListDashboards GET /api/v1/grafana/instances/:instanceId/orgs/:orgId/dashboards
 func (h *GrafanaHandler) ListDashboards(c *gin.Context) {
 	orgID, err := strconv.ParseInt(c.Param("orgId"), 10, 64)
 	if err != nil {
@@ -383,7 +383,7 @@ func (h *GrafanaHandler) ListDashboards(c *gin.Context) {
 	}
 	svc, err := h.resolveSvc(c)
 	if err != nil {
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid hostId")
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid instanceId")
 		return
 	}
 	dashboards, err := svc.ListDashboards(c.Request.Context(), orgID)
@@ -394,7 +394,7 @@ func (h *GrafanaHandler) ListDashboards(c *gin.Context) {
 	response.JSON(c, dashboards)
 }
 
-// GetDashboard GET /api/v1/grafana/instances/:hostId/orgs/:orgId/dashboards/:uid
+// GetDashboard GET /api/v1/grafana/instances/:instanceId/orgs/:orgId/dashboards/:uid
 func (h *GrafanaHandler) GetDashboard(c *gin.Context) {
 	orgID, err := strconv.ParseInt(c.Param("orgId"), 10, 64)
 	if err != nil {
@@ -403,7 +403,7 @@ func (h *GrafanaHandler) GetDashboard(c *gin.Context) {
 	}
 	svc, err := h.resolveSvc(c)
 	if err != nil {
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid hostId")
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid instanceId")
 		return
 	}
 	dashboard, err := svc.GetDashboard(c.Request.Context(), orgID, c.Param("uid"))
@@ -414,7 +414,7 @@ func (h *GrafanaHandler) GetDashboard(c *gin.Context) {
 	response.JSON(c, dashboard)
 }
 
-// DeleteDashboard DELETE /api/v1/grafana/instances/:hostId/orgs/:orgId/dashboards/:uid
+// DeleteDashboard DELETE /api/v1/grafana/instances/:instanceId/orgs/:orgId/dashboards/:uid
 func (h *GrafanaHandler) DeleteDashboard(c *gin.Context) {
 	orgID, err := strconv.ParseInt(c.Param("orgId"), 10, 64)
 	if err != nil {
@@ -423,7 +423,7 @@ func (h *GrafanaHandler) DeleteDashboard(c *gin.Context) {
 	}
 	svc, err := h.resolveSvc(c)
 	if err != nil {
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid hostId")
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid instanceId")
 		return
 	}
 	if err := svc.DeleteDashboard(c.Request.Context(), orgID, c.Param("uid")); err != nil {
@@ -435,11 +435,11 @@ func (h *GrafanaHandler) DeleteDashboard(c *gin.Context) {
 
 // ── Plugins ──
 
-// ListPlugins GET /api/v1/grafana/instances/:hostId/plugins
+// ListPlugins GET /api/v1/grafana/instances/:instanceId/plugins
 func (h *GrafanaHandler) ListPlugins(c *gin.Context) {
 	svc, err := h.resolveSvc(c)
 	if err != nil {
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid hostId")
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid instanceId")
 		return
 	}
 	plugins, err := svc.ListPlugins(c.Request.Context())
@@ -454,11 +454,11 @@ type installPluginBody struct {
 	Version string `json:"version"`
 }
 
-// InstallPlugin POST /api/v1/grafana/instances/:hostId/plugins/:pluginId/install
+// InstallPlugin POST /api/v1/grafana/instances/:instanceId/plugins/:pluginId/install
 func (h *GrafanaHandler) InstallPlugin(c *gin.Context) {
 	svc, err := h.resolveSvc(c)
 	if err != nil {
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid hostId")
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid instanceId")
 		return
 	}
 	var body installPluginBody
@@ -475,11 +475,11 @@ func (h *GrafanaHandler) InstallPlugin(c *gin.Context) {
 	response.JSON(c, nil)
 }
 
-// UninstallPlugin DELETE /api/v1/grafana/instances/:hostId/plugins/:pluginId
+// UninstallPlugin DELETE /api/v1/grafana/instances/:instanceId/plugins/:pluginId
 func (h *GrafanaHandler) UninstallPlugin(c *gin.Context) {
 	svc, err := h.resolveSvc(c)
 	if err != nil {
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid hostId")
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid instanceId")
 		return
 	}
 	if err := svc.UninstallPlugin(c.Request.Context(), c.Param("pluginId")); err != nil {
@@ -491,11 +491,11 @@ func (h *GrafanaHandler) UninstallPlugin(c *gin.Context) {
 
 // ── Health & Admin ──
 
-// HealthCheck GET /api/v1/grafana/instances/:hostId/health
+// HealthCheck GET /api/v1/grafana/instances/:instanceId/health
 func (h *GrafanaHandler) HealthCheck(c *gin.Context) {
 	svc, err := h.resolveSvc(c)
 	if err != nil {
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid hostId")
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid instanceId")
 		return
 	}
 	status, err := svc.HealthCheck(c.Request.Context())
@@ -506,11 +506,11 @@ func (h *GrafanaHandler) HealthCheck(c *gin.Context) {
 	response.JSON(c, status)
 }
 
-// AdminStats GET /api/v1/grafana/instances/:hostId/admin/stats
+// AdminStats GET /api/v1/grafana/instances/:instanceId/admin/stats
 func (h *GrafanaHandler) AdminStats(c *gin.Context) {
 	svc, err := h.resolveSvc(c)
 	if err != nil {
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid hostId")
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid instanceId")
 		return
 	}
 	stats, err := svc.AdminStats(c.Request.Context())
@@ -521,11 +521,11 @@ func (h *GrafanaHandler) AdminStats(c *gin.Context) {
 	response.JSON(c, stats)
 }
 
-// AdminSettings GET /api/v1/grafana/instances/:hostId/admin/settings
+// AdminSettings GET /api/v1/grafana/instances/:instanceId/admin/settings
 func (h *GrafanaHandler) AdminSettings(c *gin.Context) {
 	svc, err := h.resolveSvc(c)
 	if err != nil {
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid hostId")
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid instanceId")
 		return
 	}
 	settings, err := svc.AdminSettings(c.Request.Context())

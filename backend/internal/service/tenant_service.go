@@ -35,19 +35,19 @@ var allowedTemplateTypes = map[string]struct{}{
 }
 
 type CreateTenantRequest struct {
-	TenantName    string
-	DeptID        uuid.UUID
-	TemplateType  string
-	QuotaConfig   string
-	GrafanaHostID *uuid.UUID
+	TenantName        string
+	DeptID            uuid.UUID
+	TemplateType      string
+	QuotaConfig       string
+	GrafanaInstanceID *uuid.UUID
 }
 
 type UpdateTenantRequest struct {
-	TenantName    string
-	TemplateType  string
-	QuotaConfig   string
-	Status        string
-	GrafanaHostID *uuid.UUID
+	TenantName        string
+	TemplateType      string
+	QuotaConfig       string
+	Status            string
+	GrafanaInstanceID *uuid.UUID
 }
 
 // TenantService 租户业务（不直接依赖 N9E，告警由 N9E 独立管理）。
@@ -56,7 +56,7 @@ type TenantService struct {
 	tenant          *repository.TenantRepository
 	inst            *repository.InstanceRepository
 	vmSync          *vm.SyncService
-	grafanaResolver func(ctx context.Context, hostID *uuid.UUID) (*grafana.Client, error)
+	grafanaResolver func(ctx context.Context, instanceID *uuid.UUID) (*grafana.Client, error)
 	orch            *OrchestratorService
 	log             *zap.Logger
 }
@@ -66,7 +66,7 @@ func NewTenantService(
 	tenant *repository.TenantRepository,
 	inst *repository.InstanceRepository,
 	vmSync *vm.SyncService,
-	grafanaResolver func(ctx context.Context, hostID *uuid.UUID) (*grafana.Client, error),
+	grafanaResolver func(ctx context.Context, instanceID *uuid.UUID) (*grafana.Client, error),
 	orch *OrchestratorService,
 	log *zap.Logger,
 ) *TenantService {
@@ -76,11 +76,11 @@ func NewTenantService(
 	}
 }
 
-func (s *TenantService) resolveGrafana(ctx context.Context, hostID *uuid.UUID) *grafana.Client {
+func (s *TenantService) resolveGrafana(ctx context.Context, instanceID *uuid.UUID) *grafana.Client {
 	if s.grafanaResolver == nil {
 		return nil
 	}
-	client, err := s.grafanaResolver(ctx, hostID)
+	client, err := s.grafanaResolver(ctx, instanceID)
 	if err != nil {
 		if s.log != nil {
 			s.log.Warn("grafana_resolver_failed", zap.Error(err))
@@ -140,14 +140,14 @@ func (s *TenantService) Create(ctx context.Context, req *CreateTenantRequest) (*
 	}
 
 	t := &model.Tenant{
-		TenantName:    strings.TrimSpace(req.TenantName),
-		DeptID:        req.DeptID,
-		VMUserID:      vmuserID,
-		VMUserKey:     vmKey,
-		TemplateType:  req.TemplateType,
-		QuotaConfig:   quotaCfg,
-		GrafanaHostID: req.GrafanaHostID,
-		Status:        "provisioning",
+		TenantName:        strings.TrimSpace(req.TenantName),
+		DeptID:            req.DeptID,
+		VMUserID:          vmuserID,
+		VMUserKey:         vmKey,
+		TemplateType:      req.TemplateType,
+		QuotaConfig:       quotaCfg,
+		GrafanaInstanceID: req.GrafanaInstanceID,
+		Status:            "provisioning",
 	}
 	if err := s.tenant.Create(ctx, t); err != nil {
 		return nil, err
@@ -159,7 +159,7 @@ func (s *TenantService) Create(ctx context.Context, req *CreateTenantRequest) (*
 			return nil, ErrTenantProvisionFailed
 		}
 	}
-	gClient := s.resolveGrafana(ctx, t.GrafanaHostID)
+	gClient := s.resolveGrafana(ctx, t.GrafanaInstanceID)
 	if gClient != nil && gClient.Enabled() {
 		if err := gClient.SyncTenantOnCreate(ctx, t); err != nil {
 			s.markStatus(ctx, t, "provision_failed")
@@ -273,8 +273,8 @@ func (s *TenantService) Update(ctx context.Context, id uuid.UUID, req *UpdateTen
 	if req.Status != "" {
 		t.Status = req.Status
 	}
-	if req.GrafanaHostID != nil {
-		t.GrafanaHostID = req.GrafanaHostID
+	if req.GrafanaInstanceID != nil {
+		t.GrafanaInstanceID = req.GrafanaInstanceID
 	}
 	if err := s.tenant.Update(ctx, t); err != nil {
 		return nil, err
@@ -302,7 +302,7 @@ func (s *TenantService) Delete(ctx context.Context, id uuid.UUID) error {
 	if err := s.tenant.Update(ctx, t); err != nil {
 		return err
 	}
-	gClient := s.resolveGrafana(ctx, t.GrafanaHostID)
+	gClient := s.resolveGrafana(ctx, t.GrafanaInstanceID)
 	if gClient != nil {
 		if err := gClient.SyncTenantOnDelete(ctx, t); err != nil {
 			s.markStatus(ctx, t, "deprovision_failed")

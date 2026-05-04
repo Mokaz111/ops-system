@@ -11,17 +11,17 @@ import (
 	"github.com/google/uuid"
 )
 
-// GrafanaHostHandler Grafana 纳管实例注册 HTTP。
-type GrafanaHostHandler struct {
-	svc *service.GrafanaHostService
+// GrafanaInstanceHandler Grafana 纳管实例注册 HTTP。
+type GrafanaInstanceHandler struct {
+	svc *service.GrafanaInstanceService
 }
 
-func NewGrafanaHostHandler(svc *service.GrafanaHostService) *GrafanaHostHandler {
-	return &GrafanaHostHandler{svc: svc}
+func NewGrafanaInstanceHandler(svc *service.GrafanaInstanceService) *GrafanaInstanceHandler {
+	return &GrafanaInstanceHandler{svc: svc}
 }
 
-// List GET /api/v1/grafana/hosts
-func (h *GrafanaHostHandler) List(c *gin.Context) {
+// List GET /api/v1/grafana/instances
+func (h *GrafanaInstanceHandler) List(c *gin.Context) {
 	page, ps, ok := parsePageAndSize(c, 20)
 	if !ok {
 		return
@@ -43,9 +43,9 @@ func (h *GrafanaHostHandler) List(c *gin.Context) {
 	response.JSON(c, gin.H{"items": list, "total": total, "page": page, "page_size": ps})
 }
 
-// Get GET /api/v1/grafana/hosts/:id
-func (h *GrafanaHostHandler) Get(c *gin.Context) {
-	id, err := uuid.Parse(c.Param("hostId"))
+// Get GET /api/v1/grafana/instances/:instanceId
+func (h *GrafanaInstanceHandler) Get(c *gin.Context) {
+	id, err := uuid.Parse(c.Param("instanceId"))
 	if err != nil {
 		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid id")
 		return
@@ -58,9 +58,9 @@ func (h *GrafanaHostHandler) Get(c *gin.Context) {
 	response.JSON(c, m)
 }
 
-// Create POST /api/v1/grafana/hosts (admin)
-func (h *GrafanaHostHandler) Create(c *gin.Context) {
-	var body service.CreateGrafanaHostRequest
+// Create POST /api/v1/grafana/instances (admin)
+func (h *GrafanaInstanceHandler) Create(c *gin.Context) {
+	var body service.CreateGrafanaInstanceRequest
 	if err := c.ShouldBindJSON(&body); err != nil {
 		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, response.TranslateBindingError(err))
 		return
@@ -73,14 +73,14 @@ func (h *GrafanaHostHandler) Create(c *gin.Context) {
 	response.JSON(c, m)
 }
 
-// Update PUT /api/v1/grafana/hosts/:id (admin)
-func (h *GrafanaHostHandler) Update(c *gin.Context) {
-	id, err := uuid.Parse(c.Param("hostId"))
+// Update PUT /api/v1/grafana/instances/:instanceId (admin)
+func (h *GrafanaInstanceHandler) Update(c *gin.Context) {
+	id, err := uuid.Parse(c.Param("instanceId"))
 	if err != nil {
 		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid id")
 		return
 	}
-	var body service.UpdateGrafanaHostRequest
+	var body service.UpdateGrafanaInstanceRequest
 	if err := c.ShouldBindJSON(&body); err != nil {
 		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, response.TranslateBindingError(err))
 		return
@@ -93,9 +93,9 @@ func (h *GrafanaHostHandler) Update(c *gin.Context) {
 	response.JSON(c, m)
 }
 
-// Delete DELETE /api/v1/grafana/hosts/:id (admin)
-func (h *GrafanaHostHandler) Delete(c *gin.Context) {
-	id, err := uuid.Parse(c.Param("hostId"))
+// Delete DELETE /api/v1/grafana/instances/:instanceId (admin)
+func (h *GrafanaInstanceHandler) Delete(c *gin.Context) {
+	id, err := uuid.Parse(c.Param("instanceId"))
 	if err != nil {
 		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid id")
 		return
@@ -107,9 +107,9 @@ func (h *GrafanaHostHandler) Delete(c *gin.Context) {
 	response.JSON(c, nil)
 }
 
-// Login POST /api/v1/grafana/hosts/:id/login
-func (h *GrafanaHostHandler) Login(c *gin.Context) {
-	id, err := uuid.Parse(c.Param("hostId"))
+// Login POST /api/v1/grafana/instances/:instanceId/login
+func (h *GrafanaInstanceHandler) Login(c *gin.Context) {
+	id, err := uuid.Parse(c.Param("instanceId"))
 	if err != nil {
 		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid id")
 		return
@@ -130,10 +130,10 @@ func (h *GrafanaHostHandler) Login(c *gin.Context) {
 	})
 }
 
-func (h *GrafanaHostHandler) handleErr(c *gin.Context, err error) {
+func (h *GrafanaInstanceHandler) handleErr(c *gin.Context, err error) {
 	switch {
-	case errors.Is(err, service.ErrGrafanaHostNotFound):
-		response.Error(c, http.StatusNotFound, http.StatusNotFound, response.ErrCodeGrafanaHostNotFound, err.Error())
+	case errors.Is(err, service.ErrGrafanaInstanceNotFound):
+		response.Error(c, http.StatusNotFound, http.StatusNotFound, response.ErrCodeGrafanaInstanceNotFound, err.Error())
 	case errors.Is(err, service.ErrInvalidPagination):
 		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeInvalidPagination, err.Error())
 	default:

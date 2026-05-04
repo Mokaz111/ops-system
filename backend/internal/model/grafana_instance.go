@@ -7,8 +7,8 @@ import (
 	"gorm.io/gorm"
 )
 
-// GrafanaHost Grafana 纳管实例注册表（平台共享 or 租户自带）。
-type GrafanaHost struct {
+// GrafanaInstance Grafana 纳管实例注册表（平台共享 or 租户自带）。
+type GrafanaInstance struct {
 	ID            uuid.UUID      `json:"id" gorm:"type:uuid;primaryKey"`
 	Name          string         `json:"name" gorm:"type:varchar(255);not null"`
 	Scope         string         `json:"scope" gorm:"type:varchar(20);index"` // platform / tenant
@@ -24,12 +24,12 @@ type GrafanaHost struct {
 }
 
 // TableName 表名。
-func (GrafanaHost) TableName() string {
-	return "ops_grafana_hosts"
+func (GrafanaInstance) TableName() string {
+	return "ops_grafana_instances"
 }
 
 // BeforeCreate 生成主键。
-func (g *GrafanaHost) BeforeCreate(tx *gorm.DB) error {
+func (g *GrafanaInstance) BeforeCreate(tx *gorm.DB) error {
 	if g.ID == uuid.Nil {
 		g.ID = uuid.New()
 	}

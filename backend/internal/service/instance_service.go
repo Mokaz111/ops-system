@@ -41,21 +41,21 @@ var allowedInstanceStatuses = map[string]struct{}{
 
 // CreateInstanceRequest 创建实例请求。
 type CreateInstanceRequest struct {
-	TenantID      uuid.UUID
-	ClusterID     *uuid.UUID
-	InstanceName  string
-	InstanceType  string
-	TemplateType  string
-	Spec          string
-	GrafanaHostID *uuid.UUID
+	TenantID          uuid.UUID
+	ClusterID         *uuid.UUID
+	InstanceName      string
+	InstanceType      string
+	TemplateType      string
+	Spec              string
+	GrafanaInstanceID *uuid.UUID
 }
 
 // UpdateInstanceRequest 更新实例请求。
 type UpdateInstanceRequest struct {
-	InstanceName  string
-	Spec          string
-	Status        string
-	GrafanaHostID *uuid.UUID
+	InstanceName      string
+	Spec              string
+	Status            string
+	GrafanaInstanceID *uuid.UUID
 }
 
 // InstanceService 实例生命周期管理。
@@ -100,20 +100,20 @@ func (s *InstanceService) Create(ctx context.Context, req *CreateInstanceRequest
 		return nil, ErrTenantNotFoundForInstance
 	}
 
-	grafanaHostID := req.GrafanaHostID
-	if grafanaHostID == nil {
-		grafanaHostID = t.GrafanaHostID
+	grafanaInstanceID := req.GrafanaInstanceID
+	if grafanaInstanceID == nil {
+		grafanaInstanceID = t.GrafanaInstanceID
 	}
 
 	inst := &model.Instance{
-		TenantID:      req.TenantID,
-		ClusterID:     req.ClusterID,
-		InstanceName:  strings.TrimSpace(req.InstanceName),
-		InstanceType:  req.InstanceType,
-		TemplateType:  req.TemplateType,
-		Spec:          defaultJSONB(req.Spec),
-		GrafanaHostID: grafanaHostID,
-		Status:        "creating",
+		TenantID:          req.TenantID,
+		ClusterID:         req.ClusterID,
+		InstanceName:      strings.TrimSpace(req.InstanceName),
+		InstanceType:      req.InstanceType,
+		TemplateType:      req.TemplateType,
+		Spec:              defaultJSONB(req.Spec),
+		GrafanaInstanceID: grafanaInstanceID,
+		Status:            "creating",
 	}
 	if err := s.inst.Create(ctx, inst); err != nil {
 		return nil, err
@@ -196,8 +196,8 @@ func (s *InstanceService) Update(ctx context.Context, id uuid.UUID, req *UpdateI
 		}
 		inst.Status = req.Status
 	}
-	if req.GrafanaHostID != nil {
-		inst.GrafanaHostID = req.GrafanaHostID
+	if req.GrafanaInstanceID != nil {
+		inst.GrafanaInstanceID = req.GrafanaInstanceID
 	}
 
 	if err := s.inst.Update(ctx, inst); err != nil {

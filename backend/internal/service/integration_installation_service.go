@@ -51,15 +51,15 @@ func NewIntegrationInstallationService(
 
 // InstallRequest 安装请求。
 type InstallRequest struct {
-	TemplateID      uuid.UUID         `json:"template_id" binding:"required"`
-	TemplateVersion string            `json:"template_version" binding:"required"`
-	InstanceID      uuid.UUID         `json:"instance_id" binding:"required"`
-	TenantID        uuid.UUID         `json:"tenant_id" binding:"required"`
-	GrafanaHostID   *uuid.UUID        `json:"grafana_host_id"`
-	GrafanaOrgID    int64             `json:"grafana_org_id"`
-	InstalledParts  []string          `json:"installed_parts"`
-	Values          map[string]string `json:"values"`
-	Force           bool              `json:"force"` // 忽略 preflight 失败继续下发
+	TemplateID        uuid.UUID         `json:"template_id" binding:"required"`
+	TemplateVersion   string            `json:"template_version" binding:"required"`
+	InstanceID        uuid.UUID         `json:"instance_id" binding:"required"`
+	TenantID          uuid.UUID         `json:"tenant_id" binding:"required"`
+	GrafanaInstanceID *uuid.UUID        `json:"grafana_instance_id"`
+	GrafanaOrgID      int64             `json:"grafana_org_id"`
+	InstalledParts    []string          `json:"installed_parts"`
+	Values            map[string]string `json:"values"`
+	Force             bool              `json:"force"` // 忽略 preflight 失败继续下发
 }
 
 // PlanResult Plan（dry-run）返回。
@@ -101,10 +101,10 @@ func (s *IntegrationInstallationService) Plan(ctx context.Context, req *InstallR
 	}
 	clusterID := s.lookupClusterID(ctx, req.InstanceID)
 	issues := s.applier.Preflight(ctx, rendered, integration.ApplyOptions{
-		DefaultNamespace: renderCtx.Namespace,
-		GrafanaOrgID:     req.GrafanaOrgID,
-		GrafanaHostID:    req.GrafanaHostID,
-		ClusterID:        clusterID,
+		DefaultNamespace:  renderCtx.Namespace,
+		GrafanaOrgID:      req.GrafanaOrgID,
+		GrafanaInstanceID: req.GrafanaInstanceID,
+		ClusterID:         clusterID,
 	})
 	return &PlanResult{Rendered: rendered, Preflight: issues}, nil
 }
@@ -173,10 +173,10 @@ func (s *IntegrationInstallationService) Install(ctx context.Context, operator s
 	}
 
 	applyOpts := integration.ApplyOptions{
-		DefaultNamespace: renderCtx.Namespace,
-		GrafanaOrgID:     req.GrafanaOrgID,
-		GrafanaHostID:    req.GrafanaHostID,
-		ClusterID:        s.lookupClusterID(ctx, req.InstanceID),
+		DefaultNamespace:  renderCtx.Namespace,
+		GrafanaOrgID:      req.GrafanaOrgID,
+		GrafanaInstanceID: req.GrafanaInstanceID,
+		ClusterID:         s.lookupClusterID(ctx, req.InstanceID),
 	}
 	issues := s.applier.Preflight(ctx, rendered, applyOpts)
 	if len(issues) > 0 && !req.Force {
@@ -214,7 +214,7 @@ func (s *IntegrationInstallationService) Install(ctx context.Context, operator s
 		}
 
 		existing.TemplateVersion = req.TemplateVersion
-		existing.GrafanaHostID = req.GrafanaHostID
+		existing.GrafanaInstanceID = req.GrafanaInstanceID
 		existing.GrafanaOrgID = req.GrafanaOrgID
 		existing.InstalledParts = marshalJSONStringArray(collectParts(rendered))
 		existing.Variables = valuesJSON
@@ -243,16 +243,16 @@ func (s *IntegrationInstallationService) Install(ctx context.Context, operator s
 	}
 
 	m := &model.IntegrationInstallation{
-		TemplateID:      req.TemplateID,
-		TemplateVersion: req.TemplateVersion,
-		InstanceID:      req.InstanceID,
-		TenantID:        req.TenantID,
-		GrafanaHostID:   req.GrafanaHostID,
-		GrafanaOrgID:    req.GrafanaOrgID,
-		InstalledParts:  marshalJSONStringArray(collectParts(rendered)),
-		Variables:       valuesJSON,
-		Status:          overallStatus,
-		InstalledBy:     operator,
+		TemplateID:        req.TemplateID,
+		TemplateVersion:   req.TemplateVersion,
+		InstanceID:        req.InstanceID,
+		TenantID:          req.TenantID,
+		GrafanaInstanceID: req.GrafanaInstanceID,
+		GrafanaOrgID:      req.GrafanaOrgID,
+		InstalledParts:    marshalJSONStringArray(collectParts(rendered)),
+		Variables:         valuesJSON,
+		Status:            overallStatus,
+		InstalledBy:       operator,
 	}
 	rev := &model.IntegrationInstallationRevision{
 		Version:          req.TemplateVersion,

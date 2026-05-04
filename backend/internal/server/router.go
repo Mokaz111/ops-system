@@ -77,8 +77,8 @@ func NewRouter(cfg *config.Config, log *zap.Logger, db *gorm.DB) *gin.Engine {
 			integrationTemplateRepo := repository.NewIntegrationTemplateRepository(db)
 			integrationInstallRepo := repository.NewIntegrationInstallationRepository(db)
 			metricRepo := repository.NewMetricRepository(db)
-			grafanaHostRepo := repository.NewGrafanaHostRepository(db)
-			grafanaHostSvc := service.NewGrafanaHostService(grafanaHostRepo)
+			grafanaInstanceRepo := repository.NewGrafanaInstanceRepository(db)
+			grafanaInstanceSvc := service.NewGrafanaInstanceService(grafanaInstanceRepo)
 			clusterRepo := repository.NewClusterRepository(db)
 
 			userSvc := service.NewUserService(userRepo)
@@ -92,24 +92,24 @@ func NewRouter(cfg *config.Config, log *zap.Logger, db *gorm.DB) *gin.Engine {
 			vmSync := vm.NewSyncService(&cfg.VM, log)
 			grafanaClient := grafana.NewClient(&cfg.Grafana, log)
 
-			// Grafana resolver：按 host id 动态构造 client；供 TenantService 和 integration applier 共用。
-			grafanaResolver := func(ctx context.Context, hostID *uuid.UUID) (*grafana.Client, error) {
-				if hostID == nil {
+			// Grafana resolver：按 Grafana 实例 id 动态构造 client；供 TenantService 和 integration applier 共用。
+			grafanaResolver := func(ctx context.Context, instanceID *uuid.UUID) (*grafana.Client, error) {
+				if instanceID == nil {
 					return grafanaClient, nil
 				}
-				host, err := grafanaHostRepo.GetByID(ctx, *hostID)
+				grafanaInstance, err := grafanaInstanceRepo.GetByID(ctx, *instanceID)
 				if err != nil {
 					return grafanaClient, err
 				}
-				if host == nil || host.Status != "active" || strings.TrimSpace(host.URL) == "" {
+				if grafanaInstance == nil || grafanaInstance.Status != "active" || strings.TrimSpace(grafanaInstance.URL) == "" {
 					return grafanaClient, nil
 				}
 				subCfg := config.GrafanaConfig{
 					Enabled:                 true,
-					BaseURL:                 host.URL,
-					APIKey:                  host.AdminTokenEnc,
-					AdminUser:               host.AdminUser,
-					AdminPassword:           host.AdminPassword,
+					BaseURL:                 grafanaInstance.URL,
+					APIKey:                  grafanaInstance.AdminTokenEnc,
+					AdminUser:               grafanaInstance.AdminUser,
+					AdminPassword:           grafanaInstance.AdminPassword,
 					HTTPTimeoutSeconds:      cfg.Grafana.HTTPTimeoutSeconds,
 					PrometheusDatasourceURL: cfg.Grafana.PrometheusDatasourceURL,
 					OrgNamePrefix:           cfg.Grafana.OrgNamePrefix,
@@ -145,7 +145,7 @@ func NewRouter(cfg *config.Config, log *zap.Logger, db *gorm.DB) *gin.Engine {
 			}
 			scaleEventRepo := repository.NewScaleEventRepository(db)
 			scaleSvc := service.NewScaleService(helmClient, k8sClient, instanceRepo, scaleEventRepo, log)
-			instanceH := handler.NewInstanceHandler(instanceSvc, scaleSvc, userSvc, grafanaHostSvc)
+			instanceH := handler.NewInstanceHandler(instanceSvc, scaleSvc, userSvc, grafanaInstanceSvc)
 			k8sOps := service.NewK8sResourceOperator(k8sClient, log)
 			platformScaleSvc := service.NewPlatformScaleService(k8sOps)
 			platformBootstrapSvc := service.NewPlatformBootstrapService(helmClient, k8sClient)
@@ -161,7 +161,7 @@ func NewRouter(cfg *config.Config, log *zap.Logger, db *gorm.DB) *gin.Engine {
 			}
 			platformH := handler.NewPlatformHandler(platformScaleSvc, platformBootstrapSvc, log, idemStore, platformAuditRepo)
 
-			grafanaSvc := service.NewGrafanaService(grafanaClient, grafanaHostRepo, tenantRepo, log)
+			grafanaSvc := service.NewGrafanaService(grafanaClient, grafanaInstanceRepo, tenantRepo, log)
 			grafanaH := handler.NewGrafanaHandler(grafanaSvc, log)
 			n9eClient := n9e.NewClient(&cfg.N9E, log)
 			notifySvc := notify.NewNotifyService(log)
@@ -245,7 +245,7 @@ func NewRouter(cfg *config.Config, log *zap.Logger, db *gorm.DB) *gin.Engine {
 				log.Warn("integration_seed_failed", zap.Error(err))
 			}
 
-			grafanaHostH := handler.NewGrafanaHostHandler(grafanaHostSvc)
+			grafanaInstanceH := handler.NewGrafanaInstanceHandler(grafanaInstanceSvc)
 
 			clusterSvc := service.NewClusterService(clusterRepo)
 			clusterH := handler.NewClusterHandler(clusterSvc)
@@ -280,17 +280,17 @@ func NewRouter(cfg *config.Config, log *zap.Logger, db *gorm.DB) *gin.Engine {
 			ig.GET("/:id/scale-events", instanceH.ListScaleEvents)
 			ig.POST("/:id/login", instanceH.LoginGrafana)
 
-			gig := protected.Group("/grafana/instances/:hostId")
+			gig := protected.Group("/grafana/instances/:instanceId")
 			gig.GET("/orgs", grafanaH.ListOrgs)
 			gig.GET("/orgs/:orgId/users", grafanaH.ListOrgUsers)
 			gig.GET("/orgs/:orgId/datasources", grafanaH.ListDatasources)
-				gig.GET("/orgs/:orgId/dashboards", grafanaH.ListDashboards)
-				gig.GET("/orgs/:orgId/dashboards/:uid", grafanaH.GetDashboard)
+			gig.GET("/orgs/:orgId/dashboards", grafanaH.ListDashboards)
+			gig.GET("/orgs/:orgId/dashboards/:uid", grafanaH.GetDashboard)
 
-				gig.GET("/plugins", grafanaH.ListPlugins)
-				gig.GET("/health", grafanaH.HealthCheck)
-				gig.GET("/admin/stats", grafanaH.AdminStats)
-				gig.GET("/admin/settings", grafanaH.AdminSettings)
+			gig.GET("/plugins", grafanaH.ListPlugins)
+			gig.GET("/health", grafanaH.HealthCheck)
+			gig.GET("/admin/stats", grafanaH.AdminStats)
+			gig.GET("/admin/settings", grafanaH.AdminSettings)
 
 			ag := protected.Group("/alerts")
 			ag.GET("/rules", alertH.ListRules)
@@ -330,9 +330,9 @@ func NewRouter(cfg *config.Config, log *zap.Logger, db *gorm.DB) *gin.Engine {
 
 			// Grafana 纳管实例（查询）
 			ghg := protected.Group("/grafana/instances")
-			ghg.GET("", grafanaHostH.List)
-			ghg.GET("/:hostId", grafanaHostH.Get)
-			ghg.POST("/:hostId/login", grafanaHostH.Login)
+			ghg.GET("", grafanaInstanceH.List)
+			ghg.GET("/:instanceId", grafanaInstanceH.Get)
+			ghg.POST("/:instanceId/login", grafanaInstanceH.Login)
 
 			// K8s 集群（查询）
 			cg := protected.Group("/clusters")
@@ -361,10 +361,10 @@ func NewRouter(cfg *config.Config, log *zap.Logger, db *gorm.DB) *gin.Engine {
 			adminIG.PUT("/:id", instanceH.Update)
 			adminIG.DELETE("/:id", instanceH.Delete)
 			adminIG.POST("/:id/scale", instanceH.Scale)
-				adminIG.POST("/:id/rebuild", instanceH.Rebuild)
-				adminIG.POST("/:id/upgrade", instanceH.Upgrade)
+			adminIG.POST("/:id/rebuild", instanceH.Rebuild)
+			adminIG.POST("/:id/upgrade", instanceH.Upgrade)
 
-			adminGI := admin.Group("/grafana/instances/:hostId")
+			adminGI := admin.Group("/grafana/instances/:instanceId")
 			adminGI.POST("/orgs", grafanaH.CreateOrg)
 			adminGI.DELETE("/orgs/:orgId", grafanaH.DeleteOrg)
 			adminGI.POST("/orgs/:orgId/users", grafanaH.AddOrgUser)
@@ -374,10 +374,10 @@ func NewRouter(cfg *config.Config, log *zap.Logger, db *gorm.DB) *gin.Engine {
 			adminGI.PUT("/orgs/:orgId/datasources/:dsId", grafanaH.UpdateDatasource)
 			adminGI.POST("/orgs/:orgId/datasources/test", grafanaH.TestDatasource)
 			adminGI.POST("/orgs/:orgId/dashboards/import", grafanaH.ImportDashboard)
-				adminGI.DELETE("/orgs/:orgId/dashboards/:uid", grafanaH.DeleteDashboard)
+			adminGI.DELETE("/orgs/:orgId/dashboards/:uid", grafanaH.DeleteDashboard)
 
-				adminGI.POST("/plugins/:pluginId/install", grafanaH.InstallPlugin)
-				adminGI.DELETE("/plugins/:pluginId", grafanaH.UninstallPlugin)
+			adminGI.POST("/plugins/:pluginId/install", grafanaH.InstallPlugin)
+			adminGI.DELETE("/plugins/:pluginId", grafanaH.UninstallPlugin)
 
 			adminAG := admin.Group("/alerts")
 			adminAG.POST("/rules", alertH.CreateRule)
@@ -416,9 +416,9 @@ func NewRouter(cfg *config.Config, log *zap.Logger, db *gorm.DB) *gin.Engine {
 
 			// Grafana 纳管实例（写）
 			adminGHG := admin.Group("/grafana/instances")
-			adminGHG.POST("", grafanaHostH.Create)
-			adminGHG.PUT("/:hostId", grafanaHostH.Update)
-			adminGHG.DELETE("/:hostId", grafanaHostH.Delete)
+			adminGHG.POST("", grafanaInstanceH.Create)
+			adminGHG.PUT("/:instanceId", grafanaInstanceH.Update)
+			adminGHG.DELETE("/:instanceId", grafanaInstanceH.Delete)
 
 			// K8s 集群（写）
 			adminCG := admin.Group("/clusters")

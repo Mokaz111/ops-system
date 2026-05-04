@@ -25,11 +25,11 @@ type GrafanaOrg struct {
 
 // GrafanaOrgUser Grafana 组织用户。
 type GrafanaOrgUser struct {
-	OrgID    int64  `json:"org_id"`
-	UserID   int64  `json:"user_id"`
-	Login    string `json:"login"`
-	Email    string `json:"email"`
-	Role     string `json:"role"`
+	OrgID  int64  `json:"org_id"`
+	UserID int64  `json:"user_id"`
+	Login  string `json:"login"`
+	Email  string `json:"email"`
+	Role   string `json:"role"`
 }
 
 // GrafanaDatasource Grafana 数据源。
@@ -115,36 +115,36 @@ type GrafanaStats struct {
 
 // GrafanaService Grafana 管理（组织/用户/数据源/Dashboard）。
 type GrafanaService struct {
-	client     *grafana.Client
-	hostRepo   *repository.GrafanaHostRepository
-	tenantRepo *repository.TenantRepository
-	log        *zap.Logger
+	client       *grafana.Client
+	instanceRepo *repository.GrafanaInstanceRepository
+	tenantRepo   *repository.TenantRepository
+	log          *zap.Logger
 }
 
-func NewGrafanaService(client *grafana.Client, hostRepo *repository.GrafanaHostRepository, tenantRepo *repository.TenantRepository, log *zap.Logger) *GrafanaService {
-	return &GrafanaService{client: client, hostRepo: hostRepo, tenantRepo: tenantRepo, log: log}
+func NewGrafanaService(client *grafana.Client, instanceRepo *repository.GrafanaInstanceRepository, tenantRepo *repository.TenantRepository, log *zap.Logger) *GrafanaService {
+	return &GrafanaService{client: client, instanceRepo: instanceRepo, tenantRepo: tenantRepo, log: log}
 }
 
-// ForHost 根据 grafana_host_id 返回对应 Grafana 实例的 Service；nil 返回自身。
-func (s *GrafanaService) ForHost(ctx context.Context, hostID *uuid.UUID) (*GrafanaService, error) {
-	if hostID == nil || s.hostRepo == nil {
+// ForInstance 根据 grafana_instance_id 返回对应 Grafana 实例的 Service；nil 返回自身。
+func (s *GrafanaService) ForInstance(ctx context.Context, instanceID *uuid.UUID) (*GrafanaService, error) {
+	if instanceID == nil || s.instanceRepo == nil {
 		return s, nil
 	}
-	host, err := s.hostRepo.GetByID(ctx, *hostID)
+	inst, err := s.instanceRepo.GetByID(ctx, *instanceID)
 	if err != nil {
 		return nil, err
 	}
-	if host == nil || host.Status != "active" || host.URL == "" {
+	if inst == nil || inst.Status != "active" || inst.URL == "" {
 		return s, nil
 	}
 	resolved := grafana.NewClient(&config.GrafanaConfig{
 		Enabled:       true,
-		BaseURL:       host.URL,
-		APIKey:        host.AdminTokenEnc,
-		AdminUser:     host.AdminUser,
-		AdminPassword: host.AdminPassword,
+		BaseURL:       inst.URL,
+		APIKey:        inst.AdminTokenEnc,
+		AdminUser:     inst.AdminUser,
+		AdminPassword: inst.AdminPassword,
 	}, s.log)
-	return &GrafanaService{client: resolved, hostRepo: s.hostRepo, tenantRepo: s.tenantRepo, log: s.log}, nil
+	return &GrafanaService{client: resolved, instanceRepo: s.instanceRepo, tenantRepo: s.tenantRepo, log: s.log}, nil
 }
 
 func (s *GrafanaService) ensureEnabled() error {
