@@ -7,6 +7,7 @@ import (
 
 	"ops-system/backend/internal/model"
 	"ops-system/backend/internal/repository"
+	"ops-system/backend/internal/vm"
 
 	"github.com/google/uuid"
 	"go.uber.org/zap"
@@ -64,6 +65,7 @@ type InstanceService struct {
 	tenant       *repository.TenantRepository
 	installation *repository.IntegrationInstallationRepository
 	orch         *OrchestratorService
+	vmQuery      *vm.QueryClient
 	log          *zap.Logger
 }
 
@@ -72,6 +74,7 @@ func NewInstanceService(
 	tenant *repository.TenantRepository,
 	installation *repository.IntegrationInstallationRepository,
 	orch *OrchestratorService,
+	vmQuery *vm.QueryClient,
 	log *zap.Logger,
 ) *InstanceService {
 	return &InstanceService{
@@ -79,6 +82,7 @@ func NewInstanceService(
 		tenant:       tenant,
 		installation: installation,
 		orch:         orch,
+		vmQuery:      vmQuery,
 		log:          log,
 	}
 }
@@ -311,7 +315,22 @@ func (s *InstanceService) GetMetrics(ctx context.Context, id uuid.UUID) (*Instan
 	if inst == nil {
 		return nil, ErrInstanceNotFound
 	}
+	if s.vmQuery == nil || !s.vmQuery.Enabled() {
+		return &InstanceMetrics{Note: "victoriametrics query client is not configured"}, nil
+	}
+	t, err := s.tenant.GetByID(ctx, inst.TenantID)
+	if err != nil {
+		return nil, err
+	}
+	if t == nil {
+		return nil, ErrTenantNotFoundForInstance
+	}
+	selector := `instance="` + inst.InstanceName + `"`
+	cpu, _ := s.vmQuery.Scalar(ctx, t, `avg(rate(container_cpu_usage_seconds_total{`+selector+`}[5m])) * 100`)
+	mem, _ := s.vmQuery.Scalar(ctx, t, `avg(container_memory_working_set_bytes{`+selector+`})`)
 	return &InstanceMetrics{
-		Note: "placeholder; connect cluster metrics in later phase",
+		CPUUsagePercent:    cpu,
+		MemoryUsagePercent: mem,
+		Note:               "queried from tenant-scoped VictoriaMetrics endpoint",
 	}, nil
 }

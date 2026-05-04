@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"ops-system/backend/internal/model"
+	"ops-system/backend/internal/vm"
 )
 
 // UpdateDatasource 更新指定组织下的数据源配置。
@@ -38,6 +39,14 @@ func (c *Client) CreatePrometheusDatasource(ctx context.Context, orgID int64, t 
 		return nil
 	}
 	url := strings.TrimSpace(c.cfg.PrometheusDatasourceURL)
+	if tenantURL := strings.TrimSpace(t.VMSelectURL); tenantURL != "" {
+		url = tenantURL
+	} else if c.cfg != nil && strings.TrimSpace(c.cfg.PrometheusDatasourceURL) != "" && strings.TrimSpace(t.VMUserID) != "" {
+		base := strings.TrimRight(strings.TrimSpace(c.cfg.PrometheusDatasourceURL), "/")
+		if !strings.Contains(base, "/select/") {
+			url = vm.SelectURL(base, t.VMUserID)
+		}
+	}
 	if url == "" {
 		return nil
 	}
@@ -50,6 +59,13 @@ func (c *Client) CreatePrometheusDatasource(ctx context.Context, orgID int64, t 
 		"jsonData": map[string]any{
 			"timeInterval": "30s",
 		},
+	}
+	if t.VMUserID != "" && t.VMUserKey != "" {
+		body["basicAuth"] = true
+		body["basicAuthUser"] = t.VMUserID
+		body["secureJsonData"] = map[string]any{
+			"basicAuthPassword": t.VMUserKey,
+		}
 	}
 	return c.doJSON(ctx, "POST", "/api/datasources", body, orgID, nil)
 }

@@ -12,14 +12,16 @@ type AlertRule struct {
 	ID          uuid.UUID      `json:"id" gorm:"type:uuid;primaryKey"`
 	TenantID    uuid.UUID      `json:"tenant_id" gorm:"type:uuid;not null;index"`
 	RuleName    string         `json:"rule_name" gorm:"type:varchar(255);not null"`
-	RuleType    string         `json:"rule_type" gorm:"type:varchar(50)"`    // metrics, logs
-	Query       string         `json:"query" gorm:"type:text"`               // PromQL / LogQL
-	Condition   string         `json:"condition" gorm:"type:jsonb"`          // {operator, threshold, for}
-	Level       string         `json:"level" gorm:"type:varchar(20)"`        // critical, warning, info
-	Channels    string         `json:"channels" gorm:"type:jsonb"`           // channel IDs
+	RuleType    string         `json:"rule_type" gorm:"type:varchar(50)"` // metrics, logs
+	Query       string         `json:"query" gorm:"type:text"`            // PromQL / LogQL
+	Condition   string         `json:"condition" gorm:"type:jsonb"`       // {operator, threshold, for}
+	Level       string         `json:"level" gorm:"type:varchar(20)"`     // critical, warning, info
+	Channels    string         `json:"channels" gorm:"type:jsonb"`        // channel IDs
 	Annotations string         `json:"annotations" gorm:"type:text"`
 	Enabled     bool           `json:"enabled" gorm:"default:true"`
 	N9ERuleID   int64          `json:"n9e_rule_id"`
+	VMRuleName  string         `json:"vm_rule_name" gorm:"type:varchar(255)"`
+	VMNamespace string         `json:"vm_namespace" gorm:"type:varchar(120)"`
 	CreatedAt   time.Time      `json:"created_at"`
 	UpdatedAt   time.Time      `json:"updated_at"`
 	DeletedAt   gorm.DeletedAt `json:"-" gorm:"index"`
@@ -44,8 +46,8 @@ type AlertEvent struct {
 	TenantID  uuid.UUID  `json:"tenant_id" gorm:"type:uuid;not null;index"`
 	RuleID    uuid.UUID  `json:"rule_id" gorm:"type:uuid;index"`
 	RuleName  string     `json:"rule_name" gorm:"type:varchar(255)"`
-	Level     string     `json:"level" gorm:"type:varchar(20)"`           // critical, warning, info
-	Status    string     `json:"status" gorm:"type:varchar(20)"`          // firing, resolved, acknowledged
+	Level     string     `json:"level" gorm:"type:varchar(20)"`  // critical, warning, info
+	Status    string     `json:"status" gorm:"type:varchar(20)"` // firing, resolved, acknowledged
 	StartTime time.Time  `json:"start_time"`
 	EndTime   *time.Time `json:"end_time"`
 	Details   string     `json:"details" gorm:"type:jsonb"`

@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"ops-system/backend/internal/model"
+	"ops-system/backend/internal/vm"
 )
 
 // CreatePrometheusDatasource 为租户注册 Prometheus 兼容数据源。
@@ -13,6 +14,11 @@ func (c *Client) CreatePrometheusDatasource(ctx context.Context, t *model.Tenant
 		return nil
 	}
 	url := strings.TrimSpace(c.cfg.PrometheusDatasourceURL)
+	if tenantURL := strings.TrimSpace(t.VMSelectURL); tenantURL != "" {
+		url = tenantURL
+	} else if url != "" && !strings.Contains(url, "/select/") {
+		url = vm.SelectURL(url, t.VMUserID)
+	}
 	if url == "" {
 		return nil
 	}
@@ -26,7 +32,9 @@ func (c *Client) CreatePrometheusDatasource(ctx context.Context, t *model.Tenant
 			"timeout": 10000,
 		},
 		"auth": map[string]any{
-			"basic_auth": false,
+			"basic_auth": t.VMUserID != "" && t.VMUserKey != "",
+			"username":   t.VMUserID,
+			"password":   t.VMUserKey,
 		},
 	}
 	return c.doJSON(ctx, "POST", c.prefix+"/datasource", body, nil)

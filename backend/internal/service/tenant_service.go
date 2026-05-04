@@ -56,6 +56,8 @@ type TenantService struct {
 	tenant          *repository.TenantRepository
 	inst            *repository.InstanceRepository
 	vmSync          *vm.SyncService
+	vmQuery         *vm.QueryClient
+	provisioner     *TenantProvisioner
 	grafanaResolver func(ctx context.Context, instanceID *uuid.UUID) (*grafana.Client, error)
 	orch            *OrchestratorService
 	log             *zap.Logger
@@ -66,13 +68,15 @@ func NewTenantService(
 	tenant *repository.TenantRepository,
 	inst *repository.InstanceRepository,
 	vmSync *vm.SyncService,
+	vmQuery *vm.QueryClient,
+	provisioner *TenantProvisioner,
 	grafanaResolver func(ctx context.Context, instanceID *uuid.UUID) (*grafana.Client, error),
 	orch *OrchestratorService,
 	log *zap.Logger,
 ) *TenantService {
 	return &TenantService{
 		dept: dept, tenant: tenant, inst: inst,
-		vmSync: vmSync, grafanaResolver: grafanaResolver, orch: orch, log: log,
+		vmSync: vmSync, vmQuery: vmQuery, provisioner: provisioner, grafanaResolver: grafanaResolver, orch: orch, log: log,
 	}
 }
 
@@ -142,31 +146,44 @@ func (s *TenantService) Create(ctx context.Context, req *CreateTenantRequest) (*
 	t := &model.Tenant{
 		TenantName:        strings.TrimSpace(req.TenantName),
 		DeptID:            req.DeptID,
+		Slug:              strings.ToLower(strings.ReplaceAll(strings.TrimSpace(req.TenantName), " ", "-")),
 		VMUserID:          vmuserID,
 		VMUserKey:         vmKey,
 		TemplateType:      req.TemplateType,
 		QuotaConfig:       quotaCfg,
+		IsolationLevel:    isolationLevelForTemplate(req.TemplateType),
 		GrafanaInstanceID: req.GrafanaInstanceID,
-		Status:            "provisioning",
+		Status:            "creating",
 	}
 	if err := s.tenant.Create(ctx, t); err != nil {
 		return nil, err
 	}
 
+	if s.provisioner != nil {
+		if err := s.provisioner.ProvisionCreate(ctx, t); err != nil {
+			s.markStatus(ctx, t, "failed")
+			return nil, ErrTenantProvisionFailed
+		}
+		if err := s.tenant.Update(ctx, t); err != nil {
+			s.markStatus(ctx, t, "failed")
+			return nil, err
+		}
+	}
+
 	if s.vmSync != nil {
 		if err := s.vmSync.OnTenantCreated(ctx, t); err != nil {
-			s.markStatus(ctx, t, "provision_failed")
+			s.markStatus(ctx, t, "failed")
 			return nil, ErrTenantProvisionFailed
 		}
 	}
 	gClient := s.resolveGrafana(ctx, t.GrafanaInstanceID)
 	if gClient != nil && gClient.Enabled() {
 		if err := gClient.SyncTenantOnCreate(ctx, t); err != nil {
-			s.markStatus(ctx, t, "provision_failed")
+			s.markStatus(ctx, t, "degraded")
 			return nil, ErrTenantProvisionFailed
 		}
 		if err := s.tenant.Update(ctx, t); err != nil {
-			s.markStatus(ctx, t, "provision_failed")
+			s.markStatus(ctx, t, "degraded")
 			return nil, err
 		}
 	}
@@ -175,7 +192,7 @@ func (s *TenantService) Create(ctx context.Context, req *CreateTenantRequest) (*
 			if s.log != nil {
 				s.log.Warn("orchestrator_deploy_failed", zap.Error(err), zap.String("tenant_id", t.ID.String()))
 			}
-			s.markStatus(ctx, t, "provision_failed")
+			s.markStatus(ctx, t, "degraded")
 			return nil, ErrTenantProvisionFailed
 		}
 	}
@@ -184,6 +201,15 @@ func (s *TenantService) Create(ctx context.Context, req *CreateTenantRequest) (*
 		return nil, err
 	}
 	return t, nil
+}
+
+func isolationLevelForTemplate(templateType string) string {
+	switch templateType {
+	case "dedicated_single", "dedicated_cluster":
+		return "dedicated"
+	default:
+		return "shared"
+	}
 }
 
 func allowedTemplateType(s string) bool {
@@ -302,6 +328,12 @@ func (s *TenantService) Delete(ctx context.Context, id uuid.UUID) error {
 	if err := s.tenant.Update(ctx, t); err != nil {
 		return err
 	}
+	if s.provisioner != nil {
+		if err := s.provisioner.ProvisionDelete(ctx, t); err != nil {
+			s.markStatus(ctx, t, "failed")
+			return ErrTenantDeprovisionFailed
+		}
+	}
 	gClient := s.resolveGrafana(ctx, t.GrafanaInstanceID)
 	if gClient != nil {
 		if err := gClient.SyncTenantOnDelete(ctx, t); err != nil {
@@ -353,7 +385,14 @@ func (s *TenantService) GetMetrics(ctx context.Context, id uuid.UUID) (*TenantMe
 	if t == nil {
 		return nil, ErrTenantNotFound
 	}
+	if s.vmQuery == nil || !s.vmQuery.Enabled() {
+		return &TenantMetrics{Note: "victoriametrics query client is not configured"}, nil
+	}
+	series, _ := s.vmQuery.Scalar(ctx, t, `count({__name__!=""})`)
+	ingest, _ := s.vmQuery.Scalar(ctx, t, `sum(rate(vm_rows_inserted_total[5m]))`)
 	return &TenantMetrics{
-		Note: "placeholder; connect VictoriaMetrics / cluster metrics in later phase",
+		SeriesCount: int64(series),
+		IngestQPS:   ingest,
+		Note:        "queried from tenant-scoped VictoriaMetrics endpoint",
 	}, nil
 }

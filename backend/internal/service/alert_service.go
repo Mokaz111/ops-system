@@ -8,6 +8,7 @@ import (
 	"ops-system/backend/internal/model"
 	"ops-system/backend/internal/n9e"
 	"ops-system/backend/internal/repository"
+	"ops-system/backend/internal/vm"
 
 	"github.com/google/uuid"
 	"go.uber.org/zap"
@@ -62,6 +63,7 @@ type AlertService struct {
 	ruleRepo   *repository.AlertRuleRepository
 	tenantRepo *repository.TenantRepository
 	n9e        *n9e.Client
+	vmRules    *vm.VMOperatorClient
 	log        *zap.Logger
 }
 
@@ -69,9 +71,10 @@ func NewAlertService(
 	ruleRepo *repository.AlertRuleRepository,
 	tenantRepo *repository.TenantRepository,
 	n9eClient *n9e.Client,
+	vmRules *vm.VMOperatorClient,
 	log *zap.Logger,
 ) *AlertService {
-	return &AlertService{ruleRepo: ruleRepo, tenantRepo: tenantRepo, n9e: n9eClient, log: log}
+	return &AlertService{ruleRepo: ruleRepo, tenantRepo: tenantRepo, n9e: n9eClient, vmRules: vmRules, log: log}
 }
 
 // CreateRule 创建告警规则。
@@ -110,6 +113,10 @@ func (s *AlertService) CreateRule(ctx context.Context, req *CreateAlertRuleReque
 	}
 	if err := s.ruleRepo.Create(ctx, rule); err != nil {
 		return nil, err
+	}
+
+	if err := s.applyVMRule(ctx, t, rule); err != nil {
+		s.log.Warn("vmrule_apply_failed", zap.Error(err), zap.String("rule_id", rule.ID.String()))
 	}
 
 	if s.n9e != nil && s.n9e.Enabled() {
@@ -201,6 +208,12 @@ func (s *AlertService) UpdateRule(ctx context.Context, id uuid.UUID, req *Update
 		return nil, err
 	}
 
+	if t, err := s.tenantRepo.GetByID(ctx, rule.TenantID); err == nil && t != nil {
+		if err := s.applyVMRule(ctx, t, rule); err != nil {
+			s.log.Warn("vmrule_update_failed", zap.Error(err), zap.String("rule_id", rule.ID.String()))
+		}
+	}
+
 	if s.n9e != nil && s.n9e.Enabled() && rule.N9ERuleID > 0 {
 		if err := s.n9e.UpdateAlertRule(ctx, rule.N9ERuleID, s.buildN9EPayload(rule)); err != nil {
 			s.log.Warn("n9e_update_alert_rule_failed", zap.Error(err), zap.String("rule_id", rule.ID.String()))
@@ -208,6 +221,36 @@ func (s *AlertService) UpdateRule(ctx context.Context, id uuid.UUID, req *Update
 	}
 
 	return rule, nil
+}
+
+func (s *AlertService) applyVMRule(ctx context.Context, t *model.Tenant, rule *model.AlertRule) error {
+	if s == nil || s.vmRules == nil || t == nil || rule == nil || rule.RuleType != "metrics" {
+		return nil
+	}
+	ns := strings.TrimSpace(t.VMNamespace)
+	if ns == "" {
+		ns = "ops-tenant-" + strings.ToLower(strings.ReplaceAll(t.VMUserID, "_", "-"))
+	}
+	name := strings.ToLower(strings.ReplaceAll(rule.RuleName, " ", "-"))
+	if name == "" {
+		name = "rule-" + rule.ID.String()
+	}
+	rule.VMNamespace = ns
+	rule.VMRuleName = name
+	err := s.vmRules.ApplyAlertRule(ctx, vm.AlertRuleSpec{
+		Name:        name,
+		Namespace:   ns,
+		TenantID:    t.ID.String(),
+		Expr:        rule.Query,
+		For:         "1m",
+		Severity:    rule.Level,
+		Annotations: rule.Annotations,
+		Enabled:     rule.Enabled,
+	})
+	if err != nil {
+		return err
+	}
+	return s.ruleRepo.Update(ctx, rule)
 }
 
 // DeleteRule 删除告警规则。

@@ -85,10 +85,25 @@ func (h *InstanceHandler) List(c *gin.Context) {
 			return
 		}
 		if u.TenantID == nil {
-			response.Error(c, http.StatusForbidden, http.StatusForbidden, response.ErrCodeForbidden, "forbidden")
-			return
+			if s := c.Query("tenant_id"); s != "" {
+				id, err := uuid.Parse(s)
+				if err != nil {
+					response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid tenant_id")
+					return
+				}
+				allowed, err := h.userSvc.CanAccessTenant(c.Request.Context(), u.ID, id, "read")
+				if err != nil || !allowed {
+					response.Error(c, http.StatusForbidden, http.StatusForbidden, response.ErrCodeForbidden, "forbidden")
+					return
+				}
+				tenantID = &id
+			} else {
+				response.Error(c, http.StatusForbidden, http.StatusForbidden, response.ErrCodeForbidden, "forbidden")
+				return
+			}
+		} else {
+			tenantID = u.TenantID
 		}
-		tenantID = u.TenantID
 	} else if s := c.Query("tenant_id"); s != "" {
 		id, err := uuid.Parse(s)
 		if err != nil {
@@ -153,15 +168,8 @@ func (h *InstanceHandler) Get(c *gin.Context) {
 		h.handleErr(c, err)
 		return
 	}
-	if !isAdmin(c) {
-		u, ok := currentUser(c, h.userSvc)
-		if !ok {
-			return
-		}
-		if u.TenantID == nil || *u.TenantID != inst.TenantID {
-			response.Error(c, http.StatusForbidden, http.StatusForbidden, response.ErrCodeForbidden, "forbidden")
-			return
-		}
+	if !assertTenantAccess(c, h.userSvc, inst.TenantID) {
+		return
 	}
 	response.JSON(c, toInstanceResp(inst))
 }
@@ -316,20 +324,13 @@ func (h *InstanceHandler) Metrics(c *gin.Context) {
 		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid id")
 		return
 	}
-	if !isAdmin(c) {
-		u, ok := currentUser(c, h.userSvc)
-		if !ok {
-			return
-		}
-		inst, err := h.svc.Get(c.Request.Context(), id)
-		if err != nil {
-			h.handleErr(c, err)
-			return
-		}
-		if u.TenantID == nil || *u.TenantID != inst.TenantID {
-			response.Error(c, http.StatusForbidden, http.StatusForbidden, response.ErrCodeForbidden, "forbidden")
-			return
-		}
+	inst, err := h.svc.Get(c.Request.Context(), id)
+	if err != nil {
+		h.handleErr(c, err)
+		return
+	}
+	if !assertTenantAccess(c, h.userSvc, inst.TenantID) {
+		return
 	}
 
 	m, err := h.svc.GetMetrics(c.Request.Context(), id)

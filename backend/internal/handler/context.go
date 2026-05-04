@@ -89,8 +89,21 @@ func resolveTenantScope(c *gin.Context, userSvc *service.UserService) (*uuid.UUI
 		return nil, false
 	}
 	if u.TenantID == nil {
-		response.Error(c, http.StatusForbidden, http.StatusForbidden, response.ErrCodeForbidden, "forbidden")
-		return nil, false
+		if raw == "" {
+			response.Error(c, http.StatusForbidden, http.StatusForbidden, response.ErrCodeForbidden, "forbidden")
+			return nil, false
+		}
+		id, err := uuid.Parse(raw)
+		if err != nil {
+			response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid tenant_id")
+			return nil, false
+		}
+		allowed, err := userSvc.CanAccessTenant(c.Request.Context(), u.ID, id, "read")
+		if err != nil || !allowed {
+			response.Error(c, http.StatusForbidden, http.StatusForbidden, response.ErrCodeForbidden, "forbidden")
+			return nil, false
+		}
+		return &id, true
 	}
 	if raw != "" {
 		id, err := uuid.Parse(raw)
@@ -116,8 +129,11 @@ func assertTenantAccess(c *gin.Context, userSvc *service.UserService, ownerTenan
 		return false
 	}
 	if u.TenantID == nil || *u.TenantID != ownerTenant {
-		response.Error(c, http.StatusForbidden, http.StatusForbidden, response.ErrCodeForbidden, "forbidden")
-		return false
+		allowed, err := userSvc.CanAccessTenant(c.Request.Context(), u.ID, ownerTenant, "read")
+		if err != nil || !allowed {
+			response.Error(c, http.StatusForbidden, http.StatusForbidden, response.ErrCodeForbidden, "forbidden")
+			return false
+		}
 	}
 	return true
 }

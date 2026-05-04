@@ -46,11 +46,17 @@ type UpdateUserRequest struct {
 
 // UserService 用户业务。
 type UserService struct {
-	user *repository.UserRepository
+	user    *repository.UserRepository
+	members *repository.TenantMemberRepository
+	authz   *AuthzService
 }
 
-func NewUserService(user *repository.UserRepository) *UserService {
-	return &UserService{user: user}
+func NewUserService(user *repository.UserRepository, members ...*repository.TenantMemberRepository) *UserService {
+	var memberRepo *repository.TenantMemberRepository
+	if len(members) > 0 {
+		memberRepo = members[0]
+	}
+	return &UserService{user: user, members: memberRepo, authz: NewAuthzService(user, memberRepo)}
 }
 
 // Bootstrap 首个管理员（仅当用户表为空）。
@@ -85,6 +91,14 @@ func (s *UserService) Bootstrap(ctx context.Context, req *CreateUserRequest) (*m
 			return nil, ErrBootstrapNotAllowed
 		}
 		return nil, err
+	}
+	if u.TenantID != nil && s.members != nil {
+		_ = s.members.Upsert(ctx, &model.TenantMember{
+			TenantID: *u.TenantID,
+			UserID:   u.ID,
+			Role:     model.TenantRoleAdmin,
+			Status:   "active",
+		})
 	}
 	// 首任管理员创建是高敏操作，必须在日志中留痕，便于事后审计与
 	// 发现异常的"二次 bootstrap"尝试。这里只记元数据，不落密码/hash。
@@ -137,7 +151,26 @@ func (s *UserService) create(ctx context.Context, req *CreateUserRequest) (*mode
 	if err := s.user.Create(ctx, u); err != nil {
 		return nil, err
 	}
+	if u.TenantID != nil && s.members != nil {
+		_ = s.members.Upsert(ctx, &model.TenantMember{
+			TenantID: *u.TenantID,
+			UserID:   u.ID,
+			Role:     defaultTenantRole(req.Role),
+			Status:   "active",
+		})
+	}
 	return u, nil
+}
+
+func defaultTenantRole(role string) string {
+	switch role {
+	case "admin", model.PlatformRoleAdmin:
+		return model.TenantRoleAdmin
+	case model.TenantRoleAdmin, model.TenantRoleEditor, model.TenantRoleViewer, model.TenantRoleAlert:
+		return role
+	default:
+		return model.TenantRoleViewer
+	}
 }
 
 // Get 按 ID。
@@ -192,6 +225,18 @@ func (s *UserService) Update(ctx context.Context, id uuid.UUID, req *UpdateUserR
 	if err := s.user.Update(ctx, u); err != nil {
 		return nil, err
 	}
+	if u.TenantID != nil && s.members != nil {
+		role := u.Role
+		if req.Role != nil && *req.Role != "" {
+			role = *req.Role
+		}
+		_ = s.members.Upsert(ctx, &model.TenantMember{
+			TenantID: *u.TenantID,
+			UserID:   u.ID,
+			Role:     defaultTenantRole(role),
+			Status:   u.Status,
+		})
+	}
 	return u, nil
 }
 
@@ -205,6 +250,13 @@ func (s *UserService) Delete(ctx context.Context, id uuid.UUID) error {
 		return ErrUserNotFound
 	}
 	return s.user.Delete(ctx, id)
+}
+
+func (s *UserService) CanAccessTenant(ctx context.Context, userID uuid.UUID, tenantID uuid.UUID, action string) (bool, error) {
+	if s == nil || s.authz == nil {
+		return false, nil
+	}
+	return s.authz.CanAccessTenant(ctx, userID, tenantID, action)
 }
 
 // List 分页筛选。

@@ -83,7 +83,32 @@ func (h *TenantHandler) List(c *gin.Context) {
 			return
 		}
 		if u.TenantID == nil {
-			response.Error(c, http.StatusForbidden, http.StatusForbidden, response.ErrCodeForbidden, "forbidden")
+			raw := c.Query("tenant_id")
+			if raw == "" {
+				response.Error(c, http.StatusForbidden, http.StatusForbidden, response.ErrCodeForbidden, "forbidden")
+				return
+			}
+			id, err := uuid.Parse(raw)
+			if err != nil {
+				response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid tenant_id")
+				return
+			}
+			allowed, err := h.userSvc.CanAccessTenant(c.Request.Context(), u.ID, id, "read")
+			if err != nil || !allowed {
+				response.Error(c, http.StatusForbidden, http.StatusForbidden, response.ErrCodeForbidden, "forbidden")
+				return
+			}
+			t, err := h.svc.Get(c.Request.Context(), id)
+			if err != nil {
+				h.handleErr(c, err)
+				return
+			}
+			response.JSON(c, gin.H{
+				"items":     []tenantResp{h.toTenantResp(t, false)},
+				"total":     1,
+				"page":      page,
+				"page_size": ps,
+			})
 			return
 		}
 		t, err := h.svc.Get(c.Request.Context(), *u.TenantID)
@@ -159,11 +184,13 @@ func (h *TenantHandler) Get(c *gin.Context) {
 		return
 	}
 	if !isAdmin(c) {
-		u, ok := currentUser(c, h.userSvc)
+		caller, ok := userIDFromContext(c)
 		if !ok {
+			response.Error(c, http.StatusUnauthorized, http.StatusUnauthorized, response.ErrCodeUnauthorized, "unauthorized")
 			return
 		}
-		if u.TenantID == nil || *u.TenantID != id {
+		allowed, err := h.userSvc.CanAccessTenant(c.Request.Context(), caller, id, "read")
+		if err != nil || !allowed {
 			response.Error(c, http.StatusForbidden, http.StatusForbidden, response.ErrCodeForbidden, "forbidden")
 			return
 		}
@@ -233,11 +260,13 @@ func (h *TenantHandler) Metrics(c *gin.Context) {
 		return
 	}
 	if !isAdmin(c) {
-		u, ok := currentUser(c, h.userSvc)
+		caller, ok := userIDFromContext(c)
 		if !ok {
+			response.Error(c, http.StatusUnauthorized, http.StatusUnauthorized, response.ErrCodeUnauthorized, "unauthorized")
 			return
 		}
-		if u.TenantID == nil || *u.TenantID != id {
+		allowed, err := h.userSvc.CanAccessTenant(c.Request.Context(), caller, id, "read")
+		if err != nil || !allowed {
 			response.Error(c, http.StatusForbidden, http.StatusForbidden, response.ErrCodeForbidden, "forbidden")
 			return
 		}

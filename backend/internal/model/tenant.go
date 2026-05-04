@@ -16,10 +16,15 @@ type Tenant struct {
 	ID                uuid.UUID      `json:"id" gorm:"type:uuid;primaryKey"`
 	TenantName        string         `json:"tenant_name" gorm:"type:varchar(255);not null"`
 	DeptID            uuid.UUID      `json:"dept_id" gorm:"type:uuid;not null;uniqueIndex:uk_tenant_dept_active,where:deleted_at IS NULL"`
+	Slug              string         `json:"slug" gorm:"type:varchar(120);index"`
 	VMUserID          string         `json:"vmuser_id" gorm:"type:varchar(100);uniqueIndex:uk_tenant_vmuser_active,where:deleted_at IS NULL"`
 	VMUserKey         string         `json:"vmuser_key" gorm:"type:varchar(255)"`
 	TemplateType      string         `json:"template_type" gorm:"type:varchar(50)"` // shared/dedicated_single/dedicated_cluster
 	QuotaConfig       string         `json:"quota_config" gorm:"type:jsonb"`
+	IsolationLevel    string         `json:"isolation_level" gorm:"type:varchar(30);default:shared"` // shared, namespace, dedicated
+	VMNamespace       string         `json:"vm_namespace" gorm:"type:varchar(120)"`
+	VMSelectURL       string         `json:"vm_select_url" gorm:"type:text"`
+	VMInsertURL       string         `json:"vm_insert_url" gorm:"type:text"`
 	Status            string         `json:"status" gorm:"type:varchar(20);default:creating"`
 	N9ETeamID         int64          `json:"n9e_team_id"`
 	GrafanaOrgID      int64          `json:"grafana_org_id"`

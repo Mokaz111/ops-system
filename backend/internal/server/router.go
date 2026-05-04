@@ -68,6 +68,11 @@ func NewRouter(cfg *config.Config, log *zap.Logger, db *gorm.DB) *gin.Engine {
 			deptRepo := repository.NewDepartmentRepository(db)
 			tenantRepo := repository.NewTenantRepository(db)
 			userRepo := repository.NewUserRepository(db)
+			tenantMemberRepo := repository.NewTenantMemberRepository(db)
+			vmRouteRepo := repository.NewVMRouteRepository(db)
+			datasourceRepo := repository.NewDatasourceRepository(db)
+			provisioningTaskRepo := repository.NewProvisioningTaskRepository(db)
+			auditLogRepo := repository.NewAuditLogRepository(db)
 			instanceRepo := repository.NewInstanceRepository(db)
 			alertRepo := repository.NewAlertRuleRepository(db)
 			alertEventRepo := repository.NewAlertEventRepository(db)
@@ -81,7 +86,7 @@ func NewRouter(cfg *config.Config, log *zap.Logger, db *gorm.DB) *gin.Engine {
 			grafanaInstanceSvc := service.NewGrafanaInstanceService(grafanaInstanceRepo)
 			clusterRepo := repository.NewClusterRepository(db)
 
-			userSvc := service.NewUserService(userRepo)
+			userSvc := service.NewUserService(userRepo, tenantMemberRepo)
 			authSvc := service.NewAuthService(userRepo, cfg.JWT.Secret, cfg.JWT.ExpireHours)
 			authH := handler.NewAuthHandler(authSvc, userSvc, cfg.JWT.Secret)
 			userH := handler.NewUserHandler(userSvc, cfg.JWT.Secret)
@@ -90,6 +95,8 @@ func NewRouter(cfg *config.Config, log *zap.Logger, db *gorm.DB) *gin.Engine {
 			deptH := handler.NewDepartmentHandler(deptSvc)
 
 			vmSync := vm.NewSyncService(&cfg.VM, log)
+			vmQuery := vm.NewQueryClient(&cfg.VM)
+			vmRoutes := vm.NewRouteBuilder(&cfg.VM)
 			grafanaClient := grafana.NewClient(&cfg.Grafana, log)
 
 			// Grafana resolver：按 Grafana 实例 id 动态构造 client；供 TenantService 和 integration applier 共用。
@@ -121,10 +128,6 @@ func NewRouter(cfg *config.Config, log *zap.Logger, db *gorm.DB) *gin.Engine {
 			if err != nil {
 				log.Fatal("orchestrator_init", zap.Error(err))
 			}
-			tenantSvc := service.NewTenantService(deptRepo, tenantRepo, instanceRepo, vmSync, grafanaResolver, orch, log)
-			tenantH := handler.NewTenantHandler(tenantSvc, userSvc)
-
-			instanceSvc := service.NewInstanceService(instanceRepo, tenantRepo, integrationInstallRepo, orch, log)
 			var (
 				helmClient *helm.Client
 				k8sClient  *k8s.Client
@@ -143,6 +146,20 @@ func NewRouter(cfg *config.Config, log *zap.Logger, db *gorm.DB) *gin.Engine {
 					k8sClient = kc
 				}
 			}
+			vmOperator := vm.NewVMOperatorClient(k8sClient)
+			tenantProvisioner := service.NewTenantProvisioner(
+				provisioningTaskRepo,
+				vmRouteRepo,
+				datasourceRepo,
+				auditLogRepo,
+				vmRoutes,
+				vmOperator,
+				log,
+			)
+			tenantSvc := service.NewTenantService(deptRepo, tenantRepo, instanceRepo, vmSync, vmQuery, tenantProvisioner, grafanaResolver, orch, log)
+			tenantH := handler.NewTenantHandler(tenantSvc, userSvc)
+
+			instanceSvc := service.NewInstanceService(instanceRepo, tenantRepo, integrationInstallRepo, orch, vmQuery, log)
 			scaleEventRepo := repository.NewScaleEventRepository(db)
 			scaleSvc := service.NewScaleService(helmClient, k8sClient, instanceRepo, scaleEventRepo, log)
 			instanceH := handler.NewInstanceHandler(instanceSvc, scaleSvc, userSvc, grafanaInstanceSvc)
@@ -165,7 +182,7 @@ func NewRouter(cfg *config.Config, log *zap.Logger, db *gorm.DB) *gin.Engine {
 			grafanaH := handler.NewGrafanaHandler(grafanaSvc, log)
 			n9eClient := n9e.NewClient(&cfg.N9E, log)
 			notifySvc := notify.NewNotifyService(log)
-			alertSvc := service.NewAlertService(alertRepo, tenantRepo, n9eClient, log)
+			alertSvc := service.NewAlertService(alertRepo, tenantRepo, n9eClient, vmOperator, log)
 			alertEventSvc := service.NewAlertEventService(alertEventRepo, alertRepo, channelRepo, n9eClient, notifySvc, log)
 			channelSvc := service.NewNotificationChannelService(channelRepo, tenantRepo, log)
 			alertH := handler.NewAlertHandler(alertSvc, alertEventSvc, channelSvc, userSvc)
