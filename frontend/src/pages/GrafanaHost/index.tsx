@@ -33,7 +33,7 @@ import StatusChip from '../../components/common/StatusChip';
 import ConfirmDialog from '../../components/common/ConfirmDialog';
 import EmptyState from '../../components/common/EmptyState';
 import LoadingScreen from '../../components/common/LoadingScreen';
-import { grafanaHostAPI, type GrafanaHost } from '../../api/grafanaHost';
+import { grafanaInstanceAPI, type GrafanaInstance } from '../../api/grafanaInstance';
 import { tenantAPI } from '../../api/tenant';
 import { extractApiError } from '../../api';
 import type { Tenant } from '../../types/api';
@@ -62,11 +62,11 @@ export default function GrafanaHostPage() {
   const { user } = useAuthStore();
   const isAdmin = user?.role === 'admin';
 
-  const [hosts, setHosts] = useState<GrafanaHost[]>([]);
+  const [hosts, setHosts] = useState<GrafanaInstance[]>([]);
   const [tenants, setTenants] = useState<Tenant[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [deleteDialog, setDeleteDialog] = useState<{ open: boolean; host?: GrafanaHost }>({ open: false });
+  const [deleteDialog, setDeleteDialog] = useState<{ open: boolean; host?: GrafanaInstance }>({ open: false });
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<FormState>(defaultForm);
   const [saving, setSaving] = useState(false);
@@ -75,7 +75,7 @@ export default function GrafanaHostPage() {
     setLoading(true);
     try {
       const [hostsRes, tenantsRes] = await Promise.all([
-        grafanaHostAPI.list({ page: 1, page_size: 100 }),
+        grafanaInstanceAPI.list({ page: 1, page_size: 100 }),
         tenantAPI.list({ page: 1, page_size: 100 }).catch(() => ({ data: { data: { items: [] } } })),
       ]);
       setHosts(hostsRes.data.data?.items || []);
@@ -102,7 +102,7 @@ export default function GrafanaHostPage() {
     setDialogOpen(true);
   };
 
-  const openEdit = (h: GrafanaHost) => {
+  const openEdit = (h: GrafanaInstance) => {
     setEditingId(h.id);
     setForm({
       name: h.name,
@@ -127,7 +127,7 @@ export default function GrafanaHostPage() {
     setSaving(true);
     try {
       if (editingId) {
-        await grafanaHostAPI.update(editingId, {
+        await grafanaInstanceAPI.update(editingId, {
           name: form.name,
           url: form.url,
           admin_user: form.admin_user,
@@ -135,7 +135,7 @@ export default function GrafanaHostPage() {
         });
         enqueueSnackbar('纳管实例更新成功', { variant: 'success' });
       } else {
-        await grafanaHostAPI.create({
+        await grafanaInstanceAPI.create({
           name: form.name,
           scope: form.scope,
           tenant_id: form.scope === 'tenant' ? form.tenant_id : undefined,
@@ -157,7 +157,7 @@ export default function GrafanaHostPage() {
   const handleDelete = async () => {
     if (!deleteDialog.host) return;
     try {
-      await grafanaHostAPI.delete(deleteDialog.host.id);
+      await grafanaInstanceAPI.delete(deleteDialog.host.id);
       enqueueSnackbar('纳管实例删除成功', { variant: 'success' });
       setDeleteDialog({ open: false });
       fetch();

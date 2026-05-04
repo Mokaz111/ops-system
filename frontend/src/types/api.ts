@@ -65,7 +65,7 @@ export interface Tenant {
   status: string;
   n9e_team_id: number;
   grafana_org_id: number;
-  grafana_host_id?: string | null;
+  grafana_instance_id?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -82,7 +82,7 @@ export interface Instance {
   namespace: string;
   spec: string;
   status: 'creating' | 'running' | 'stopped' | 'error' | 'failed' | 'scaling' | 'deleting';
-  grafana_host_id?: string | null;
+  grafana_instance_id?: string | null;
   url: string;
   created_at: string;
   updated_at: string;
@@ -110,7 +110,7 @@ export interface CreateInstanceRequest {
   instance_type: string;
   template_type: string;
   spec: string;
-  grafana_host_id?: string;
+  grafana_instance_id?: string;
 }
 
 export interface ScaleInstanceRequest {

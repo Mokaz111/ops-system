@@ -2,7 +2,7 @@ import api from './index';
 import type { AxiosRequestConfig } from 'axios';
 import type { ApiResponse, PaginatedResponse, PaginationParams } from '../types/api';
 
-export interface GrafanaHost {
+export interface GrafanaInstance {
   id: string;
   name: string;
   scope: 'platform' | 'tenant';
@@ -14,12 +14,12 @@ export interface GrafanaHost {
   updated_at: string;
 }
 
-export const grafanaHostAPI = {
+export const grafanaInstanceAPI = {
   list: (params?: PaginationParams & { scope?: string; tenant_id?: string }, config?: AxiosRequestConfig) =>
-    api.get<ApiResponse<PaginatedResponse<GrafanaHost>>>('/grafana/instances', { ...config, params }),
+    api.get<ApiResponse<PaginatedResponse<GrafanaInstance>>>('/grafana/instances', { ...config, params }),
 
   get: (id: string, config?: AxiosRequestConfig) =>
-    api.get<ApiResponse<GrafanaHost>>(`/grafana/instances/${id}`, config),
+    api.get<ApiResponse<GrafanaInstance>>(`/grafana/instances/${id}`, config),
 
   create: (data: {
     name: string;
@@ -29,10 +29,10 @@ export const grafanaHostAPI = {
     admin_user?: string;
     admin_password?: string;
     admin_token?: string;
-  }) => api.post<ApiResponse<GrafanaHost>>('/grafana/instances', data),
+  }) => api.post<ApiResponse<GrafanaInstance>>('/grafana/instances', data),
 
-  update: (id: string, data: Partial<GrafanaHost> & { admin_password?: string; admin_token?: string }) =>
-    api.put<ApiResponse<GrafanaHost>>(`/grafana/instances/${id}`, data),
+  update: (id: string, data: Partial<GrafanaInstance> & { admin_password?: string; admin_token?: string }) =>
+    api.put<ApiResponse<GrafanaInstance>>(`/grafana/instances/${id}`, data),
 
   delete: (id: string) =>
     api.delete<ApiResponse<null>>(`/grafana/instances/${id}`),

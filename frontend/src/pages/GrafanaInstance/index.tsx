@@ -44,7 +44,7 @@ import LoadingScreen from '../../components/common/LoadingScreen';
 import FilterToolbar from '../../components/common/FilterToolbar';
 import DataTableCard from '../../components/common/DataTableCard';
 import { instanceAPI } from '../../api/instance';
-import { grafanaHostAPI, type GrafanaHost } from '../../api/grafanaHost';
+import { grafanaInstanceAPI, type GrafanaInstance } from '../../api/grafanaInstance';
 import { tenantAPI } from '../../api/tenant';
 import { extractApiError } from '../../api';
 import { ssoLoginToGrafana } from '../../api/grafanaSso';
@@ -93,25 +93,25 @@ export default function GrafanaInstancePage() {
   const [pageSize, setPageSize] = useState(10);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
-  const [grafanaHosts, setGrafanaHosts] = useState<GrafanaHost[]>([]);
+  const [grafanaHosts, setGrafanaHosts] = useState<GrafanaInstance[]>([]);
   const [metricsInstances, setMetricsInstances] = useState<Instance[]>([]);
 
   const [createOpen, setCreateOpen] = useState(false);
   const [editDialog, setEditDialog] = useState<{ open: boolean; instance?: Instance }>({ open: false });
-  const [editForm, setEditForm] = useState({ instance_name: '', grafana_host_id: '' });
+  const [editForm, setEditForm] = useState({ instance_name: '', grafana_instance_id: '' });
   const [rebuildDialog, setRebuildDialog] = useState<{ open: boolean; instance?: Instance }>({ open: false });
   const [deleteDialog, setDeleteDialog] = useState<{ open: boolean; instance?: Instance }>({ open: false });
-  const [createForm, setCreateForm] = useState({ tenant_id: '', instance_name: '', metrics_instance_id: '', grafana_host_id: '' });
+  const [createForm, setCreateForm] = useState({ tenant_id: '', instance_name: '', metrics_instance_id: '', grafana_instance_id: '' });
   const [saving, setSaving] = useState(false);
 
   // ---- Host state ----
-  const [hosts, setHosts] = useState<GrafanaHost[]>([]);
+  const [hosts, setHosts] = useState<GrafanaInstance[]>([]);
   const [tenants, setTenants] = useState<Tenant[]>([]);
   const [hostLoading, setHostLoading] = useState(true);
   const [hostDialogOpen, setHostDialogOpen] = useState(false);
   const [hostEditingId, setHostEditingId] = useState<string | null>(null);
   const [hostForm, setHostForm] = useState<HostFormState>(defaultHostForm);
-  const [hostDeleteDialog, setHostDeleteDialog] = useState<{ open: boolean; host?: GrafanaHost }>({ open: false });
+  const [hostDeleteDialog, setHostDeleteDialog] = useState<{ open: boolean; host?: GrafanaInstance }>({ open: false });
 
   // ---- Instance fetching ----
   const fetchInstances = useCallback(async () => {
@@ -137,7 +137,7 @@ export default function GrafanaInstancePage() {
 
   const fetchGrafanaHosts = useCallback(async () => {
     try {
-      const { data: res } = await grafanaHostAPI.list({ page: 1, page_size: 100 });
+      const { data: res } = await grafanaInstanceAPI.list({ page: 1, page_size: 100 });
       setGrafanaHosts(res.data?.items || []);
     } catch { /* optional */ }
   }, []);
@@ -180,7 +180,7 @@ export default function GrafanaInstancePage() {
         instance_type: 'visual',
         template_type: 'dedicated_single',
         spec,
-        grafana_host_id: createForm.grafana_host_id || undefined,
+        grafana_instance_id: createForm.grafana_instance_id || undefined,
       });
       enqueueSnackbar('Grafana 实例创建成功', { variant: 'success' });
       setCreateOpen(false);
@@ -198,7 +198,7 @@ export default function GrafanaInstancePage() {
     try {
       await instanceAPI.update(editDialog.instance.id, {
         instance_name: editForm.instance_name,
-        grafana_host_id: editForm.grafana_host_id || undefined,
+        grafana_instance_id: editForm.grafana_instance_id || undefined,
         spec: editDialog.instance.spec,
       });
       enqueueSnackbar('Grafana 实例更新成功', { variant: 'success' });
@@ -251,7 +251,7 @@ export default function GrafanaInstancePage() {
     setHostLoading(true);
     try {
       const [hostsRes, tenantsRes] = await Promise.all([
-        grafanaHostAPI.list({ page: 1, page_size: 100 }),
+        grafanaInstanceAPI.list({ page: 1, page_size: 100 }),
         tenantAPI.list({ page: 1, page_size: 100 }).catch(() => ({ data: { data: { items: [] } } })),
       ]);
       setHosts(hostsRes.data.data?.items || []);
@@ -274,7 +274,7 @@ export default function GrafanaInstancePage() {
     setHostDialogOpen(true);
   };
 
-  const openHostEdit = (h: GrafanaHost) => {
+  const openHostEdit = (h: GrafanaInstance) => {
     setHostEditingId(h.id);
     setHostForm({ name: h.name, scope: h.scope, tenant_id: h.tenant_id || '', url: h.url, admin_user: h.admin_user || 'admin', admin_password: '', admin_token: '' });
     setHostDialogOpen(true);
@@ -286,7 +286,7 @@ export default function GrafanaInstancePage() {
     setSaving(true);
     try {
       if (hostEditingId) {
-        await grafanaHostAPI.update(hostEditingId, {
+        await grafanaInstanceAPI.update(hostEditingId, {
           name: hostForm.name,
           url: hostForm.url,
           admin_user: hostForm.admin_user,
@@ -295,7 +295,7 @@ export default function GrafanaInstancePage() {
         });
         enqueueSnackbar('纳管实例更新成功', { variant: 'success' });
       } else {
-        await grafanaHostAPI.create({
+        await grafanaInstanceAPI.create({
           name: hostForm.name,
           scope: hostForm.scope,
           tenant_id: hostForm.scope === 'tenant' ? hostForm.tenant_id : undefined,
@@ -319,7 +319,7 @@ export default function GrafanaInstancePage() {
   const handleHostDelete = async () => {
     if (!hostDeleteDialog.host) return;
     try {
-      await grafanaHostAPI.delete(hostDeleteDialog.host.id);
+      await grafanaInstanceAPI.delete(hostDeleteDialog.host.id);
       enqueueSnackbar('纳管实例删除成功', { variant: 'success' });
       setHostDeleteDialog({ open: false });
       fetchHosts();
@@ -433,7 +433,7 @@ export default function GrafanaInstancePage() {
                               );
                             }}><LoginOutlinedIcon fontSize="small" /></IconButton></Tooltip>
                             <Tooltip title="编辑"><IconButton size="small" onClick={() => {
-                              setEditForm({ instance_name: inst.instance_name, grafana_host_id: inst.grafana_host_id || '' });
+                              setEditForm({ instance_name: inst.instance_name, grafana_instance_id: inst.grafana_instance_id || '' });
                               setEditDialog({ open: true, instance: inst });
                             }}><EditOutlinedIcon fontSize="small" /></IconButton></Tooltip>
                             <Tooltip title="重建">
@@ -459,7 +459,7 @@ export default function GrafanaInstancePage() {
                         <TableCell><StatusChip status={h.status || 'active'} /></TableCell>
                         <TableCell align="right">
                           <Tooltip title="登录"><IconButton size="small" color="primary" onClick={() => {
-                            ssoLoginToGrafana(grafanaHostAPI.login(h.id)).catch((err) =>
+                            ssoLoginToGrafana(grafanaInstanceAPI.login(h.id)).catch((err) =>
                               enqueueSnackbar(extractApiError(err, '获取登录信息失败'), { variant: 'error' })
                             );
                           }}><LoginOutlinedIcon fontSize="small" /></IconButton></Tooltip>
@@ -497,7 +497,7 @@ export default function GrafanaInstancePage() {
           </FormControl>
           <FormControl fullWidth size="small" sx={{ mb: 2.5 }}>
             <InputLabel>部署 Grafana 主机（可选）</InputLabel>
-            <Select value={createForm.grafana_host_id} label="部署 Grafana 主机（可选）" onChange={(e) => setCreateForm({ ...createForm, grafana_host_id: e.target.value })}>
+            <Select value={createForm.grafana_instance_id} label="部署 Grafana 主机（可选）" onChange={(e) => setCreateForm({ ...createForm, grafana_instance_id: e.target.value })}>
               <MenuItem value="">平台默认</MenuItem>
               {grafanaHosts.map((h) => (
                 <MenuItem key={h.id} value={h.id}>{h.name}<Chip size="small" label={h.scope === 'platform' ? '平台' : '租户'} variant="outlined" sx={{ ml: 1, height: 18, fontSize: '0.65rem' }} /></MenuItem>
@@ -518,7 +518,7 @@ export default function GrafanaInstancePage() {
           <TextField fullWidth label="实例名称" value={editForm.instance_name} onChange={(e) => setEditForm({ ...editForm, instance_name: e.target.value })} sx={{ mb: 2.5 }} required />
           <FormControl fullWidth size="small" sx={{ mb: 2.5 }}>
             <InputLabel>部署 Grafana 主机（可选）</InputLabel>
-            <Select value={editForm.grafana_host_id} label="部署 Grafana 主机（可选）" onChange={(e) => setEditForm({ ...editForm, grafana_host_id: e.target.value })}>
+            <Select value={editForm.grafana_instance_id} label="部署 Grafana 主机（可选）" onChange={(e) => setEditForm({ ...editForm, grafana_instance_id: e.target.value })}>
               <MenuItem value="">平台默认</MenuItem>
               {grafanaHosts.map((h) => <MenuItem key={h.id} value={h.id}>{h.name}<Chip size="small" label={h.scope === 'platform' ? '平台' : '租户'} variant="outlined" sx={{ ml: 1, height: 18, fontSize: '0.65rem' }} /></MenuItem>)}
             </Select>

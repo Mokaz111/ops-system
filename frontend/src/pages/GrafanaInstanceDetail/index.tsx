@@ -46,7 +46,7 @@ import DetailTabs from '../../components/common/DetailTabs';
 import ConfirmDialog from '../../components/common/ConfirmDialog';
 import { instanceAPI } from '../../api/instance';
 import { grafanaAPI } from '../../api/grafana';
-import { grafanaHostAPI, type GrafanaHost } from '../../api/grafanaHost';
+import { grafanaInstanceAPI, type GrafanaInstance } from '../../api/grafanaInstance';
 import { ssoLoginToGrafana } from '../../api/grafanaSso';
 import { extractApiError } from '../../api';
 import type { Instance, GrafanaDashboard, GrafanaDatasource, GrafanaOrg, GrafanaOrgUser } from '../../types/api';
@@ -62,10 +62,10 @@ export default function GrafanaInstanceDetailPage() {
   const [loading, setLoading] = useState(true);
   const [instance, setInstance] = useState<Instance | null>(null);
 
-  // ---- Grafana Host ----
-  const [grafanaHosts, setGrafanaHosts] = useState<GrafanaHost[]>([]);
+  // ---- Grafana Instance ----
+  const [grafanaHosts, setGrafanaHosts] = useState<GrafanaInstance[]>([]);
   const hostId = useMemo(() => {
-    if (instance?.grafana_host_id) return instance.grafana_host_id;
+    if (instance?.grafana_instance_id) return instance.grafana_instance_id;
     const platform = grafanaHosts.find((h) => h.scope === 'platform');
     return platform?.id || '';
   }, [instance, grafanaHosts]);
@@ -98,7 +98,7 @@ export default function GrafanaInstanceDetailPage() {
 
   // ---- Edit / Rebuild / Upgrade ----
   const [editOpen, setEditOpen] = useState(false);
-  const [editForm, setEditForm] = useState({ instance_name: '', grafana_host_id: '', cpu: '', memory: '', storage: '', retention: '' });
+  const [editForm, setEditForm] = useState({ instance_name: '', grafana_instance_id: '', cpu: '', memory: '', storage: '', retention: '' });
   const [rebuildDialog, setRebuildDialog] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -123,7 +123,7 @@ export default function GrafanaInstanceDetailPage() {
   useEffect(() => {
     (async () => {
       try {
-        const { data: res } = await grafanaHostAPI.list({ page: 1, page_size: 100 });
+        const { data: res } = await grafanaInstanceAPI.list({ page: 1, page_size: 100 });
         setGrafanaHosts(res.data?.items || []);
       } catch { /* optional */ }
     })();
@@ -205,7 +205,7 @@ export default function GrafanaInstanceDetailPage() {
       });
       await instanceAPI.update(instance.id, {
         instance_name: editForm.instance_name || undefined,
-        grafana_host_id: editForm.grafana_host_id || undefined,
+        grafana_instance_id: editForm.grafana_instance_id || undefined,
         spec: newSpec,
       });
       enqueueSnackbar('实例更新成功', { variant: 'success' });
@@ -355,8 +355,8 @@ export default function GrafanaInstanceDetailPage() {
     }
   };
 
-  const hostName = instance.grafana_host_id
-    ? (grafanaHosts.find((h) => h.id === instance.grafana_host_id)?.name || instance.grafana_host_id.slice(0, 8))
+  const hostName = instance.grafana_instance_id
+    ? (grafanaHosts.find((h) => h.id === instance.grafana_instance_id)?.name || instance.grafana_instance_id.slice(0, 8))
     : '平台默认';
 
   return (
@@ -403,7 +403,7 @@ export default function GrafanaInstanceDetailPage() {
                       onClick={() => {
                         setEditForm({
                           instance_name: instance.instance_name,
-                          grafana_host_id: instance.grafana_host_id || '',
+                          grafana_instance_id: instance.grafana_instance_id || '',
                           cpu: String(spec.cpu),
                           memory: String(spec.memory),
                           storage: String(spec.storage),
@@ -797,7 +797,7 @@ export default function GrafanaInstanceDetailPage() {
           <TextField fullWidth label="实例名称" value={editForm.instance_name} onChange={(e) => setEditForm({ ...editForm, instance_name: e.target.value })} sx={{ mb: 2.5 }} />
           <FormControl fullWidth size="small" sx={{ mb: 2.5 }}>
             <InputLabel>关联 Grafana 主机</InputLabel>
-            <Select value={editForm.grafana_host_id} label="关联 Grafana 主机" onChange={(e) => setEditForm({ ...editForm, grafana_host_id: e.target.value })}>
+            <Select value={editForm.grafana_instance_id} label="关联 Grafana 主机" onChange={(e) => setEditForm({ ...editForm, grafana_instance_id: e.target.value })}>
               <MenuItem value="">平台默认</MenuItem>
               {grafanaHosts.map((h) => <MenuItem key={h.id} value={h.id}>{h.name}</MenuItem>)}
             </Select>

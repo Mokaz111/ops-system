@@ -50,7 +50,7 @@ import {
   type IntegrationInstallation,
   type IntegrationInstallationRevision,
 } from '../../api/integration';
-import { grafanaHostAPI, type GrafanaHost } from '../../api/grafanaHost';
+import { grafanaInstanceAPI, type GrafanaInstance } from '../../api/grafanaInstance';
 import { extractApiError } from '../../api';
 import { isAbortError, makeAbortController } from '../../api/client';
 import type { Instance, InstanceMetrics } from '../../types/api';
@@ -196,7 +196,7 @@ function actionLabel(a?: string): string {
   }
 }
 
-function AppliedRefsTable({ refs, grafanaHosts }: { refs: AppliedRef[]; grafanaHosts: GrafanaHost[] }) {
+function AppliedRefsTable({ refs, grafanaHosts }: { refs: AppliedRef[]; grafanaHosts: GrafanaInstance[] }) {
   if (refs.length === 0) {
     return (
       <Alert severity="info" sx={{ mt: 1 }}>
@@ -204,7 +204,7 @@ function AppliedRefsTable({ refs, grafanaHosts }: { refs: AppliedRef[]; grafanaH
       </Alert>
     );
   }
-  const hostById: Record<string, GrafanaHost> = {};
+  const hostById: Record<string, GrafanaInstance> = {};
   for (const h of grafanaHosts) hostById[h.id] = h;
   return (
     <Table size="small" sx={{ mt: 1 }}>
@@ -223,7 +223,7 @@ function AppliedRefsTable({ refs, grafanaHosts }: { refs: AppliedRef[]; grafanaH
           let locLabel = r.namespace || '-';
           let openLink: string | null = null;
           if (r.target === 'grafana') {
-            const host = r.grafana_host_id ? hostById[r.grafana_host_id] : null;
+            const host = r.grafana_instance_id ? hostById[r.grafana_instance_id] : null;
             locLabel = host ? `${host.name}${r.grafana_org ? ` · org=${r.grafana_org}` : ''}` : `org=${r.grafana_org ?? '-'}`;
             if (host && r.uid) {
               openLink = `${host.url.replace(/\/$/, '')}/d/${r.uid}`;
@@ -276,7 +276,7 @@ function InstallationCard({
   grafanaHosts,
 }: {
   installation: IntegrationInstallation;
-  grafanaHosts: GrafanaHost[];
+  grafanaHosts: GrafanaInstance[];
 }) {
   const [expanded, setExpanded] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -353,7 +353,7 @@ function InstallationList({
   filterPart,
 }: {
   installations: IntegrationInstallation[];
-  grafanaHosts: GrafanaHost[];
+  grafanaHosts: GrafanaInstance[];
   filterPart?: string;
 }) {
   const filtered = filterPart
@@ -406,7 +406,7 @@ export default function InstanceDetailPage() {
   const [metrics, setMetrics] = useState<InstanceMetrics | null>(null);
   const [activeTab, setActiveTab] = useState('base');
   const [installations, setInstallations] = useState<IntegrationInstallation[]>([]);
-  const [grafanaHosts, setGrafanaHosts] = useState<GrafanaHost[]>([]);
+  const [grafanaHosts, setGrafanaHosts] = useState<GrafanaInstance[]>([]);
   const [scaleEvents, setScaleEvents] = useState<ScaleEvent[]>([]);
   const [scaleEventsLoading, setScaleEventsLoading] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
@@ -487,7 +487,7 @@ export default function InstanceDetailPage() {
     let alive = true;
     (async () => {
       try {
-        const { data: res } = await grafanaHostAPI.list({ page: 1, page_size: 100 }, { signal: ctl.signal });
+        const { data: res } = await grafanaInstanceAPI.list({ page: 1, page_size: 100 }, { signal: ctl.signal });
         if (alive) setGrafanaHosts(res.data?.items || []);
       } catch (err) {
         if (isAbortError(err) || !alive) return;
@@ -619,8 +619,8 @@ export default function InstanceDetailPage() {
                     <Grid size={{ xs: 6, md: 3 }}>
                       <Typography variant="body2" color="text.secondary">关联 Grafana</Typography>
                       <Typography variant="body2">
-                        {instance.grafana_host_id
-                          ? (grafanaHosts.find(h => h.id === instance.grafana_host_id)?.name || instance.grafana_host_id.slice(0, 8))
+                        {instance.grafana_instance_id
+                          ? (grafanaHosts.find(h => h.id === instance.grafana_instance_id)?.name || instance.grafana_instance_id.slice(0, 8))
                           : '默认'}
                       </Typography>
                     </Grid>

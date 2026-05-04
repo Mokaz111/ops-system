@@ -36,7 +36,7 @@ import EmptyState from '../../components/common/EmptyState';
 import LoadingScreen from '../../components/common/LoadingScreen';
 import { tenantAPI } from '../../api/tenant';
 import { departmentAPI } from '../../api/department';
-import { grafanaHostAPI, type GrafanaHost } from '../../api/grafanaHost';
+import { grafanaInstanceAPI, type GrafanaInstance } from '../../api/grafanaInstance';
 import { extractApiError } from '../../api';
 import type { Department, Tenant } from '../../types/api';
 
@@ -57,8 +57,8 @@ export default function TenantPage() {
   const [search, setSearch] = useState('');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [deleteDialog, setDeleteDialog] = useState<{ open: boolean; tenant?: Tenant }>({ open: false });
-  const [form, setForm] = useState({ tenant_name: '', dept_id: '', template_type: 'shared', grafana_host_id: '' });
-  const [grafanaHosts, setGrafanaHosts] = useState<GrafanaHost[]>([]);
+  const [form, setForm] = useState({ tenant_name: '', dept_id: '', template_type: 'shared', grafana_instance_id: '' });
+  const [grafanaHosts, setGrafanaHosts] = useState<GrafanaInstance[]>([]);
   const [saving, setSaving] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
 
@@ -91,7 +91,7 @@ export default function TenantPage() {
     fetchDepartments();
     (async () => {
       try {
-        const { data: res } = await grafanaHostAPI.list({ page: 1, page_size: 100 });
+        const { data: res } = await grafanaInstanceAPI.list({ page: 1, page_size: 100 });
         setGrafanaHosts(res.data?.items || []);
       } catch {
         /* grafana hosts optional */
@@ -111,7 +111,7 @@ export default function TenantPage() {
       }
       setDialogOpen(false);
       setEditingId(null);
-      setForm({ tenant_name: '', dept_id: '', template_type: 'shared', grafana_host_id: '' });
+      setForm({ tenant_name: '', dept_id: '', template_type: 'shared', grafana_instance_id: '' });
       fetchTenants();
     } catch (err) {
       enqueueSnackbar(extractApiError(err, editingId ? '更新失败' : '创建失败'), { variant: 'error' });
@@ -134,7 +134,7 @@ export default function TenantPage() {
 
   const openEdit = (tenant: Tenant) => {
     setEditingId(tenant.id);
-    setForm({ tenant_name: tenant.tenant_name, dept_id: tenant.dept_id, template_type: tenant.template_type, grafana_host_id: tenant.grafana_host_id || '' });
+    setForm({ tenant_name: tenant.tenant_name, dept_id: tenant.dept_id, template_type: tenant.template_type, grafana_instance_id: tenant.grafana_instance_id || '' });
     setDialogOpen(true);
   };
 
@@ -142,7 +142,7 @@ export default function TenantPage() {
 
   return (
     <Box>
-      <PageHeader title="租户管理" subtitle="管理平台所有租户及其资源配置" actionLabel="新建租户" onAction={() => { setEditingId(null); setForm({ tenant_name: '', dept_id: '', template_type: 'shared', grafana_host_id: '' }); setDialogOpen(true); }} />
+      <PageHeader title="租户管理" subtitle="管理平台所有租户及其资源配置" actionLabel="新建租户" onAction={() => { setEditingId(null); setForm({ tenant_name: '', dept_id: '', template_type: 'shared', grafana_instance_id: '' }); setDialogOpen(true); }} />
 
       <Card sx={{ mb: 2 }}>
         <Box sx={{ p: 2, display: 'flex', gap: 2 }}>
@@ -191,7 +191,7 @@ export default function TenantPage() {
                     </TableCell>
                     <TableCell>{t.grafana_org_id || '-'}</TableCell>
                     <TableCell sx={{ fontSize: '0.8125rem', color: 'text.secondary' }}>
-                      {t.grafana_host_id ? (grafanaHosts.find(h => h.id === t.grafana_host_id)?.name || t.grafana_host_id.slice(0, 8)) : '默认'}
+                      {t.grafana_instance_id ? (grafanaHosts.find(h => h.id === t.grafana_instance_id)?.name || t.grafana_instance_id.slice(0, 8)) : '默认'}
                     </TableCell>
                     <TableCell><StatusChip status={t.status} /></TableCell>
                     <TableCell sx={{ color: 'text.secondary', fontSize: '0.8125rem' }}>{new Date(t.created_at).toLocaleDateString()}</TableCell>
@@ -263,7 +263,7 @@ export default function TenantPage() {
           </FormControl>
           <FormControl fullWidth size="small">
             <InputLabel>关联 Grafana（可选）</InputLabel>
-            <Select value={form.grafana_host_id} label="关联 Grafana（可选）" onChange={(e) => setForm({ ...form, grafana_host_id: e.target.value })}>
+            <Select value={form.grafana_instance_id} label="关联 Grafana（可选）" onChange={(e) => setForm({ ...form, grafana_instance_id: e.target.value })}>
               <MenuItem value="">使用平台默认</MenuItem>
               {grafanaHosts.map((h) => (
                 <MenuItem key={h.id} value={h.id}>

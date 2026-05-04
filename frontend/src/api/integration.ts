@@ -37,7 +37,7 @@ export interface IntegrationInstallation {
   template_version: string;
   instance_id: string;
   tenant_id: string;
-  grafana_host_id: string | null;
+  grafana_instance_id: string | null;
   grafana_org_id: number;
   installed_parts: string;
   variables: string;
@@ -84,7 +84,7 @@ export interface AppliedRef {
   name?: string;
   uid?: string;
   grafana_org?: number;
-  grafana_host_id?: string;
+  grafana_instance_id?: string;
   cluster_id?: string;
   action?: string;
   status?: string;
@@ -105,7 +105,7 @@ export interface InstallRequest {
   template_version: string;
   instance_id: string;
   tenant_id: string;
-  grafana_host_id?: string;
+  grafana_instance_id?: string;
   grafana_org_id?: number;
   installed_parts?: string[];
   values?: Record<string, string>;

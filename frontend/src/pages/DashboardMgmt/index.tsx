@@ -30,7 +30,7 @@ import EmptyState from '../../components/common/EmptyState';
 import LoadingScreen from '../../components/common/LoadingScreen';
 import ConfirmDialog from '../../components/common/ConfirmDialog';
 import { grafanaAPI } from '../../api/grafana';
-import { grafanaHostAPI, type GrafanaHost } from '../../api/grafanaHost';
+import { grafanaInstanceAPI, type GrafanaInstance } from '../../api/grafanaInstance';
 import { extractApiError } from '../../api';
 import type { GrafanaDashboard, GrafanaOrg } from '../../types/api';
 
@@ -47,11 +47,11 @@ export default function DashboardMgmtPage() {
   const [deleteDialog, setDeleteDialog] = useState<{ open: boolean; db?: GrafanaDashboard }>({ open: false });
   const [saving, setSaving] = useState(false);
 
-  const [grafanaHosts, setGrafanaHosts] = useState<GrafanaHost[]>([]);
+  const [grafanaHosts, setGrafanaHosts] = useState<GrafanaInstance[]>([]);
 
   const fetchHosts = useCallback(async () => {
     try {
-      const { data: res } = await grafanaHostAPI.list({ page: 1, page_size: 100 });
+      const { data: res } = await grafanaInstanceAPI.list({ page: 1, page_size: 100 });
       setGrafanaHosts(res.data?.items || []);
     } catch { /* optional */ }
   }, []);

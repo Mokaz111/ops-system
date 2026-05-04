@@ -52,7 +52,7 @@ import {
 } from '../../api/integration';
 import { instanceAPI } from '../../api/instance';
 import { clusterAPI, type Cluster } from '../../api/cluster';
-import { grafanaHostAPI, type GrafanaHost } from '../../api/grafanaHost';
+import { grafanaInstanceAPI, type GrafanaInstance } from '../../api/grafanaInstance';
 import { extractApiError } from '../../api';
 import { isAbortError, makeAbortController } from '../../api/client';
 import type { Instance } from '../../types/api';
@@ -105,7 +105,7 @@ export default function IntegrationPage() {
 
   const [instances, setInstances] = useState<Instance[]>([]);
   const [clusters, setClusters] = useState<Cluster[]>([]);
-  const [grafanaHosts, setGrafanaHosts] = useState<GrafanaHost[]>([]);
+  const [grafanaHosts, setGrafanaHosts] = useState<GrafanaInstance[]>([]);
   const [instanceId, setInstanceId] = useState<string>(defaultInstanceId);
   const [grafanaHostId, setGrafanaHostId] = useState<string>('');
   const [values, setValues] = useState<Record<string, string>>({});
@@ -128,7 +128,7 @@ export default function IntegrationPage() {
           integrationAPI.listTemplates({ page: 1, page_size: 50, category, keyword }, { signal: ctl.signal }),
           instanceAPI.list({ page: 1, page_size: 100 }, { signal: ctl.signal }),
           clusterAPI.list({ page: 1, page_size: 100 }, { signal: ctl.signal }).catch(() => null),
-          grafanaHostAPI.list({ page: 1, page_size: 100 }, { signal: ctl.signal }).catch(() => null),
+          grafanaInstanceAPI.list({ page: 1, page_size: 100 }, { signal: ctl.signal }).catch(() => null),
         ]);
         if (!alive) return;
         setCategories(cats.data.data || []);
@@ -239,7 +239,7 @@ export default function IntegrationPage() {
         template_version: currentVersion.version,
         instance_id: targetInstance.id,
         tenant_id: targetInstance.tenant_id,
-        grafana_host_id: grafanaHostId || undefined,
+        grafana_instance_id: grafanaHostId || undefined,
         values,
       });
       setRendered(res.data?.rendered || []);
@@ -264,7 +264,7 @@ export default function IntegrationPage() {
         template_version: currentVersion.version,
         instance_id: targetInstance.id,
         tenant_id: targetInstance.tenant_id,
-        grafana_host_id: grafanaHostId || undefined,
+        grafana_instance_id: grafanaHostId || undefined,
         values,
         force,
       });

@@ -42,7 +42,7 @@ import FilterToolbar from '../../components/common/FilterToolbar';
 import DataTableCard from '../../components/common/DataTableCard';
 import { instanceAPI } from '../../api/instance';
 import { clusterAPI, type Cluster } from '../../api/cluster';
-import { grafanaHostAPI, type GrafanaHost } from '../../api/grafanaHost';
+import { grafanaInstanceAPI, type GrafanaInstance } from '../../api/grafanaInstance';
 import { extractApiError } from '../../api';
 import type { Instance } from '../../types/api';
 import { parseSpec } from '../../utils/instance';
@@ -82,7 +82,7 @@ export default function InstancePage() {
   const [saving, setSaving] = useState(false);
 
   const [clusters, setClusters] = useState<Cluster[]>([]);
-  const [grafanaHosts, setGrafanaHosts] = useState<GrafanaHost[]>([]);
+  const [grafanaHosts, setGrafanaHosts] = useState<GrafanaInstance[]>([]);
   const [createForm, setCreateForm] = useState({
     tenant_id: '',
     cluster_id: '',
@@ -93,7 +93,7 @@ export default function InstancePage() {
     memory: '4',
     storage: '50',
     retention: '15',
-    grafana_host_id: '',
+    grafana_instance_id: '',
   });
   const [scaleForm, setScaleForm] = useState({
     scale_type: 'vertical' as 'horizontal' | 'vertical' | 'storage',
@@ -137,7 +137,7 @@ export default function InstancePage() {
     })();
     (async () => {
       try {
-        const { data: res } = await grafanaHostAPI.list({ page: 1, page_size: 100 });
+        const { data: res } = await grafanaInstanceAPI.list({ page: 1, page_size: 100 });
         setGrafanaHosts(res.data?.items || []);
       } catch {
         /* grafana host list optional */
@@ -188,7 +188,7 @@ export default function InstancePage() {
         instance_type: createForm.instance_type,
         template_type: createForm.template_type,
         spec,
-        grafana_host_id: createForm.grafana_host_id || undefined,
+        grafana_instance_id: createForm.grafana_instance_id || undefined,
       });
       enqueueSnackbar('实例创建成功', { variant: 'success' });
       setCreateOpen(false);
@@ -376,7 +376,7 @@ export default function InstancePage() {
                         {inst.cluster_id ? (clusterNameById[inst.cluster_id] || inst.cluster_id.slice(0, 8)) : '默认'}
                       </TableCell>
                       <TableCell sx={{ fontSize: '0.8125rem', color: 'text.secondary' }}>
-                        {inst.grafana_host_id ? (grafanaHostNameById[inst.grafana_host_id] || inst.grafana_host_id.slice(0, 8)) : '默认'}
+                        {inst.grafana_instance_id ? (grafanaHostNameById[inst.grafana_instance_id] || inst.grafana_instance_id.slice(0, 8)) : '默认'}
                       </TableCell>
                       <TableCell><StatusChip status={inst.status} /></TableCell>
                       <TableCell sx={{ color: 'text.secondary', fontSize: '0.8125rem' }}>
@@ -515,9 +515,9 @@ export default function InstancePage() {
               <FormControl fullWidth size="small">
                 <InputLabel>关联 Grafana（可选）</InputLabel>
                 <Select
-                  value={createForm.grafana_host_id}
+                  value={createForm.grafana_instance_id}
                   label="关联 Grafana（可选）"
-                  onChange={(e) => setCreateForm({ ...createForm, grafana_host_id: e.target.value })}
+                  onChange={(e) => setCreateForm({ ...createForm, grafana_instance_id: e.target.value })}
                 >
                   <MenuItem value="">继承租户默认</MenuItem>
                   {grafanaHosts.map((h) => (
