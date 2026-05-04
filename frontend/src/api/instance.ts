@@ -15,7 +15,7 @@ export const instanceAPI = {
     params?: PaginationParams & { tenant_id?: string; instance_type?: string; status?: string },
     config?: AxiosRequestConfig,
   ) =>
-    api.get<ApiResponse<PaginatedResponse<Instance>>>('/instances', { ...config, params }),
+    api.get<ApiResponse<PaginatedResponse<Instance>>>('/instances', { ...config, params: normalizeListParams(params) }),
 
   get: (id: string, config?: AxiosRequestConfig) =>
     api.get<ApiResponse<Instance>>(`/instances/${id}`, config),
@@ -51,6 +51,12 @@ export const instanceAPI = {
   login: (id: string) =>
     api.post<ApiResponse<GrafanaLoginInfo>>(`/instances/${id}/login`),
 };
+
+function normalizeListParams<T extends PaginationParams>(params?: T) {
+  if (!params?.search) return params;
+  const { search, ...rest } = params;
+  return { ...rest, keyword: search };
+}
 
 export interface GrafanaLoginInfo {
   url: string;

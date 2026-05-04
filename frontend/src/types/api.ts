@@ -15,6 +15,7 @@ export interface PaginationParams {
   page?: number;
   page_size?: number;
   search?: string;
+  keyword?: string;
 }
 
 export interface LoginRequest {
@@ -30,11 +31,12 @@ export interface LoginResponse {
 export interface User {
   id: string;
   username: string;
-  display_name: string;
-  email: string;
-  phone: string;
-  role: 'admin' | 'operator' | 'viewer';
-  dept_id: string;
+  display_name?: string;
+  email?: string;
+  phone?: string;
+  role: 'admin' | 'user' | 'platform_admin' | 'tenant_admin' | 'editor' | 'viewer' | 'alert_admin' | string;
+  dept_id?: string | null;
+  tenant_id?: string | null;
   status: string;
   created_at: string;
   updated_at: string;
@@ -58,11 +60,17 @@ export interface Tenant {
   tenant_name: string;
   dept_id: string;
   dept_name?: string;
+  slug?: string;
   vmuser_id: string;
   vmuser_key: string;
   template_type: 'shared' | 'dedicated_single' | 'dedicated_cluster';
   quota_config: string;
-  status: string;
+  isolation_level?: 'shared' | 'namespace' | 'dedicated' | string;
+  vm_namespace?: string;
+  vm_select_url?: string;
+  vm_insert_url?: string;
+  insert_url?: string;
+  status: 'creating' | 'active' | 'degraded' | 'suspended' | 'deleting' | 'failed' | string;
   n9e_team_id: number;
   grafana_org_id: number;
   grafana_instance_id?: string | null;
@@ -101,6 +109,7 @@ export interface CreateTenantRequest {
   dept_id: string;
   template_type: string;
   quota_config?: string;
+  grafana_instance_id?: string;
 }
 
 export interface CreateInstanceRequest {
@@ -182,6 +191,52 @@ export interface InstanceMetrics {
   memory_usage_percent: number;
   disk_usage_percent: number;
   note?: string;
+}
+
+export interface AlertRule {
+  id: string;
+  tenant_id: string;
+  rule_name: string;
+  rule_type: 'metrics' | 'logs' | string;
+  query: string;
+  condition: string;
+  level: 'critical' | 'warning' | 'info' | string;
+  channels: string;
+  annotations: string;
+  enabled: boolean;
+  n9e_rule_id?: number;
+  vm_rule_name?: string;
+  vm_namespace?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateAlertRuleRequest {
+  tenant_id: string;
+  rule_name: string;
+  rule_type: string;
+  query: string;
+  condition?: string;
+  level: string;
+  channels?: string;
+  annotations?: string;
+  enabled: boolean;
+}
+
+export interface AlertEvent {
+  id: string;
+  tenant_id: string;
+  rule_id: string;
+  rule_name: string;
+  level: string;
+  status: string;
+  start_time: string;
+  end_time?: string | null;
+  details: string;
+  notified: boolean;
+  acked_by?: string | null;
+  acked_at?: string | null;
+  created_at: string;
 }
 
 export type PlatformScaleScope = 'shared_metrics' | 'dedicated_metrics';

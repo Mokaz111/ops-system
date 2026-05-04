@@ -7,8 +7,10 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
+  Alert,
   Button,
   FormControl,
+  Grid,
   IconButton,
   InputLabel,
   MenuItem,
@@ -23,6 +25,7 @@ import {
   TextField,
   Tooltip,
   InputAdornment,
+  Typography,
 } from '@mui/material';
 import SearchIcon from '@mui/icons-material/Search';
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
@@ -38,12 +41,18 @@ import { tenantAPI } from '../../api/tenant';
 import { departmentAPI } from '../../api/department';
 import { grafanaInstanceAPI, type GrafanaInstance } from '../../api/grafanaInstance';
 import { extractApiError } from '../../api';
-import type { Department, Tenant } from '../../types/api';
+import type { Department, Tenant, TenantMetrics } from '../../types/api';
 
 const templateLabels: Record<string, string> = {
   shared: '共享版',
   dedicated_single: '独享单节点',
   dedicated_cluster: '独享集群',
+};
+
+const isolationLabels: Record<string, string> = {
+  shared: '共享',
+  namespace: '命名空间隔离',
+  dedicated: '独享',
 };
 
 export default function TenantPage() {
@@ -61,6 +70,7 @@ export default function TenantPage() {
   const [grafanaHosts, setGrafanaHosts] = useState<GrafanaInstance[]>([]);
   const [saving, setSaving] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [detail, setDetail] = useState<{ open: boolean; tenant?: Tenant; metrics?: TenantMetrics; loading?: boolean }>({ open: false });
 
   const fetchTenants = useCallback(async () => {
     setLoading(true);
@@ -138,6 +148,17 @@ export default function TenantPage() {
     setDialogOpen(true);
   };
 
+  const openDetail = async (tenant: Tenant) => {
+    setDetail({ open: true, tenant, loading: true });
+    try {
+      const { data: res } = await tenantAPI.metrics(tenant.id);
+      setDetail({ open: true, tenant, metrics: res.data, loading: false });
+    } catch (err) {
+      enqueueSnackbar(extractApiError(err, '获取租户指标失败'), { variant: 'warning' });
+      setDetail({ open: true, tenant, loading: false });
+    }
+  };
+
   if (loading && tenants.length === 0) return <LoadingScreen />;
 
   return (
@@ -165,6 +186,7 @@ export default function TenantPage() {
                 <TableCell>租户名称</TableCell>
                 <TableCell>VMUser ID</TableCell>
                 <TableCell>模板类型</TableCell>
+                <TableCell>隔离/命名空间</TableCell>
                 <TableCell>Grafana Org</TableCell>
                 <TableCell>关联 Grafana</TableCell>
                 <TableCell>状态</TableCell>
@@ -175,7 +197,7 @@ export default function TenantPage() {
             <TableBody>
               {tenants.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={8}>
+                  <TableCell colSpan={9}>
                     <EmptyState title="暂无租户" description="点击右上角按钮创建第一个租户" />
                   </TableCell>
                 </TableRow>
@@ -189,6 +211,12 @@ export default function TenantPage() {
                     <TableCell>
                       <Chip label={templateLabels[t.template_type] || t.template_type} size="small" color="info" variant="outlined" />
                     </TableCell>
+                    <TableCell>
+                      <Typography variant="body2">{isolationLabels[t.isolation_level || 'shared'] || t.isolation_level || '共享'}</Typography>
+                      <Typography variant="caption" color="text.secondary" sx={{ fontFamily: 'monospace' }}>
+                        {t.vm_namespace || '-'}
+                      </Typography>
+                    </TableCell>
                     <TableCell>{t.grafana_org_id || '-'}</TableCell>
                     <TableCell sx={{ fontSize: '0.8125rem', color: 'text.secondary' }}>
                       {t.grafana_instance_id ? (grafanaHosts.find(h => h.id === t.grafana_instance_id)?.name || t.grafana_instance_id.slice(0, 8)) : '默认'}
@@ -196,12 +224,10 @@ export default function TenantPage() {
                     <TableCell><StatusChip status={t.status} /></TableCell>
                     <TableCell sx={{ color: 'text.secondary', fontSize: '0.8125rem' }}>{new Date(t.created_at).toLocaleDateString()}</TableCell>
                     <TableCell align="right">
-                      <Tooltip title="详情功能开发中">
-                        <span>
-                          <IconButton size="small" disabled aria-label="租户详情（开发中）">
-                            <VisibilityOutlinedIcon fontSize="small" />
-                          </IconButton>
-                        </span>
+                      <Tooltip title="查看 VM 路由与指标">
+                        <IconButton size="small" onClick={() => openDetail(t)} aria-label="查看租户详情">
+                          <VisibilityOutlinedIcon fontSize="small" />
+                        </IconButton>
                       </Tooltip>
                       <Tooltip title="编辑">
                         <IconButton size="small" onClick={() => openEdit(t)} aria-label="编辑租户">
@@ -279,6 +305,53 @@ export default function TenantPage() {
           <Button variant="contained" onClick={handleSave} disabled={saving || !form.tenant_name}>
             {saving ? '保存中...' : editingId ? '更新' : '创建'}
           </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={detail.open} onClose={() => setDetail({ open: false })} maxWidth="md" fullWidth>
+        <DialogTitle>租户可观测性控制面</DialogTitle>
+        <DialogContent sx={{ pt: '16px !important' }}>
+          {detail.tenant && (
+            <Box>
+              <Grid container spacing={2} sx={{ mb: 2 }}>
+                <Grid size={{ xs: 12, md: 4 }}>
+                  <Card variant="outlined" sx={{ p: 2 }}>
+                    <Typography variant="caption" color="text.secondary">租户状态</Typography>
+                    <Box sx={{ mt: 1 }}><StatusChip status={detail.tenant.status} /></Box>
+                  </Card>
+                </Grid>
+                <Grid size={{ xs: 12, md: 4 }}>
+                  <Card variant="outlined" sx={{ p: 2 }}>
+                    <Typography variant="caption" color="text.secondary">Series</Typography>
+                    <Typography variant="h6">{detail.metrics?.series_count ?? '-'}</Typography>
+                  </Card>
+                </Grid>
+                <Grid size={{ xs: 12, md: 4 }}>
+                  <Card variant="outlined" sx={{ p: 2 }}>
+                    <Typography variant="caption" color="text.secondary">Ingest QPS</Typography>
+                    <Typography variant="h6">{detail.metrics?.ingest_qps?.toFixed?.(2) ?? '-'}</Typography>
+                  </Card>
+                </Grid>
+              </Grid>
+              {detail.metrics?.note && <Alert severity="info" sx={{ mb: 2 }}>{detail.metrics.note}</Alert>}
+              <Box sx={{ display: 'grid', gap: 1.5 }}>
+                {[
+                  ['VMUser', detail.tenant.vmuser_id],
+                  ['命名空间', detail.tenant.vm_namespace || '-'],
+                  ['Remote Write', detail.tenant.vm_insert_url || detail.tenant.insert_url || '-'],
+                  ['Prometheus Query', detail.tenant.vm_select_url || '-'],
+                ].map(([label, value]) => (
+                  <Box key={label} sx={{ display: 'grid', gridTemplateColumns: '160px 1fr', gap: 1 }}>
+                    <Typography variant="body2" color="text.secondary">{label}</Typography>
+                    <Typography variant="body2" sx={{ fontFamily: 'monospace', wordBreak: 'break-all' }}>{value}</Typography>
+                  </Box>
+                ))}
+              </Box>
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button onClick={() => setDetail({ open: false })}>关闭</Button>
         </DialogActions>
       </Dialog>
 

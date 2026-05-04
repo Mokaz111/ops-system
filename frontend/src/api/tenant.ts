@@ -10,7 +10,7 @@ import type {
 
 export const tenantAPI = {
   list: (params?: PaginationParams) =>
-    api.get<ApiResponse<PaginatedResponse<Tenant>>>('/tenants', { params }),
+    api.get<ApiResponse<PaginatedResponse<Tenant>>>('/tenants', { params: normalizeListParams(params) }),
 
   get: (id: string) =>
     api.get<ApiResponse<Tenant>>(`/tenants/${id}`),
@@ -27,3 +27,9 @@ export const tenantAPI = {
   metrics: (id: string) =>
     api.get<ApiResponse<TenantMetrics>>(`/tenants/${id}/metrics`),
 };
+
+function normalizeListParams(params?: PaginationParams) {
+  if (!params?.search) return params;
+  const { search, ...rest } = params;
+  return { ...rest, keyword: search };
+}

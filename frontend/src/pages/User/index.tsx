@@ -34,13 +34,18 @@ import ConfirmDialog from '../../components/common/ConfirmDialog';
 import EmptyState from '../../components/common/EmptyState';
 import LoadingScreen from '../../components/common/LoadingScreen';
 import { userAPI } from '../../api/user';
+import { tenantAPI } from '../../api/tenant';
 import { extractApiError } from '../../api';
-import type { User } from '../../types/api';
+import type { Tenant, User } from '../../types/api';
 
-const roleLabels: Record<string, { label: string; color: 'primary' | 'secondary' | 'default' }> = {
-  admin: { label: '管理员', color: 'primary' },
-  operator: { label: '运维', color: 'secondary' },
-  viewer: { label: '只读', color: 'default' },
+const roleLabels: Record<string, { label: string; color: 'primary' | 'secondary' | 'default' | 'info' | 'warning' }> = {
+  admin: { label: '平台管理员(旧)', color: 'primary' },
+  user: { label: '普通用户(旧)', color: 'default' },
+  platform_admin: { label: '平台管理员', color: 'primary' },
+  tenant_admin: { label: '租户管理员', color: 'secondary' },
+  editor: { label: '编辑者', color: 'info' },
+  viewer: { label: '只读者', color: 'default' },
+  alert_admin: { label: '告警管理员', color: 'warning' },
 };
 
 export default function UserPage() {
@@ -51,9 +56,11 @@ export default function UserPage() {
     email: string;
     phone: string;
     role: User['role'];
+    tenant_id: string;
     password: string;
   };
   const [users, setUsers] = useState<User[]>([]);
+  const [tenants, setTenants] = useState<Tenant[]>([]);
   const [loading, setLoading] = useState(true);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(0);
@@ -63,7 +70,7 @@ export default function UserPage() {
   const [deleteDialog, setDeleteDialog] = useState<{ open: boolean; user?: User }>({ open: false });
   const [editingId, setEditingId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const [form, setForm] = useState<UserForm>({ username: '', display_name: '', email: '', phone: '', role: 'viewer', password: '' });
+  const [form, setForm] = useState<UserForm>({ username: '', display_name: '', email: '', phone: '', role: 'viewer', tenant_id: '', password: '' });
 
   const fetchUsers = useCallback(async () => {
     setLoading(true);
@@ -80,6 +87,17 @@ export default function UserPage() {
 
   useEffect(() => { fetchUsers(); }, [fetchUsers]);
 
+  useEffect(() => {
+    (async () => {
+      try {
+        const { data: res } = await tenantAPI.list({ page: 1, page_size: 200 });
+        setTenants(res.data?.items || []);
+      } catch {
+        /* tenant binding is optional on this page */
+      }
+    })();
+  }, []);
+
   const handleSave = async () => {
     setSaving(true);
     try {
@@ -90,6 +108,7 @@ export default function UserPage() {
           email: form.email,
           phone: form.phone,
           role: form.role,
+          tenant_id: form.tenant_id || null,
         });
         enqueueSnackbar('用户更新成功', { variant: 'success' });
       } else {
@@ -122,7 +141,7 @@ export default function UserPage() {
 
   return (
     <Box>
-      <PageHeader title="用户管理" subtitle="管理平台用户账号和角色权限" actionLabel="新建用户" onAction={() => { setEditingId(null); setForm({ username: '', display_name: '', email: '', phone: '', role: 'viewer', password: '' }); setDialogOpen(true); }} />
+      <PageHeader title="用户管理" subtitle="管理平台用户、租户成员角色与服务访问边界" actionLabel="新建用户" onAction={() => { setEditingId(null); setForm({ username: '', display_name: '', email: '', phone: '', role: 'viewer', tenant_id: '', password: '' }); setDialogOpen(true); }} />
 
       <Card sx={{ mb: 2 }}>
         <Box sx={{ p: 2 }}>
@@ -146,6 +165,7 @@ export default function UserPage() {
                 <TableCell>显示名</TableCell>
                 <TableCell>邮箱</TableCell>
                 <TableCell>角色</TableCell>
+                <TableCell>绑定租户</TableCell>
                 <TableCell>状态</TableCell>
                 <TableCell>创建时间</TableCell>
                 <TableCell align="right">操作</TableCell>
@@ -153,7 +173,7 @@ export default function UserPage() {
             </TableHead>
             <TableBody>
               {users.length === 0 ? (
-                <TableRow><TableCell colSpan={7}><EmptyState title="暂无用户" /></TableCell></TableRow>
+                <TableRow><TableCell colSpan={8}><EmptyState title="暂无用户" /></TableCell></TableRow>
               ) : users.map((u) => (
                 <TableRow key={u.id}>
                   <TableCell sx={{ fontWeight: 500 }}>{u.username}</TableCell>
@@ -167,13 +187,14 @@ export default function UserPage() {
                       variant="outlined"
                     />
                   </TableCell>
+                  <TableCell>{u.tenant_id ? (tenants.find((t) => t.id === u.tenant_id)?.tenant_name || u.tenant_id.slice(0, 8)) : '-'}</TableCell>
                   <TableCell><StatusChip status={u.status || 'active'} /></TableCell>
                   <TableCell sx={{ color: 'text.secondary', fontSize: '0.8125rem' }}>{new Date(u.created_at).toLocaleDateString()}</TableCell>
                   <TableCell align="right">
                     <Tooltip title="编辑">
                       <IconButton size="small" onClick={() => {
                         setEditingId(u.id);
-                        setForm({ username: u.username, display_name: u.display_name, email: u.email, phone: u.phone, role: u.role, password: '' });
+                        setForm({ username: u.username, display_name: u.display_name || '', email: u.email || '', phone: u.phone || '', role: u.role, tenant_id: u.tenant_id || '', password: '' });
                         setDialogOpen(true);
                       }}>
                         <EditOutlinedIcon fontSize="small" />
@@ -209,12 +230,25 @@ export default function UserPage() {
           {!editingId && (
             <TextField fullWidth label="密码" type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} sx={{ mb: 2 }} required />
           )}
-          <FormControl fullWidth size="small">
+          <FormControl fullWidth size="small" sx={{ mb: 2 }}>
             <InputLabel>角色</InputLabel>
             <Select value={form.role} label="角色" onChange={(e) => setForm({ ...form, role: e.target.value as User['role'] })}>
-              <MenuItem value="admin">管理员</MenuItem>
-              <MenuItem value="operator">运维</MenuItem>
-              <MenuItem value="viewer">只读</MenuItem>
+              <MenuItem value="platform_admin">平台管理员</MenuItem>
+              <MenuItem value="tenant_admin">租户管理员</MenuItem>
+              <MenuItem value="editor">编辑者</MenuItem>
+              <MenuItem value="viewer">只读者</MenuItem>
+              <MenuItem value="alert_admin">告警管理员</MenuItem>
+              <MenuItem value="admin">管理员(旧兼容)</MenuItem>
+              <MenuItem value="user">普通用户(旧兼容)</MenuItem>
+            </Select>
+          </FormControl>
+          <FormControl fullWidth size="small">
+            <InputLabel>绑定租户（可选）</InputLabel>
+            <Select value={form.tenant_id} label="绑定租户（可选）" onChange={(e) => setForm({ ...form, tenant_id: e.target.value })}>
+              <MenuItem value="">平台级用户</MenuItem>
+              {tenants.map((tenant) => (
+                <MenuItem key={tenant.id} value={tenant.id}>{tenant.tenant_name}</MenuItem>
+              ))}
             </Select>
           </FormControl>
         </DialogContent>

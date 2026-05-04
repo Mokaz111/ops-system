@@ -3,7 +3,7 @@ import type { ApiResponse, PaginatedResponse, PaginationParams, User } from '../
 
 export const userAPI = {
   list: (params?: PaginationParams) =>
-    api.get<ApiResponse<PaginatedResponse<User>>>('/users', { params }),
+    api.get<ApiResponse<PaginatedResponse<User>>>('/users', { params: normalizeListParams(params) }),
 
   get: (id: string) =>
     api.get<ApiResponse<User>>(`/users/${id}`),
@@ -17,3 +17,9 @@ export const userAPI = {
   delete: (id: string) =>
     api.delete<ApiResponse<null>>(`/users/${id}`),
 };
+
+function normalizeListParams(params?: PaginationParams) {
+  if (!params?.search) return params;
+  const { search, ...rest } = params;
+  return { ...rest, keyword: search };
+}
