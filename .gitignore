@@ -4,3 +4,4 @@ backend/bin/
 .env.*
 .idea/
 .vscode/
+docker-compose.yaml
