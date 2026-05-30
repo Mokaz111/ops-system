@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"ops-system/backend/internal/config"
 	"ops-system/backend/internal/grafana"
@@ -171,6 +172,17 @@ func (s *GrafanaService) DeleteOrg(ctx context.Context, orgID int64) error {
 		return err
 	}
 	return s.client.DeleteOrg(ctx, orgID)
+}
+
+// UpdateOrg 更新 Grafana 组织名称。
+func (s *GrafanaService) UpdateOrg(ctx context.Context, orgID int64, name string) error {
+	if err := s.ensureEnabled(); err != nil {
+		return err
+	}
+	if name == "" {
+		return ErrGrafanaOrgNameRequired
+	}
+	return s.client.UpdateOrg(ctx, orgID, name)
 }
 
 // ListOrgs 列出所有 Grafana 组织。
@@ -406,8 +418,12 @@ func (s *GrafanaService) HealthCheck(ctx context.Context) (*GrafanaHealthStatus,
 	if err != nil {
 		return nil, err
 	}
+	status := "error"
+	if h.Database == "ok" {
+		status = "ok"
+	}
 	return &GrafanaHealthStatus{
-		Status:  h.Status,
-		Message: h.Message,
+		Status:  status,
+		Message: fmt.Sprintf("version=%s database=%s", h.Version, h.Database),
 	}, nil
 }

@@ -16,6 +16,9 @@ export const grafanaAPI = {
   deleteOrg: (instanceId: string, orgId: number) =>
     api.delete<ApiResponse<null>>(instPath(instanceId, `/orgs/${orgId}`)),
 
+  updateOrg: (instanceId: string, orgId: number, name: string) =>
+    api.put<ApiResponse<null>>(instPath(instanceId, `/orgs/${orgId}`), { name }),
+
   // ── Org users ──
   listOrgUsers: (instanceId: string, orgId: number) =>
     api.get<ApiResponse<GrafanaOrgUser[]>>(instPath(instanceId, `/orgs/${orgId}/users`)),

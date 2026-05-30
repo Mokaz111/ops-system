@@ -97,7 +97,35 @@ func (h *GrafanaHandler) DeleteOrg(c *gin.Context) {
 	response.JSON(c, nil)
 }
 
-// ── Org users ──
+	type updateOrgBody struct {
+		Name string `json:"name" binding:"required"`
+	}
+
+	// UpdateOrg PUT /api/v1/grafana/instances/:instanceId/orgs/:orgId
+	func (h *GrafanaHandler) UpdateOrg(c *gin.Context) {
+		svc, err := h.resolveSvc(c)
+		if err != nil {
+			response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid instanceId")
+			return
+		}
+		orgID, err := strconv.ParseInt(c.Param("orgId"), 10, 64)
+		if err != nil {
+			response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid org id")
+			return
+		}
+		var body updateOrgBody
+		if err := c.ShouldBindJSON(&body); err != nil {
+			response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, response.TranslateBindingError(err))
+			return
+		}
+		if err := svc.UpdateOrg(c.Request.Context(), orgID, body.Name); err != nil {
+			h.handleErr(c, err)
+			return
+		}
+		response.JSON(c, nil)
+	}
+
+	//// ── Org users ──
 
 // ListOrgUsers GET /api/v1/grafana/instances/:instanceId/orgs/:orgId/users
 func (h *GrafanaHandler) ListOrgUsers(c *gin.Context) {

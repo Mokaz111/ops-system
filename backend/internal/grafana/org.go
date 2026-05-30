@@ -32,3 +32,13 @@ func (c *Client) DeleteOrg(ctx context.Context, orgID int64) error {
 	path := fmt.Sprintf("/api/orgs/%d", orgID)
 	return c.doJSON(ctx, "DELETE", path, nil, 0, nil)
 }
+
+// UpdateOrg 更新组织名称。
+func (c *Client) UpdateOrg(ctx context.Context, orgID int64, name string) error {
+	if !c.Enabled() {
+		return fmt.Errorf("grafana disabled")
+	}
+	body := map[string]string{"name": name}
+	path := fmt.Sprintf("/api/orgs/%d", orgID)
+	return c.doJSON(ctx, "PUT", path, body, 0, nil)
+}

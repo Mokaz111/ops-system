@@ -386,6 +386,7 @@ func NewRouter(cfg *config.Config, log *zap.Logger, db *gorm.DB) *gin.Engine {
 
 			adminGI := admin.Group("/grafana/instances/:instanceId")
 			adminGI.POST("/orgs", grafanaH.CreateOrg)
+			adminGI.PUT("/orgs/:orgId", grafanaH.UpdateOrg)
 			adminGI.DELETE("/orgs/:orgId", grafanaH.DeleteOrg)
 			adminGI.POST("/orgs/:orgId/users", grafanaH.AddOrgUser)
 			adminGI.DELETE("/orgs/:orgId/users/:userId", grafanaH.RemoveOrgUser)

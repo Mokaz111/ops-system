@@ -113,7 +113,7 @@ export interface CreateTenantRequest {
 }
 
 export interface CreateInstanceRequest {
-  tenant_id: string;
+  tenant_id?: string;
   cluster_id?: string;
   instance_name: string;
   instance_type: string;

@@ -42,7 +42,7 @@ var allowedInstanceStatuses = map[string]struct{}{
 
 // CreateInstanceRequest 创建实例请求。
 type CreateInstanceRequest struct {
-	TenantID          uuid.UUID
+	TenantID          *uuid.UUID
 	ClusterID         *uuid.UUID
 	InstanceName      string
 	InstanceType      string
@@ -56,6 +56,7 @@ type UpdateInstanceRequest struct {
 	InstanceName      string
 	Spec              string
 	Status            string
+	TenantID          *uuid.UUID
 	GrafanaInstanceID *uuid.UUID
 }
 
@@ -96,21 +97,28 @@ func (s *InstanceService) Create(ctx context.Context, req *CreateInstanceRequest
 		return nil, ErrInvalidInstanceType
 	}
 
-	t, err := s.tenant.GetByID(ctx, req.TenantID)
-	if err != nil {
-		return nil, err
-	}
-	if t == nil {
-		return nil, ErrTenantNotFoundForInstance
-	}
-
-	grafanaInstanceID := req.GrafanaInstanceID
-	if grafanaInstanceID == nil {
-		grafanaInstanceID = t.GrafanaInstanceID
+	var tenantID uuid.UUID
+	var grafanaInstanceID *uuid.UUID
+	if req.TenantID != nil && *req.TenantID != uuid.Nil {
+		t, err := s.tenant.GetByID(ctx, *req.TenantID)
+		if err != nil {
+			return nil, err
+		}
+		if t == nil {
+			return nil, ErrTenantNotFoundForInstance
+		}
+		tenantID = *req.TenantID
+		grafanaInstanceID = req.GrafanaInstanceID
+		if grafanaInstanceID == nil {
+			grafanaInstanceID = t.GrafanaInstanceID
+		}
+	} else {
+		tenantID = uuid.Nil
+		grafanaInstanceID = req.GrafanaInstanceID
 	}
 
 	inst := &model.Instance{
-		TenantID:          req.TenantID,
+		TenantID:          tenantID,
 		ClusterID:         req.ClusterID,
 		InstanceName:      strings.TrimSpace(req.InstanceName),
 		InstanceType:      req.InstanceType,
@@ -202,6 +210,18 @@ func (s *InstanceService) Update(ctx context.Context, id uuid.UUID, req *UpdateI
 	}
 	if req.GrafanaInstanceID != nil {
 		inst.GrafanaInstanceID = req.GrafanaInstanceID
+	}
+	if req.TenantID != nil {
+		if *req.TenantID != uuid.Nil {
+			t, err := s.tenant.GetByID(ctx, *req.TenantID)
+			if err != nil {
+				return nil, err
+			}
+			if t == nil {
+				return nil, ErrTenantNotFoundForInstance
+			}
+		}
+		inst.TenantID = *req.TenantID
 	}
 
 	if err := s.inst.Update(ctx, inst); err != nil {

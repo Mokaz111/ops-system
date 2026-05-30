@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   Box,
   Button,
@@ -57,18 +57,22 @@ export default function GrafanaInstanceDetailPage() {
   const { instanceId = '' } = useParams();
   const { enqueueSnackbar } = useSnackbar();
   const [activeTab, setActiveTab] = useState('base');
+  const [searchParams] = useSearchParams();
+  const isManaged = searchParams.get('type') === 'managed';
 
-  // ---- Instance ----
+  // ---- Instance / Managed Host ----
   const [loading, setLoading] = useState(true);
   const [instance, setInstance] = useState<Instance | null>(null);
+  const [managedHost, setManagedHost] = useState<GrafanaInstance | null>(null);
 
-  // ---- Grafana Instance ----
+  // ---- Grafana Hosts (all) ----
   const [grafanaHosts, setGrafanaHosts] = useState<GrafanaInstance[]>([]);
   const hostId = useMemo(() => {
+    if (isManaged) return instanceId;
     if (instance?.grafana_instance_id) return instance.grafana_instance_id;
     const platform = grafanaHosts.find((h) => h.scope === 'platform');
     return platform?.id || '';
-  }, [instance, grafanaHosts]);
+  }, [isManaged, instanceId, instance, grafanaHosts]);
 
   // ---- Orgs ----
   const [orgs, setOrgs] = useState<GrafanaOrg[]>([]);
@@ -80,6 +84,13 @@ export default function GrafanaInstanceDetailPage() {
   const [dsForm, setDsForm] = useState({ name: '', type: 'prometheus', url: '' });
   const [editDsDialog, setEditDsDialog] = useState<{ open: boolean; ds?: GrafanaDatasource }>({ open: false });
   const [editDsForm, setEditDsForm] = useState({ name: '', type: '', url: '', access: 'proxy', isDefault: false });
+
+  // ---- Org CRUD ----
+  const [createOrgOpen, setCreateOrgOpen] = useState(false);
+  const [createOrgName, setCreateOrgName] = useState('');
+  const [editOrgDialog, setEditOrgDialog] = useState<{ open: boolean; org?: GrafanaOrg }>({ open: false });
+  const [editOrgName, setEditOrgName] = useState('');
+  const [deleteOrgDialog, setDeleteOrgDialog] = useState<{ open: boolean; org?: GrafanaOrg }>({ open: false });
 
   // ---- Org Users ----
   const [orgUsers, setOrgUsers] = useState<GrafanaOrgUser[]>([]);
@@ -102,22 +113,27 @@ export default function GrafanaInstanceDetailPage() {
   const [rebuildDialog, setRebuildDialog] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  // ---- Fetch instance ----
+  // ---- Fetch instance or managed host ----
   useEffect(() => {
     if (!instanceId) return;
     setLoading(true);
     (async () => {
       try {
-        const { data: res } = await instanceAPI.get(instanceId);
-        setInstance(res.data || null);
+        if (isManaged) {
+          const { data: res } = await grafanaInstanceAPI.get(instanceId);
+          setManagedHost(res.data || null);
+        } else {
+          const { data: res } = await instanceAPI.get(instanceId);
+          setInstance(res.data || null);
+        }
       } catch (err) {
-        enqueueSnackbar(extractApiError(err, '获取实例详情失败'), { variant: 'error' });
+        enqueueSnackbar(extractApiError(err, isManaged ? '获取纳管实例详情失败' : '获取实例详情失败'), { variant: 'error' });
         navigate('/grafana-instances');
       } finally {
         setLoading(false);
       }
     })();
-  }, [instanceId, enqueueSnackbar, navigate]);
+  }, [instanceId, isManaged, enqueueSnackbar, navigate]);
 
   // ---- Fetch Grafana hosts ----
   useEffect(() => {
@@ -139,6 +155,48 @@ export default function GrafanaInstanceDetailPage() {
   }, [hostId]);
 
   useEffect(() => { fetchOrgs(); }, [fetchOrgs]);
+
+  // ---- Org CRUD handlers ----
+  const handleCreateOrg = async () => {
+    const name = createOrgName.trim();
+    if (!name || !hostId) return;
+    try {
+      await grafanaAPI.createOrg(hostId, name);
+      enqueueSnackbar('组织创建成功', { variant: 'success' });
+      setCreateOrgOpen(false);
+      setCreateOrgName('');
+      await fetchOrgs();
+    } catch (err) {
+      enqueueSnackbar(extractApiError(err, '创建组织失败'), { variant: 'error' });
+    }
+  };
+
+  const handleUpdateOrg = async () => {
+    const name = editOrgName.trim();
+    if (!name || !hostId || !editOrgDialog.org) return;
+    try {
+      await grafanaAPI.updateOrg(hostId, editOrgDialog.org.id, name);
+      enqueueSnackbar('组织名称已更新', { variant: 'success' });
+      setEditOrgDialog({ open: false });
+      setEditOrgName('');
+      await fetchOrgs();
+    } catch (err) {
+      enqueueSnackbar(extractApiError(err, '更新组织失败'), { variant: 'error' });
+    }
+  };
+
+  const handleDeleteOrg = async () => {
+    if (!hostId || !deleteOrgDialog.org) return;
+    try {
+      await grafanaAPI.deleteOrg(hostId, deleteOrgDialog.org.id);
+      enqueueSnackbar('组织已删除', { variant: 'success' });
+      setDeleteOrgDialog({ open: false });
+      if (selectedOrgId === deleteOrgDialog.org.id) setSelectedOrgId(null);
+      await fetchOrgs();
+    } catch (err) {
+      enqueueSnackbar(extractApiError(err, '删除组织失败'), { variant: 'error' });
+    }
+  };
 
   // ---- Fetch datasources when org selected ----
   useEffect(() => {
@@ -182,9 +240,16 @@ export default function GrafanaInstanceDetailPage() {
   }, [hostId, selectedOrgId]);
 
   const spec = useMemo(() => parseSpec(instance?.spec || '{}'), [instance?.spec]);
+  const hostName = useMemo(() => {
+    if (isManaged) return managedHost?.name || instanceId;
+    if (instance?.grafana_instance_id) {
+      return grafanaHosts.find((h) => h.id === instance.grafana_instance_id)?.name || instance.grafana_instance_id.slice(0, 8);
+    }
+    return '平台默认';
+  }, [isManaged, managedHost, instanceId, instance?.grafana_instance_id, grafanaHosts]);
 
   if (loading) return <LoadingScreen />;
-  if (!instance) {
+  if (!instance && !managedHost) {
     return (
       <Box>
         <Typography color="error">实例不存在或已删除</Typography>
@@ -193,8 +258,12 @@ export default function GrafanaInstanceDetailPage() {
     );
   }
 
+  const displayName = isManaged ? managedHost?.name : instance?.instance_name;
+  const displayStatus = isManaged ? (managedHost?.status || 'active') : instance?.status;
+
   // ---- Handlers ----
   const handleEdit = async () => {
+    if (!instance) return;
     setSaving(true);
     try {
       const newSpec = JSON.stringify({
@@ -219,6 +288,7 @@ export default function GrafanaInstanceDetailPage() {
   };
 
   const handleRebuild = async () => {
+    if (!instance) return;
     try {
       await instanceAPI.rebuild(instance.id);
       enqueueSnackbar('重建请求已提交', { variant: 'success' });
@@ -229,6 +299,7 @@ export default function GrafanaInstanceDetailPage() {
   };
 
   const handleUpgrade = async () => {
+    if (!instance) return;
     try {
       await instanceAPI.upgrade(instance.id);
       enqueueSnackbar('升级请求已提交', { variant: 'success' });
@@ -355,14 +426,10 @@ export default function GrafanaInstanceDetailPage() {
     }
   };
 
-  const hostName = instance.grafana_instance_id
-    ? (grafanaHosts.find((h) => h.id === instance.grafana_instance_id)?.name || instance.grafana_instance_id.slice(0, 8))
-    : '平台默认';
-
   return (
     <Box>
       <PageHeader
-        title={instance.instance_name}
+        title={displayName || ''}
         subtitle="Grafana 实例详情"
         extra={
           <Box sx={{ display: 'flex', gap: 1 }}>
@@ -373,7 +440,10 @@ export default function GrafanaInstanceDetailPage() {
               variant="outlined"
               startIcon={<LoginOutlinedIcon />}
               onClick={() => {
-                ssoLoginToGrafana(instanceAPI.login(instance.id)).catch((err) =>
+                const loginPromise = isManaged
+                  ? grafanaInstanceAPI.login(instanceId)
+                  : instanceAPI.login(instance!.id);
+                ssoLoginToGrafana(loginPromise).catch((err) =>
                   enqueueSnackbar(extractApiError(err, '获取登录信息失败'), { variant: 'error' }),
                 );
               }}
@@ -396,84 +466,105 @@ export default function GrafanaInstanceDetailPage() {
               <Card sx={{ p: 2.5 }}>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
                   <Typography variant="subtitle2">实例配置</Typography>
-                  <Box sx={{ display: 'flex', gap: 1 }}>
-                    <Button
-                      size="small"
-                      startIcon={<EditOutlinedIcon />}
-                      onClick={() => {
-                        setEditForm({
-                          instance_name: instance.instance_name,
-                          grafana_instance_id: instance.grafana_instance_id || '',
-                          cpu: String(spec.cpu),
-                          memory: String(spec.memory),
-                          storage: String(spec.storage),
-                          retention: String(spec.retention),
-                        });
-                        setEditOpen(true);
-                      }}
-                    >
-                      编辑
-                    </Button>
-                    <Button
-                      size="small"
-                      color="warning"
-                      startIcon={<ReplayIcon />}
-                      onClick={() => setRebuildDialog(true)}
-                      disabled={instance.status !== 'running' && instance.status !== 'failed'}
-                    >
-                      重建
-                    </Button>
-                    <Button
-                      size="small"
-                      color="primary"
-                      startIcon={<SystemUpdateAltIcon />}
-                      onClick={handleUpgrade}
-                      disabled={instance.status !== 'running'}
-                    >
-                      升级
-                    </Button>
-                  </Box>
+                  {!isManaged && (
+                    <Box sx={{ display: 'flex', gap: 1 }}>
+                      <Button
+                        size="small"
+                        startIcon={<EditOutlinedIcon />}
+                        onClick={() => {
+                          setEditForm({
+                            instance_name: instance!.instance_name,
+                            grafana_instance_id: instance!.grafana_instance_id || '',
+                            cpu: String(spec.cpu),
+                            memory: String(spec.memory),
+                            storage: String(spec.storage),
+                            retention: String(spec.retention),
+                          });
+                          setEditOpen(true);
+                        }}
+                      >
+                        编辑
+                      </Button>
+                      <Button
+                        size="small"
+                        color="warning"
+                        startIcon={<ReplayIcon />}
+                        onClick={() => setRebuildDialog(true)}
+                        disabled={instance!.status !== 'running' && instance!.status !== 'failed'}
+                      >
+                        重建
+                      </Button>
+                      <Button
+                        size="small"
+                        color="primary"
+                        startIcon={<SystemUpdateAltIcon />}
+                        onClick={handleUpgrade}
+                        disabled={instance!.status !== 'running'}
+                      >
+                        升级
+                      </Button>
+                    </Box>
+                  )}
                 </Box>
                 <Grid container spacing={2}>
                   <Grid size={{ xs: 12, md: 3 }}>
                     <Typography variant="body2" color="text.secondary">实例名称</Typography>
-                    <Typography variant="body1" sx={{ fontWeight: 500 }}>{instance.instance_name}</Typography>
+                    <Typography variant="body1" sx={{ fontWeight: 500 }}>{displayName}</Typography>
                   </Grid>
                   <Grid size={{ xs: 6, md: 2 }}>
                     <Typography variant="body2" color="text.secondary">类型</Typography>
-                    <Chip label="Grafana" size="small" color="success" variant="outlined" />
+                    <Chip label={isManaged ? '纳管实例' : 'Grafana'} size="small" color={isManaged ? 'success' : 'primary'} variant="outlined" />
                   </Grid>
                   <Grid size={{ xs: 6, md: 2 }}>
                     <Typography variant="body2" color="text.secondary">状态</Typography>
-                    <StatusChip status={instance.status} />
+                    <StatusChip status={displayStatus || ''} />
                   </Grid>
-                  <Grid size={{ xs: 6, md: 2 }}>
-                    <Typography variant="body2" color="text.secondary">模板</Typography>
-                    <Typography variant="body2">{instance.template_type}</Typography>
-                  </Grid>
-                  <Grid size={{ xs: 6, md: 3 }}>
-                    <Typography variant="body2" color="text.secondary">命名空间</Typography>
-                    <Typography variant="body2">{instance.namespace || '-'}</Typography>
-                  </Grid>
-                  <Grid size={{ xs: 6, md: 3 }}>
-                    <Typography variant="body2" color="text.secondary">关联 Grafana 主机</Typography>
-                    <Typography variant="body2">{hostName}</Typography>
-                  </Grid>
-                  <Grid size={{ xs: 6, md: 3 }}>
-                    <Typography variant="body2" color="text.secondary">CPU</Typography>
-                    <Typography variant="body2">{spec.cpu} Core</Typography>
-                  </Grid>
-                  <Grid size={{ xs: 6, md: 3 }}>
-                    <Typography variant="body2" color="text.secondary">内存</Typography>
-                    <Typography variant="body2">{spec.memory} Gi</Typography>
-                  </Grid>
-                  <Grid size={{ xs: 6, md: 3 }}>
-                    <Typography variant="body2" color="text.secondary">存储</Typography>
-                    <Typography variant="body2">{spec.storage} Gi</Typography>
-                  </Grid>
+                  {isManaged ? (
+                    <>
+                      <Grid size={{ xs: 6, md: 2 }}>
+                        <Typography variant="body2" color="text.secondary">范围</Typography>
+                        <Typography variant="body2">{managedHost?.scope === 'platform' ? '平台共享' : '租户专属'}</Typography>
+                      </Grid>
+                      <Grid size={{ xs: 6, md: 3 }}>
+                        <Typography variant="body2" color="text.secondary">Grafana 地址</Typography>
+                        <Typography variant="body2" sx={{ fontFamily: 'monospace', fontSize: '0.8125rem' }}>{managedHost?.url || '-'}</Typography>
+                      </Grid>
+                      <Grid size={{ xs: 12, md: 3 }}>
+                        <Typography variant="body2" color="text.secondary">管理员账号</Typography>
+                        <Typography variant="body2">{managedHost?.admin_user || '-'}</Typography>
+                      </Grid>
+                    </>
+                  ) : (
+                    <>
+                      <Grid size={{ xs: 6, md: 2 }}>
+                        <Typography variant="body2" color="text.secondary">模板</Typography>
+                        <Typography variant="body2">{instance?.template_type}</Typography>
+                      </Grid>
+                      <Grid size={{ xs: 6, md: 3 }}>
+                        <Typography variant="body2" color="text.secondary">命名空间</Typography>
+                        <Typography variant="body2">{instance?.namespace || '-'}</Typography>
+                      </Grid>
+                      <Grid size={{ xs: 6, md: 3 }}>
+                        <Typography variant="body2" color="text.secondary">关联 Grafana 主机</Typography>
+                        <Typography variant="body2">{hostName}</Typography>
+                      </Grid>
+                      <Grid size={{ xs: 6, md: 3 }}>
+                        <Typography variant="body2" color="text.secondary">CPU</Typography>
+                        <Typography variant="body2">{spec.cpu} Core</Typography>
+                      </Grid>
+                      <Grid size={{ xs: 6, md: 3 }}>
+                        <Typography variant="body2" color="text.secondary">内存</Typography>
+                        <Typography variant="body2">{spec.memory} Gi</Typography>
+                      </Grid>
+                      <Grid size={{ xs: 6, md: 3 }}>
+                        <Typography variant="body2" color="text.secondary">存储</Typography>
+                        <Typography variant="body2">{spec.storage} Gi</Typography>
+                      </Grid>
+                    </>
+                  )}
                   <Grid size={{ xs: 6, md: 3 }}>
                     <Typography variant="body2" color="text.secondary">创建时间</Typography>
-                    <Typography variant="body2">{new Date(instance.created_at).toLocaleString()}</Typography>
+                    <Typography variant="body2">{new Date(isManaged ? (managedHost?.created_at || '') : (instance?.created_at || '')).toLocaleString()}</Typography>
                   </Grid>
                 </Grid>
               </Card>
@@ -563,66 +654,99 @@ export default function GrafanaInstanceDetailPage() {
             content: (
               <Card sx={{ p: 2.5 }}>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                    <Typography variant="subtitle2">组织管理</Typography>
-                    {orgs.length > 0 && (
-                      <FormControl size="small" sx={{ minWidth: 180 }}>
-                        <InputLabel>选择组织</InputLabel>
-                        <Select
-                          value={selectedOrgId ?? ''}
-                          label="选择组织"
-                          onChange={(e) => setSelectedOrgId(e.target.value ? Number(e.target.value) : null)}
-                        >
-                          <MenuItem value="">请选择</MenuItem>
-                          {orgs.map((org) => (
-                            <MenuItem key={org.id} value={org.id}>{org.name}</MenuItem>
-                          ))}
-                        </Select>
-                      </FormControl>
-                    )}
-                  </Box>
-                  {selectedOrgId && (
-                    <Button
-                      size="small"
-                      variant="outlined"
-                      startIcon={<PersonAddOutlinedIcon />}
-                      onClick={() => setAddUserOpen(true)}
-                    >
-                      添加用户
+                  <Typography variant="subtitle2">组织管理</Typography>
+                  {hostId && (
+                    <Button size="small" variant="contained" onClick={() => setCreateOrgOpen(true)}>
+                      创建组织
                     </Button>
                   )}
                 </Box>
                 {!hostId ? (
                   <Typography variant="body2" color="text.secondary">未关联 Grafana 主机，无法管理组织。</Typography>
-                ) : !selectedOrgId ? (
-                  <Typography variant="body2" color="text.secondary">请先选择组织，查看其成员。</Typography>
-                ) : orgUsers.length === 0 ? (
-                  <EmptyState title="暂无成员" description="点击右上角添加用户到该组织" />
+                ) : orgs.length === 0 ? (
+                  <EmptyState title="暂无组织" description="点击右上角创建组织" />
                 ) : (
                   <TableContainer>
                     <Table size="small">
                       <TableHead>
                         <TableRow>
-                          <TableCell>用户名</TableCell>
-                          <TableCell>邮箱</TableCell>
-                          <TableCell>角色</TableCell>
+                          <TableCell>组织 ID</TableCell>
+                          <TableCell>名称</TableCell>
                           <TableCell align="right">操作</TableCell>
                         </TableRow>
                       </TableHead>
                       <TableBody>
-                        {orgUsers.map((u) => (
-                          <TableRow key={u.userId}>
-                            <TableCell sx={{ fontWeight: 500 }}>{u.login}</TableCell>
-                            <TableCell>{u.email || '-'}</TableCell>
-                            <TableCell><Chip size="small" label={u.role} variant="outlined" /></TableCell>
+                        {orgs.map((org) => (
+                          <TableRow key={org.id}>
+                            <TableCell sx={{ fontFamily: 'monospace', fontSize: '0.8125rem' }}>{org.id}</TableCell>
+                            <TableCell sx={{ fontWeight: 500 }}>{org.name}</TableCell>
                             <TableCell align="right">
-                              <IconButton size="small" color="error" onClick={() => handleRemoveUser(u.userId)}><DeleteOutlinedIcon fontSize="small" /></IconButton>
+                              <Button size="small" variant="outlined" sx={{ mr: 1 }}
+                                onClick={() => { setSelectedOrgId(org.id); }}>
+                                管理用户
+                              </Button>
+                              <IconButton size="small" onClick={() => {
+                                setEditOrgName(org.name);
+                                setEditOrgDialog({ open: true, org });
+                              }}><EditOutlinedIcon fontSize="small" /></IconButton>
+                              <IconButton size="small" color="error" onClick={() => setDeleteOrgDialog({ open: true, org })}>
+                                <DeleteOutlinedIcon fontSize="small" />
+                              </IconButton>
                             </TableCell>
                           </TableRow>
                         ))}
                       </TableBody>
                     </Table>
                   </TableContainer>
+                )}
+                {/* 选中组织的用户管理 */}
+                {selectedOrgId && orgs.find((o) => o.id === selectedOrgId) && (
+                  <Box sx={{ mt: 3, pt: 3, borderTop: 1, borderColor: 'divider' }}>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                      <Typography variant="subtitle2" color="primary">
+                        {orgs.find((o) => o.id === selectedOrgId)!.name} — 成员管理
+                      </Typography>
+                      <Box sx={{ display: 'flex', gap: 1 }}>
+                        <Button
+                          size="small"
+                          variant="outlined"
+                          startIcon={<PersonAddOutlinedIcon />}
+                          onClick={() => setAddUserOpen(true)}
+                        >
+                          添加用户
+                        </Button>
+                        <Button size="small" onClick={() => setSelectedOrgId(null)}>关闭</Button>
+                      </Box>
+                    </Box>
+                    {orgUsers.length === 0 ? (
+                      <EmptyState title="暂无成员" description="点击右上角添加用户到该组织" />
+                    ) : (
+                      <TableContainer>
+                        <Table size="small">
+                          <TableHead>
+                            <TableRow>
+                              <TableCell>用户名</TableCell>
+                              <TableCell>邮箱</TableCell>
+                              <TableCell>角色</TableCell>
+                              <TableCell align="right">操作</TableCell>
+                            </TableRow>
+                          </TableHead>
+                          <TableBody>
+                            {orgUsers.map((u) => (
+                              <TableRow key={u.userId}>
+                                <TableCell sx={{ fontWeight: 500 }}>{u.login}</TableCell>
+                                <TableCell>{u.email || '-'}</TableCell>
+                                <TableCell><Chip size="small" label={u.role} variant="outlined" /></TableCell>
+                                <TableCell align="right">
+                                  <IconButton size="small" color="error" onClick={() => handleRemoveUser(u.userId)}><DeleteOutlinedIcon fontSize="small" /></IconButton>
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </TableContainer>
+                    )}
+                  </Box>
                 )}
               </Card>
             ),
@@ -712,40 +836,65 @@ export default function GrafanaInstanceDetailPage() {
             content: (
               <Card sx={{ p: 2.5 }}>
                 <Typography variant="subtitle2" sx={{ mb: 2 }}>实例配置</Typography>
-                <Grid container spacing={2}>
-                  <Grid size={{ xs: 12, md: 6 }}>
-                    <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>CPU</Typography>
-                    <Typography variant="body1">{spec.cpu} Core</Typography>
+                {isManaged ? (
+                  <Grid container spacing={2}>
+                    <Grid size={{ xs: 12, md: 6 }}>
+                      <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>Grafana 地址</Typography>
+                      <Typography variant="body1" sx={{ fontFamily: 'monospace' }}>{managedHost?.url || '-'}</Typography>
+                    </Grid>
+                    <Grid size={{ xs: 12, md: 6 }}>
+                      <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>管理员账号</Typography>
+                      <Typography variant="body1">{managedHost?.admin_user || '-'}</Typography>
+                    </Grid>
+                    <Grid size={{ xs: 12, md: 6 }}>
+                      <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>范围</Typography>
+                      <Typography variant="body1">{managedHost?.scope === 'platform' ? '平台共享' : '租户专属'}</Typography>
+                    </Grid>
+                    <Grid size={{ xs: 12, md: 6 }}>
+                      <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>纳管主机名称</Typography>
+                      <Typography variant="body1">{hostName}</Typography>
+                    </Grid>
+                    <Grid size={{ xs: 12, md: 6 }}>
+                      <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>创建时间</Typography>
+                      <Typography variant="body1">{managedHost?.created_at ? new Date(managedHost.created_at).toLocaleString() : '-'}</Typography>
+                    </Grid>
                   </Grid>
-                  <Grid size={{ xs: 12, md: 6 }}>
-                    <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>内存</Typography>
-                    <Typography variant="body1">{spec.memory} Gi</Typography>
+                ) : (
+                  <Grid container spacing={2}>
+                    <Grid size={{ xs: 12, md: 6 }}>
+                      <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>CPU</Typography>
+                      <Typography variant="body1">{spec.cpu} Core</Typography>
+                    </Grid>
+                    <Grid size={{ xs: 12, md: 6 }}>
+                      <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>内存</Typography>
+                      <Typography variant="body1">{spec.memory} Gi</Typography>
+                    </Grid>
+                    <Grid size={{ xs: 12, md: 6 }}>
+                      <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>存储</Typography>
+                      <Typography variant="body1">{spec.storage} Gi</Typography>
+                    </Grid>
+                    <Grid size={{ xs: 12, md: 6 }}>
+                      <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>数据保留</Typography>
+                      <Typography variant="body1">{spec.retention} 天</Typography>
+                    </Grid>
+                    <Grid size={{ xs: 12, md: 6 }}>
+                      <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>Grafana 主机</Typography>
+                      <Typography variant="body1">{hostName}</Typography>
+                    </Grid>
+                    <Grid size={{ xs: 12, md: 6 }}>
+                      <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>命名空间</Typography>
+                      <Typography variant="body1">{instance?.namespace || '-'}</Typography>
+                    </Grid>
+                    <Grid size={{ xs: 12, md: 6 }}>
+                      <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>Release 名称</Typography>
+                      <Typography variant="body1">{instance?.release_name || '-'}</Typography>
+                    </Grid>
+                    <Grid size={{ xs: 12, md: 6 }}>
+                      <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>访问地址</Typography>
+                      <Typography variant="body1" sx={{ fontFamily: 'monospace' }}>{instance?.url || '-'}</Typography>
+                    </Grid>
                   </Grid>
-                  <Grid size={{ xs: 12, md: 6 }}>
-                    <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>存储</Typography>
-                    <Typography variant="body1">{spec.storage} Gi</Typography>
-                  </Grid>
-                  <Grid size={{ xs: 12, md: 6 }}>
-                    <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>数据保留</Typography>
-                    <Typography variant="body1">{spec.retention} 天</Typography>
-                  </Grid>
-                  <Grid size={{ xs: 12, md: 6 }}>
-                    <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>Grafana 主机</Typography>
-                    <Typography variant="body1">{hostName}</Typography>
-                  </Grid>
-                  <Grid size={{ xs: 12, md: 6 }}>
-                    <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>命名空间</Typography>
-                    <Typography variant="body1">{instance.namespace || '-'}</Typography>
-                  </Grid>
-                  <Grid size={{ xs: 12, md: 6 }}>
-                    <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>Release 名称</Typography>
-                    <Typography variant="body1">{instance.release_name || '-'}</Typography>
-                  </Grid>
-                  <Grid size={{ xs: 12, md: 6 }}>
-                    <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>访问地址</Typography>
-                    <Typography variant="body1" sx={{ fontFamily: 'monospace' }}>{instance.url || '-'}</Typography>
-                  </Grid>
-                </Grid>
+                )}
               </Card>
             ),
           },
@@ -828,7 +977,7 @@ export default function GrafanaInstanceDetailPage() {
       <ConfirmDialog
         open={rebuildDialog}
         title="重建 Grafana 实例"
-        message={`确定要重建 Grafana 实例「${instance.instance_name}」吗？将重新部署 Helm Release。`}
+        message={`确定要重建 Grafana 实例「${instance?.instance_name}」吗？将重新部署 Helm Release。`}
         severity="warning"
         confirmLabel="重建"
         onConfirm={handleRebuild}
@@ -883,6 +1032,41 @@ export default function GrafanaInstanceDetailPage() {
           <Button variant="contained" onClick={handleUpdateDs} disabled={!editDsForm.name || !editDsForm.url}>保存</Button>
         </DialogActions>
       </Dialog>
+
+      {/* ===== Create Org ===== */}
+      <Dialog open={createOrgOpen} onClose={() => setCreateOrgOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>创建组织</DialogTitle>
+        <DialogContent sx={{ pt: '16px !important' }}>
+          <TextField fullWidth size="small" label="组织名称" value={createOrgName} onChange={(e) => setCreateOrgName(e.target.value)} sx={{ mb: 2 }} required />
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button onClick={() => setCreateOrgOpen(false)}>取消</Button>
+          <Button variant="contained" onClick={handleCreateOrg} disabled={!createOrgName.trim()}>创建</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* ===== Edit Org ===== */}
+      <Dialog open={editOrgDialog.open} onClose={() => setEditOrgDialog({ open: false })} maxWidth="sm" fullWidth>
+        <DialogTitle>编辑组织名称</DialogTitle>
+        <DialogContent sx={{ pt: '16px !important' }}>
+          <TextField fullWidth size="small" label="组织名称" value={editOrgName} onChange={(e) => setEditOrgName(e.target.value)} sx={{ mb: 2 }} required />
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button onClick={() => setEditOrgDialog({ open: false })}>取消</Button>
+          <Button variant="contained" onClick={handleUpdateOrg} disabled={!editOrgName.trim()}>保存</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* ===== Delete Org ===== */}
+      <ConfirmDialog
+        open={deleteOrgDialog.open}
+        title="删除组织"
+        message={`确定要删除组织「${deleteOrgDialog.org?.name}」(ID: ${deleteOrgDialog.org?.id}) 吗？该操作不可回退。`}
+        severity="error"
+        confirmLabel="删除"
+        onConfirm={handleDeleteOrg}
+        onCancel={() => setDeleteOrgDialog({ open: false })}
+      />
 
       {/* ===== Add User ===== */}
       <Dialog open={addUserOpen} onClose={() => setAddUserOpen(false)} maxWidth="sm" fullWidth>
