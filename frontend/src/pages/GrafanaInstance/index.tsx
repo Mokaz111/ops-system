@@ -30,7 +30,6 @@ import {
 import SearchIcon from '@mui/icons-material/Search';
 import DeleteOutlinedIcon from '@mui/icons-material/DeleteOutlined';
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
-import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import ReplayIcon from '@mui/icons-material/Replay';
 import SystemUpdateAltIcon from '@mui/icons-material/SystemUpdateAlt';
@@ -98,7 +97,7 @@ export default function GrafanaInstancePage() {
 
   const [createOpen, setCreateOpen] = useState(false);
   const [editDialog, setEditDialog] = useState<{ open: boolean; instance?: Instance }>({ open: false });
-  const [editForm, setEditForm] = useState({ instance_name: '', grafana_instance_id: '' });
+  const [editForm, setEditForm] = useState({ instance_name: '', tenant_id: '', grafana_instance_id: '' });
   const [rebuildDialog, setRebuildDialog] = useState<{ open: boolean; instance?: Instance }>({ open: false });
   const [deleteDialog, setDeleteDialog] = useState<{ open: boolean; instance?: Instance }>({ open: false });
   const [createForm, setCreateForm] = useState({ tenant_id: '', instance_name: '', metrics_instance_id: '', grafana_instance_id: '' });
@@ -175,7 +174,7 @@ export default function GrafanaInstancePage() {
         metrics_instance_id: createForm.metrics_instance_id || undefined,
       });
       await instanceAPI.create({
-        tenant_id: createForm.tenant_id,
+        tenant_id: createForm.tenant_id || undefined,
         instance_name: createForm.instance_name,
         instance_type: 'visual',
         template_type: 'dedicated_single',
@@ -198,6 +197,7 @@ export default function GrafanaInstancePage() {
     try {
       await instanceAPI.update(editDialog.instance.id, {
         instance_name: editForm.instance_name,
+        tenant_id: editForm.tenant_id || undefined,
         grafana_instance_id: editForm.grafana_instance_id || undefined,
         spec: editDialog.instance.spec,
       });
@@ -433,7 +433,7 @@ export default function GrafanaInstancePage() {
                               );
                             }}><LoginOutlinedIcon fontSize="small" /></IconButton></Tooltip>
                             <Tooltip title="编辑"><IconButton size="small" onClick={() => {
-                              setEditForm({ instance_name: inst.instance_name, grafana_instance_id: inst.grafana_instance_id || '' });
+                              setEditForm({ instance_name: inst.instance_name, tenant_id: inst.tenant_id || '', grafana_instance_id: inst.grafana_instance_id || '' });
                               setEditDialog({ open: true, instance: inst });
                             }}><EditOutlinedIcon fontSize="small" /></IconButton></Tooltip>
                             <Tooltip title="重建">
@@ -451,13 +451,14 @@ export default function GrafanaInstancePage() {
                         <TableCell><Chip label="纳管实例" size="small" color="success" variant="outlined" /></TableCell>
                         <TableCell sx={{ fontSize: '0.8125rem', color: 'text.secondary' }}>-</TableCell>
                         <TableCell sx={{ fontFamily: 'monospace', fontSize: '0.8125rem' }}>
-                          <Typography component="a" href={h.url} target="_blank" rel="noopener noreferrer" sx={{ color: 'primary.main', textDecoration: 'none', fontSize: '0.8125rem' }}>
-                            {h.url}<OpenInNewIcon sx={{ fontSize: 14, ml: 0.5, verticalAlign: 'middle' }} />
+                          <Typography sx={{ color: 'text.secondary', fontSize: '0.8125rem' }}>
+                            {h.url}
                           </Typography>
                         </TableCell>
                         <TableCell sx={{ fontSize: '0.8125rem', color: 'text.secondary' }}>{h.tenant_id ? (tenantNameById[h.tenant_id] || h.tenant_id.slice(0, 8)) : (h.scope === 'platform' ? '平台共享' : '-')}</TableCell>
                         <TableCell><StatusChip status={h.status || 'active'} /></TableCell>
                         <TableCell align="right">
+                          <Tooltip title="详情"><IconButton size="small" onClick={() => navigate(`/grafana-instances/${h.id}?type=managed`)}><InfoOutlinedIcon fontSize="small" /></IconButton></Tooltip>
                           <Tooltip title="登录"><IconButton size="small" color="primary" onClick={() => {
                             ssoLoginToGrafana(grafanaInstanceAPI.login(h.id)).catch((err) =>
                               enqueueSnackbar(extractApiError(err, '获取登录信息失败'), { variant: 'error' })
@@ -484,7 +485,7 @@ export default function GrafanaInstancePage() {
       <Dialog open={createOpen} onClose={() => setCreateOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle>创建 Grafana 实例</DialogTitle>
         <DialogContent sx={{ pt: '16px !important' }}>
-          <TextField fullWidth label="租户 ID" value={createForm.tenant_id} onChange={(e) => setCreateForm({ ...createForm, tenant_id: e.target.value })} sx={{ mb: 2.5 }} required helperText="关联租户的 UUID" />
+          <TextField fullWidth label="租户 ID（可选）" value={createForm.tenant_id} onChange={(e) => setCreateForm({ ...createForm, tenant_id: e.target.value })} sx={{ mb: 2.5 }} helperText="租户 UUID，可后续再绑定" />
           <TextField fullWidth label="实例名称" value={createForm.instance_name} onChange={(e) => setCreateForm({ ...createForm, instance_name: e.target.value })} sx={{ mb: 2.5 }} required />
           <FormControl fullWidth size="small" sx={{ mb: 2.5 }}>
             <InputLabel>关联 VictoriaMetrics 实例</InputLabel>
@@ -507,7 +508,7 @@ export default function GrafanaInstancePage() {
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2 }}>
           <Button onClick={() => setCreateOpen(false)}>取消</Button>
-          <Button variant="contained" onClick={handleCreate} disabled={saving || !createForm.tenant_id || !createForm.instance_name}>{saving ? '创建中...' : '创建'}</Button>
+          <Button variant="contained" onClick={handleCreate} disabled={saving || !createForm.instance_name}>{saving ? '创建中...' : '创建'}</Button>
         </DialogActions>
       </Dialog>
 
@@ -516,6 +517,7 @@ export default function GrafanaInstancePage() {
         <DialogTitle>编辑 Grafana 实例</DialogTitle>
         <DialogContent sx={{ pt: '16px !important' }}>
           <TextField fullWidth label="实例名称" value={editForm.instance_name} onChange={(e) => setEditForm({ ...editForm, instance_name: e.target.value })} sx={{ mb: 2.5 }} required />
+          <TextField fullWidth label="租户 ID（可选）" value={editForm.tenant_id} onChange={(e) => setEditForm({ ...editForm, tenant_id: e.target.value })} sx={{ mb: 2.5 }} helperText="租户 UUID，留空则不修改" />
           <FormControl fullWidth size="small" sx={{ mb: 2.5 }}>
             <InputLabel>部署 Grafana 主机（可选）</InputLabel>
             <Select value={editForm.grafana_instance_id} label="部署 Grafana 主机（可选）" onChange={(e) => setEditForm({ ...editForm, grafana_instance_id: e.target.value })}>

@@ -63,7 +63,7 @@ func toInstanceResp(i *model.Instance) instanceResp {
 }
 
 type createInstanceBody struct {
-	TenantID          uuid.UUID  `json:"tenant_id" binding:"required"`
+	TenantID          *uuid.UUID `json:"tenant_id"`
 	ClusterID         *uuid.UUID `json:"cluster_id"`
 	InstanceName      string     `json:"instance_name" binding:"required"`
 	InstanceType      string     `json:"instance_type" binding:"required"`
@@ -178,6 +178,7 @@ type updateInstanceBody struct {
 	InstanceName      string     `json:"instance_name"`
 	Spec              string     `json:"spec"`
 	Status            string     `json:"status"`
+	TenantID          *uuid.UUID `json:"tenant_id"`
 	GrafanaInstanceID *uuid.UUID `json:"grafana_instance_id"`
 }
 
@@ -197,6 +198,7 @@ func (h *InstanceHandler) Update(c *gin.Context) {
 		InstanceName:      body.InstanceName,
 		Spec:              body.Spec,
 		Status:            body.Status,
+		TenantID:          body.TenantID,
 		GrafanaInstanceID: body.GrafanaInstanceID,
 	})
 	if err != nil {
@@ -354,44 +356,24 @@ func (h *InstanceHandler) LoginGrafana(c *gin.Context) {
 		return
 	}
 
-	var grafanaURL, adminUser, adminPassword string
+	// 解析目标 Grafana 实例 ID。
+	var grafanaInstanceID uuid.UUID
 
 	if inst.GrafanaInstanceID != nil {
-		grafanaInstance, err := h.grafanaInstanceSvc.Get(c.Request.Context(), *inst.GrafanaInstanceID)
-		if err != nil {
-			h.handleErr(c, err)
-			return
-		}
-		grafanaURL = grafanaInstance.URL
-		adminUser = grafanaInstance.AdminUser
-		adminPassword = grafanaInstance.AdminPassword
-		if adminPassword == "" {
-			adminPassword = grafanaInstance.AdminTokenEnc
-		}
+		grafanaInstanceID = *inst.GrafanaInstanceID
 	} else {
-		// 查找平台默认 Grafana 实例（scope=platform 且无 tenant_id）。
 		grafanaInstances, _, err := h.grafanaInstanceSvc.List(c.Request.Context(), "platform", nil, 1, 1)
 		if err != nil || len(grafanaInstances) == 0 {
 			response.Error(c, http.StatusNotFound, http.StatusNotFound, response.ErrCodeNotFound, "no grafana instance configured")
 			return
 		}
-		grafanaURL = grafanaInstances[0].URL
-		adminUser = grafanaInstances[0].AdminUser
-		adminPassword = grafanaInstances[0].AdminPassword
-		if adminPassword == "" {
-			adminPassword = grafanaInstances[0].AdminTokenEnc
-		}
+		grafanaInstanceID = grafanaInstances[0].ID
 	}
 
-	if grafanaURL == "" {
-		response.Error(c, http.StatusNotFound, http.StatusNotFound, response.ErrCodeNotFound, "grafana url not configured")
-		return
-	}
-
+	// Set cookie so the reverse proxy knows which Grafana instance to target.
+	c.SetCookie("grafana_proxy_instance", grafanaInstanceID.String(), 86400, "/api/v1/grafana/proxy", "", false, true)
 	response.JSON(c, gin.H{
-		"url":      grafanaURL,
-		"user":     adminUser,
-		"password": adminPassword,
+		"proxyUrl": "/api/v1/grafana/proxy/",
 	})
 }
 

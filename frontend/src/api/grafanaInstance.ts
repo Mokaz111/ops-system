@@ -38,5 +38,5 @@ export const grafanaInstanceAPI = {
     api.delete<ApiResponse<null>>(`/grafana/instances/${id}`),
 
   login: (id: string) =>
-    api.post<ApiResponse<{ url: string; user: string; password: string }>>(`/grafana/instances/${id}/login`),
+    api.post<ApiResponse<{ proxyUrl: string }>>(`/grafana/instances/${id}/login`),
 };

@@ -270,6 +270,9 @@ func NewRouter(cfg *config.Config, log *zap.Logger, db *gorm.DB) *gin.Engine {
 			api.POST("/auth/login", authH.Login)
 			api.POST("/users/bootstrap", userH.Bootstrap)
 
+			// Grafana 反向代理（通过 cookie 识别目标实例，auth proxy 免手动登录）
+			api.Any("/grafana/proxy/*path", grafanaInstanceH.ProxyGrafana)
+
 			protected := api.Group("")
 			protected.Use(middleware.JWTAuth(cfg.JWT.Secret))
 			protected.GET("/auth/me", authH.Me)

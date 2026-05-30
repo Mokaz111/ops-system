@@ -50,12 +50,15 @@ func NewClient(cfg *config.GrafanaConfig, log *zap.Logger) *Client {
 	}
 }
 
-// Enabled 需 base_url 与 api_key。
+// Enabled 需 base_url 且配置了 api_key 或 admin 凭据。
 func (c *Client) Enabled() bool {
 	if c == nil || c.cfg == nil || !c.cfg.Enabled {
 		return false
 	}
-	return strings.TrimSpace(c.cfg.BaseURL) != "" && strings.TrimSpace(c.cfg.APIKey) != ""
+	if strings.TrimSpace(c.cfg.BaseURL) == "" {
+		return false
+	}
+	return strings.TrimSpace(c.cfg.APIKey) != "" || c.adminBasicAuth != ""
 }
 
 func (c *Client) base() string {
@@ -80,7 +83,12 @@ func (c *Client) doJSON(ctx context.Context, method, path string, body any, orgI
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(c.cfg.APIKey))
+	// 优先使用 Basic Auth（admin 凭据拥有完整权限），API Key 作为回退。
+	if c.hasAdminAuth() {
+		req.Header.Set("Authorization", "Basic "+c.adminBasicAuth)
+	} else {
+		req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(c.cfg.APIKey))
+	}
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
@@ -192,14 +200,15 @@ func (c *Client) AdminSettings(ctx context.Context) (map[string]any, error) {
 
 // GrafanaHealth grafana 健康检查结果。
 type GrafanaHealth struct {
-	Status  string `json:"status"`
-	Message string `json:"message,omitempty"`
+	Database string `json:"database"`
+	Version  string `json:"version"`
+	Commit   string `json:"commit"`
 }
 
 // HealthCheck 检查 Grafana 是否健康。
 func (c *Client) HealthCheck(ctx context.Context) (*GrafanaHealth, error) {
 	if !c.Enabled() {
-		return &GrafanaHealth{Status: "disabled"}, nil
+		return nil, fmt.Errorf("grafana disabled")
 	}
 	var h GrafanaHealth
 	if err := c.doJSON(ctx, "GET", "/api/health", nil, 0, &h); err != nil {

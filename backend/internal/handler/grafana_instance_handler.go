@@ -119,14 +119,14 @@ func (h *GrafanaInstanceHandler) Login(c *gin.Context) {
 		h.handleErr(c, err)
 		return
 	}
-	pwd := m.AdminPassword
-	if pwd == "" {
-		pwd = m.AdminTokenEnc
+	if m.URL == "" {
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "grafana url not configured")
+		return
 	}
+	// Set cookie so the reverse proxy knows which Grafana instance to target.
+	c.SetCookie("grafana_proxy_instance", id.String(), 86400, "/api/v1/grafana/proxy", "", false, true)
 	response.JSON(c, gin.H{
-		"url":      m.URL,
-		"user":     m.AdminUser,
-		"password": pwd,
+		"proxyUrl": "/api/v1/grafana/proxy/",
 	})
 }
 

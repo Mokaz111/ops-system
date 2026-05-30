@@ -49,19 +49,13 @@ export const instanceAPI = {
     api.post<ApiResponse<null>>(`/instances/${id}/upgrade`),
 
   login: (id: string) =>
-    api.post<ApiResponse<GrafanaLoginInfo>>(`/instances/${id}/login`),
+    api.post<ApiResponse<{ proxyUrl: string }>>(`/instances/${id}/login`),
 };
 
 function normalizeListParams<T extends PaginationParams>(params?: T) {
   if (!params?.search) return params;
   const { search, ...rest } = params;
   return { ...rest, keyword: search };
-}
-
-export interface GrafanaLoginInfo {
-  url: string;
-  user: string;
-  password: string;
 }
 
 export interface ScaleEvent {
