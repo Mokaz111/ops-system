@@ -15,19 +15,19 @@ const GrafanaPage = lazy(() => import('./pages/Grafana'));
 const AlertPage = lazy(() => import('./pages/Alert'));
 const UserPage = lazy(() => import('./pages/User'));
 const SettingsPage = lazy(() => import('./pages/Settings'));
-const PlatformScalingPage = lazy(() => import('./pages/PlatformScaling'));
 const InstanceDetailPage = lazy(() => import('./pages/InstanceDetail'));
 const IntegrationPage = lazy(() => import('./pages/Integration'));
 const MetricPage = lazy(() => import('./pages/Metric'));
 const LogInstancePage = lazy(() => import('./pages/LogInstance'));
 const LogQueryPage = lazy(() => import('./pages/LogQuery'));
 const DashboardMgmtPage = lazy(() => import('./pages/DashboardMgmt'));
+const ZonePage = lazy(() => import('./pages/Zone'));
 const ClusterPage = lazy(() => import('./pages/Cluster'));
+const BusinessClusterPage = lazy(() => import('./pages/BusinessCluster'));
 const GrafanaHostPage = lazy(() => import('./pages/GrafanaHost'));
 const GrafanaInstancePage = lazy(() => import('./pages/GrafanaInstance'));
 const GrafanaInstanceDetailPage = lazy(() => import('./pages/GrafanaInstanceDetail'));
-const VMStatsPage = lazy(() => import('./pages/VMStats'));
-const LogStatsPage = lazy(() => import('./pages/LogStats'));
+const StatsPage = lazy(() => import('./pages/Stats'));
 
 function Lazy({ children }: { children: React.ReactNode }) {
   return <Suspense fallback={<LoadingScreen />}>{children}</Suspense>;
@@ -35,8 +35,6 @@ function Lazy({ children }: { children: React.ReactNode }) {
 
 function AuthGuard({ children }: { children: React.ReactNode }) {
   const navigate = useNavigate();
-  // 订阅 store 的 token，401 拦截器把 token 清掉后会自动重渲染并跳到 /login，
-  // 不再依赖外层手动监听 UNAUTHORIZED_EVENT 才能感知。
   const token = useAuthStore((s) => s.token);
 
   useEffect(() => {
@@ -57,26 +55,26 @@ function GuestGuard({ children }: { children: React.ReactNode }) {
 
 const routeComponentMap: Record<AppRouteKey, React.ReactNode | null> = {
   dashboard: <Lazy><DashboardPage /></Lazy>,
-  departments: <Lazy><DepartmentPage /></Lazy>,
-  tenants: <Lazy><TenantPage /></Lazy>,
-  instances: <Lazy><InstancePage /></Lazy>,
-  'instance-detail': <Lazy><InstanceDetailPage /></Lazy>,
-  'grafana-instance-detail': <Lazy><GrafanaInstanceDetailPage /></Lazy>,
+  'dashboard-mgmt': <Lazy><DashboardMgmtPage /></Lazy>,
   integrations: <Lazy><IntegrationPage /></Lazy>,
   metrics: <Lazy><MetricPage /></Lazy>,
+  instances: <Lazy><InstancePage /></Lazy>,
+  'instance-detail': <Lazy><InstanceDetailPage /></Lazy>,
   'log-instances': <Lazy><LogInstancePage /></Lazy>,
   'log-query': <Lazy><LogQueryPage /></Lazy>,
-  grafana: <Lazy><GrafanaPage /></Lazy>,
+  'business-clusters': <Lazy><BusinessClusterPage /></Lazy>,
   'grafana-instances': <Lazy><GrafanaInstancePage /></Lazy>,
+  'grafana-instance-detail': <Lazy><GrafanaInstanceDetailPage /></Lazy>,
   'grafana-hosts': <Lazy><GrafanaHostPage /></Lazy>,
-  'dashboard-mgmt': <Lazy><DashboardMgmtPage /></Lazy>,
+  grafana: <Lazy><GrafanaPage /></Lazy>,
+  stats: <Lazy><StatsPage /></Lazy>,
   alerts: <Lazy><AlertPage /></Lazy>,
+  departments: <Lazy><DepartmentPage /></Lazy>,
+  tenants: <Lazy><TenantPage /></Lazy>,
   users: <Lazy><UserPage /></Lazy>,
+  zones: <Lazy><ZonePage /></Lazy>,
   clusters: <Lazy><ClusterPage /></Lazy>,
   settings: <Lazy><SettingsPage /></Lazy>,
-  'platform-scaling': <Lazy><PlatformScalingPage /></Lazy>,
-  'vm-stats': <Lazy><VMStatsPage /></Lazy>,
-  'log-stats': <Lazy><LogStatsPage /></Lazy>,
 };
 
 export const router = createBrowserRouter([

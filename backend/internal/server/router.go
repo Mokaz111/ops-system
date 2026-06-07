@@ -85,6 +85,8 @@ func NewRouter(cfg *config.Config, log *zap.Logger, db *gorm.DB) *gin.Engine {
 			grafanaInstanceRepo := repository.NewGrafanaInstanceRepository(db)
 			grafanaInstanceSvc := service.NewGrafanaInstanceService(grafanaInstanceRepo)
 			clusterRepo := repository.NewClusterRepository(db)
+			zoneRepo := repository.NewZoneRepository(db)
+			businessClusterRepo := repository.NewBusinessClusterRepository(db)
 
 			userSvc := service.NewUserService(userRepo, tenantMemberRepo)
 			authSvc := service.NewAuthService(userRepo, cfg.JWT.Secret, cfg.JWT.ExpireHours)
@@ -267,6 +269,12 @@ func NewRouter(cfg *config.Config, log *zap.Logger, db *gorm.DB) *gin.Engine {
 			clusterSvc := service.NewClusterService(clusterRepo)
 			clusterH := handler.NewClusterHandler(clusterSvc)
 
+			zoneSvc := service.NewZoneService(zoneRepo, instanceRepo, log)
+			zoneH := handler.NewZoneHandler(zoneSvc)
+
+			businessClusterSvc := service.NewBusinessClusterService(businessClusterRepo, instanceRepo, log)
+			businessClusterH := handler.NewBusinessClusterHandler(businessClusterSvc, userSvc)
+
 			api.POST("/auth/login", authH.Login)
 			api.POST("/users/bootstrap", userH.Bootstrap)
 
@@ -359,6 +367,14 @@ func NewRouter(cfg *config.Config, log *zap.Logger, db *gorm.DB) *gin.Engine {
 			cg.GET("", clusterH.List)
 			cg.GET("/:id", clusterH.Get)
 
+			zg := protected.Group("/zones")
+			zg.GET("", zoneH.List)
+			zg.GET("/:id", zoneH.Get)
+
+			bg := protected.Group("/business-clusters")
+			bg.GET("", businessClusterH.List)
+			bg.GET("/:id", businessClusterH.Get)
+
 			admin := protected.Group("")
 			admin.Use(middleware.RequireRole("admin"))
 
@@ -446,6 +462,17 @@ func NewRouter(cfg *config.Config, log *zap.Logger, db *gorm.DB) *gin.Engine {
 			adminCG.POST("", clusterH.Create)
 			adminCG.PUT("/:id", clusterH.Update)
 			adminCG.DELETE("/:id", clusterH.Delete)
+
+			adminZG := admin.Group("/zones")
+			adminZG.POST("", zoneH.Create)
+			adminZG.PUT("/:id", zoneH.Update)
+			adminZG.DELETE("/:id", zoneH.Delete)
+			adminZG.POST("/:id/init-shared", zoneH.InitShared)
+			adminZG.POST("/:id/init-grafana", zoneH.InitGrafana)
+
+			adminBG := admin.Group("/business-clusters")
+			adminBG.POST("", businessClusterH.Create)
+			adminBG.DELETE("/:id", businessClusterH.Delete)
 		}
 	}
 
