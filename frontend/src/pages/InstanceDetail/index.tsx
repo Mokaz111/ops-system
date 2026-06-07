@@ -35,6 +35,7 @@ import LoginOutlinedIcon from '@mui/icons-material/LoginOutlined';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExtensionOutlinedIcon from '@mui/icons-material/ExtensionOutlined';
 import NotificationsActiveOutlinedIcon from '@mui/icons-material/NotificationsActiveOutlined';
+import SettingsEthernetOutlinedIcon from '@mui/icons-material/SettingsEthernetOutlined';
 import { useSnackbar } from 'notistack';
 import PageHeader from '../../components/common/PageHeader';
 import StatusChip from '../../components/common/StatusChip';
@@ -51,9 +52,12 @@ import {
   type IntegrationInstallationRevision,
 } from '../../api/integration';
 import { grafanaInstanceAPI, type GrafanaInstance } from '../../api/grafanaInstance';
+import { businessClusterAPI, type BusinessCluster } from '../../api/businessCluster';
+import { platformAPI } from '../../api/platform';
 import { extractApiError } from '../../api';
 import { isAbortError, makeAbortController } from '../../api/client';
 import type { Instance, InstanceMetrics } from '../../types/api';
+import { useAuthStore } from '../../stores/useAuthStore';
 import { parseSpec } from '../../utils/instance';
 
 const typeLabels: Record<string, { label: string; color: 'primary' | 'secondary' | 'success' | 'warning' }> = {
@@ -61,6 +65,14 @@ const typeLabels: Record<string, { label: string; color: 'primary' | 'secondary'
   logs: { label: 'Logs', color: 'secondary' },
   visual: { label: 'Grafana', color: 'success' },
   alert: { label: 'Alert', color: 'warning' },
+};
+
+const agentStatusLabels: Record<string, { label: string; color: 'success' | 'warning' | 'error' | 'default' }> = {
+  pending: { label: '待部署', color: 'default' },
+  deploying: { label: '部署中', color: 'warning' },
+  active: { label: '运行中', color: 'success' },
+  failed: { label: '失败', color: 'error' },
+  off: { label: '已停止', color: 'default' },
 };
 
 function ResourceBar({ label, used, total, unit }: { label: string; used: number; total: number; unit: string }) {
@@ -409,9 +421,23 @@ export default function InstanceDetailPage() {
   const [grafanaHosts, setGrafanaHosts] = useState<GrafanaInstance[]>([]);
   const [scaleEvents, setScaleEvents] = useState<ScaleEvent[]>([]);
   const [scaleEventsLoading, setScaleEventsLoading] = useState(false);
+  const [businessClusters, setBusinessClusters] = useState<BusinessCluster[]>([]);
+  const [bcLoading, setBcLoading] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [editForm, setEditForm] = useState({ instance_name: '', cpu: '', memory: '', storage: '', retention: '' });
   const [saving, setSaving] = useState(false);
+
+  // Platform scaling (admin only)
+  const { user } = useAuthStore();
+  const isAdmin = user?.role === 'admin';
+  const [scaleForm, setScaleForm] = useState({
+    vmselect_replicas: 2,
+    vminsert_replicas: 2,
+    vmstorage_replicas: 2,
+    storage_size: '200Gi',
+  });
+  const [scalePreview, setScalePreview] = useState<string | null>(null);
+  const [scaling, setScaling] = useState(false);
 
   // 详情页一次性拉 4 个独立资源，统一通过同一个 AbortController 兜起：
   //   - 切换实例 / 卸载组件时立即取消在飞请求；
@@ -500,6 +526,32 @@ export default function InstanceDetailPage() {
       ctl.abort();
     };
   }, []);
+
+  // 获取本实例关联的业务集群列表
+  useEffect(() => {
+    if (!instanceId) return;
+    const ctl = makeAbortController();
+    let alive = true;
+    setBcLoading(true);
+    (async () => {
+      try {
+        const { data: res } = await businessClusterAPI.list(
+          { page: 1, page_size: 100, instance_id: instanceId },
+          { signal: ctl.signal },
+        );
+        if (alive) setBusinessClusters(res.data?.items || []);
+      } catch (err) {
+        if (isAbortError(err) || !alive) return;
+        setBusinessClusters([]);
+      } finally {
+        if (alive) setBcLoading(false);
+      }
+    })();
+    return () => {
+      alive = false;
+      ctl.abort();
+    };
+  }, [instanceId]);
 
   const spec = useMemo(() => parseSpec(instance?.spec || '{}'), [instance?.spec]);
 
@@ -615,6 +667,12 @@ export default function InstanceDetailPage() {
                     <Grid size={{ xs: 6, md: 3 }}>
                       <Typography variant="body2" color="text.secondary">命名空间</Typography>
                       <Typography variant="body2">{instance.namespace || '-'}</Typography>
+                    </Grid>
+                    <Grid size={{ xs: 6, md: 3 }}>
+                      <Typography variant="body2" color="text.secondary">可用区</Typography>
+                      <Typography variant="body2">
+                        {instance.zone_id ? instance.zone_id.slice(0, 8) + '...' : '未指定'}
+                      </Typography>
                     </Grid>
                     <Grid size={{ xs: 6, md: 3 }}>
                       <Typography variant="body2" color="text.secondary">关联 Grafana</Typography>
@@ -789,6 +847,214 @@ export default function InstanceDetailPage() {
               </Card>
             ),
           },
+          {
+            key: 'business-clusters',
+            label: '业务集群',
+            content: (
+              <Card sx={{ p: 2.5 }}>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 2 }}>
+                  <Box>
+                    <Typography variant="subtitle2" sx={{ mb: 0.5 }}>业务集群管理</Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      管理通过 VMAgent CR 接入监控的业务 Kubernetes 集群。要求业务集群预先安装 VM Operator。
+                    </Typography>
+                  </Box>
+                  <Button
+                    variant="contained"
+                    size="small"
+                    onClick={() => navigate(`/business-clusters?instance_id=${instance.id}`)}
+                  >
+                    接入业务集群
+                  </Button>
+                </Box>
+                {bcLoading ? (
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <CircularProgress size={16} />
+                    <Typography variant="caption">加载业务集群...</Typography>
+                  </Box>
+                ) : businessClusters.length === 0 ? (
+                  <EmptyState title="暂无业务集群" description="点击上方按钮接入第一个业务集群" />
+                ) : (
+                  <Table size="small">
+                    <TableHead>
+                      <TableRow>
+                        <TableCell>名称</TableCell>
+                        <TableCell>显示名</TableCell>
+                        <TableCell>Agent 状态</TableCell>
+                        <TableCell>标签</TableCell>
+                        <TableCell>接入时间</TableCell>
+                        <TableCell align="right">操作</TableCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {businessClusters.map((bc) => {
+                        const statusMeta = agentStatusLabels[bc.agent_status] || { label: bc.agent_status, color: 'default' as const };
+                        let labels: Record<string, string> = {};
+                        try { labels = JSON.parse(bc.labels || '{}'); } catch { /* labels invalid JSON */ }
+                        return (
+                          <TableRow key={bc.id}>
+                            <TableCell sx={{ fontWeight: 500, fontFamily: 'monospace' }}>{bc.name}</TableCell>
+                            <TableCell sx={{ color: 'text.secondary' }}>{bc.display_name || '-'}</TableCell>
+                            <TableCell>
+                              <Chip size="small" label={statusMeta.label} color={statusMeta.color} />
+                            </TableCell>
+                            <TableCell>
+                              {Object.keys(labels).length > 0
+                                ? Object.entries(labels).map(([k, v]) => (
+                                    <Chip
+                                      key={k}
+                                      size="small"
+                                      label={`${k}: ${v}`}
+                                      variant="outlined"
+                                      sx={{ mr: 0.5, mb: 0.5 }}
+                                    />
+                                  ))
+                                : '-'}
+                            </TableCell>
+                            <TableCell sx={{ color: 'text.secondary', fontSize: '0.8125rem' }}>
+                              {new Date(bc.created_at).toLocaleString()}
+                            </TableCell>
+                            <TableCell align="right">
+                              <Button size="small" onClick={() => navigate(`/business-clusters?instance_id=${instance.id}`)}>
+                                管理
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                )}
+              </Card>
+            ),
+          },
+          ...(isAdmin && instance.instance_type === 'metrics' && instance.template_type === 'shared' ? [{
+            key: 'platform-scale' as const,
+            label: '平台扩容',
+            content: (
+              <Card sx={{ p: 2.5 }}>
+                <Typography variant="subtitle2" sx={{ mb: 0.5 }}>平台级集群扩缩容</Typography>
+                <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                  此操作对共享 VMCluster 进行组件级扩缩容（vmselect / vminsert / vmstorage），影响该集群上的所有租户实例。
+                </Typography>
+                <Alert severity="warning" sx={{ mb: 2 }}>
+                  请先执行 dry-run 预览变更内容，确认无误后再应用。
+                </Alert>
+                <Grid container spacing={2} sx={{ mb: 2 }}>
+                  <Grid size={{ xs: 12, md: 3 }}>
+                    <TextField
+                      fullWidth
+                      size="small"
+                      label="vmselect 副本"
+                      type="number"
+                      value={scaleForm.vmselect_replicas}
+                      onChange={(e) => setScaleForm({ ...scaleForm, vmselect_replicas: parseInt(e.target.value, 10) || 1 })}
+                    />
+                  </Grid>
+                  <Grid size={{ xs: 12, md: 3 }}>
+                    <TextField
+                      fullWidth
+                      size="small"
+                      label="vminsert 副本"
+                      type="number"
+                      value={scaleForm.vminsert_replicas}
+                      onChange={(e) => setScaleForm({ ...scaleForm, vminsert_replicas: parseInt(e.target.value, 10) || 1 })}
+                    />
+                  </Grid>
+                  <Grid size={{ xs: 12, md: 3 }}>
+                    <TextField
+                      fullWidth
+                      size="small"
+                      label="vmstorage 副本"
+                      type="number"
+                      value={scaleForm.vmstorage_replicas}
+                      onChange={(e) => setScaleForm({ ...scaleForm, vmstorage_replicas: parseInt(e.target.value, 10) || 1 })}
+                    />
+                  </Grid>
+                  <Grid size={{ xs: 12, md: 3 }}>
+                    <TextField
+                      fullWidth
+                      size="small"
+                      label="存储大小"
+                      value={scaleForm.storage_size}
+                      onChange={(e) => setScaleForm({ ...scaleForm, storage_size: e.target.value })}
+                    />
+                  </Grid>
+                </Grid>
+                <Box sx={{ display: 'flex', gap: 1 }}>
+                  <Button
+                    variant="contained"
+                    startIcon={<SettingsEthernetOutlinedIcon />}
+                    disabled={scaling}
+                    onClick={async () => {
+                      setScaling(true);
+                      try {
+                        const { data: res } = await platformAPI.scaleVMCluster({
+                          target_id: instance.cluster_id || instance.id,
+                          vmselect_replicas: scaleForm.vmselect_replicas,
+                          vminsert_replicas: scaleForm.vminsert_replicas,
+                          vmstorage_replicas: scaleForm.vmstorage_replicas,
+                          storage_size: scaleForm.storage_size,
+                          dry_run: true,
+                        });
+                        setScalePreview(JSON.stringify(res.data, null, 2));
+                        enqueueSnackbar('Dry-run 预览已生成', { variant: 'success' });
+                      } catch (err) {
+                        enqueueSnackbar(extractApiError(err, 'Dry-run 失败'), { variant: 'error' });
+                      } finally {
+                        setScaling(false);
+                      }
+                    }}
+                  >
+                    {scaling ? '执行中...' : 'Dry-run 预览'}
+                  </Button>
+                  <Button
+                    variant="outlined"
+                    color="warning"
+                    disabled={scaling || !scalePreview}
+                    onClick={async () => {
+                      setScaling(true);
+                      try {
+                        await platformAPI.scaleVMCluster({
+                          target_id: instance.cluster_id || instance.id,
+                          vmselect_replicas: scaleForm.vmselect_replicas,
+                          vminsert_replicas: scaleForm.vminsert_replicas,
+                          vmstorage_replicas: scaleForm.vmstorage_replicas,
+                          storage_size: scaleForm.storage_size,
+                          dry_run: false,
+                        });
+                        enqueueSnackbar('扩容已提交', { variant: 'success' });
+                        setScalePreview(null);
+                      } catch (err) {
+                        enqueueSnackbar(extractApiError(err, '扩容提交失败'), { variant: 'error' });
+                      } finally {
+                        setScaling(false);
+                      }
+                    }}
+                  >
+                    应用变更
+                  </Button>
+                </Box>
+                {scalePreview && (
+                  <Box
+                    component="pre"
+                    sx={{
+                      mt: 2,
+                      p: 2,
+                      borderRadius: 1,
+                      backgroundColor: 'grey.50',
+                      fontSize: 12,
+                      overflowX: 'auto',
+                      m: 0,
+                      maxHeight: 300,
+                    }}
+                  >
+                    {scalePreview}
+                  </Box>
+                )}
+              </Card>
+            ),
+          }] : []),
         ]}
       />
 
