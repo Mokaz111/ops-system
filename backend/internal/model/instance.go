@@ -11,6 +11,7 @@ import (
 type Instance struct {
 	ID                uuid.UUID      `json:"id" gorm:"type:uuid;primaryKey"`
 	TenantID          uuid.UUID      `json:"tenant_id" gorm:"type:uuid;not null;index"`
+	ZoneID            *uuid.UUID     `json:"zone_id" gorm:"type:uuid;index"`
 	ClusterID         *uuid.UUID     `json:"cluster_id" gorm:"type:uuid;index"` // 目标集群 id，nil=平台默认集群
 	InstanceName      string         `json:"instance_name" gorm:"type:varchar(255);not null"`
 	InstanceType      string         `json:"instance_type" gorm:"type:varchar(50)"` // metrics, logs, visual, alert

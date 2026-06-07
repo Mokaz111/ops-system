@@ -100,6 +100,18 @@ const (
 	ErrCodeChannelNameRequired       = "CHANNEL_NAME_REQUIRED"
 	ErrCodeInvalidChannelType        = "INVALID_CHANNEL_TYPE"
 	ErrCodeTenantNotFoundForInstance = "TENANT_NOT_FOUND_FOR_INSTANCE"
+
+		ErrCodeZoneNotFound           = "ZONE_NOT_FOUND"
+		ErrCodeZoneSlugConflict       = "ZONE_SLUG_CONFLICT"
+		ErrCodeZoneHasInstances       = "ZONE_HAS_ACTIVE_INSTANCES"
+		ErrCodeZoneOffline            = "ZONE_OFFLINE"
+		ErrCodeZoneCapacityExhausted  = "ZONE_CAPACITY_EXHAUSTED"
+		ErrCodeZoneSharedNotReady     = "ZONE_SHARED_NOT_READY"
+
+		ErrCodeBusinessClusterNotFound      = "BUSINESS_CLUSTER_NOT_FOUND"
+		ErrCodeBusinessClusterNameConflict  = "BUSINESS_CLUSTER_NAME_CONFLICT"
+		ErrCodeVMOperatorRequired           = "VM_OPERATOR_REQUIRED"
+		ErrCodeInstanceHasBusinessClusters  = "INSTANCE_HAS_BUSINESS_CLUSTERS"
 )
 
 // JSON 统一成功响应。

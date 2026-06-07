@@ -13,6 +13,7 @@ type GrafanaInstance struct {
 	Name          string         `json:"name" gorm:"type:varchar(255);not null"`
 	Scope         string         `json:"scope" gorm:"type:varchar(20);index"` // platform / tenant
 	TenantID      *uuid.UUID     `json:"tenant_id" gorm:"type:uuid;index"`
+	ZoneID        *uuid.UUID     `json:"zone_id" gorm:"type:uuid;index"`
 	URL           string         `json:"url" gorm:"type:varchar(500)"`
 	AdminUser     string         `json:"admin_user" gorm:"type:varchar(100)"`
 	AdminPassword string         `json:"-" gorm:"type:varchar(255)"`

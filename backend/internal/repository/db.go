@@ -120,6 +120,8 @@ func AutoMigrate(db *gorm.DB) error {
 		&model.AlertRule{},
 		&model.AlertEvent{},
 		&model.NotificationChannel{},
+		&model.Zone{},
+		&model.BusinessCluster{},
 	)
 }
 

@@ -137,3 +137,15 @@ func assertTenantAccess(c *gin.Context, userSvc *service.UserService, ownerTenan
 	}
 	return true
 }
+
+func resolveTenantID(c *gin.Context, userSvc *service.UserService) (uuid.UUID, bool) {
+	u, ok := currentUser(c, userSvc)
+	if !ok {
+		return uuid.Nil, false
+	}
+	if u.TenantID == nil {
+		response.Error(c, http.StatusForbidden, http.StatusForbidden, response.ErrCodeForbidden, "user has no tenant")
+		return uuid.Nil, false
+	}
+	return *u.TenantID, true
+}
