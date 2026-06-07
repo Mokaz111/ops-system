@@ -1,9 +1,8 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   Box,
   Button,
-  Card,
   Checkbox,
   Dialog,
   DialogActions,
@@ -30,8 +29,11 @@ import ConfirmDialog from '../../components/common/ConfirmDialog';
 import EmptyState from '../../components/common/EmptyState';
 import LoadingScreen from '../../components/common/LoadingScreen';
 import { clusterAPI, type Cluster } from '../../api/cluster';
+import { zoneAPI, type Zone } from '../../api/zone';
 import { extractApiError } from '../../api';
 import { useAuthStore } from '../../stores/useAuthStore';
+import FilterToolbar from '../../components/common/FilterToolbar';
+import DataTableCard from '../../components/common/DataTableCard';
 
 interface FormState {
   name: string;
@@ -60,11 +62,20 @@ export default function ClusterPage() {
 
   const [clusters, setClusters] = useState<Cluster[]>([]);
   const [loading, setLoading] = useState(true);
+  const [zones, setZones] = useState<Zone[]>([]);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [deleteDialog, setDeleteDialog] = useState<{ open: boolean; cluster?: Cluster }>({ open: false });
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<FormState>(defaultForm);
   const [saving, setSaving] = useState(false);
+
+  const zoneByClusterId = useMemo(() => {
+    const map: Record<string, Zone> = {};
+    for (const z of zones) {
+      if (z.cluster_id) map[z.cluster_id] = z;
+    }
+    return map;
+  }, [zones]);
 
   const fetch = useCallback(async () => {
     setLoading(true);
@@ -72,15 +83,22 @@ export default function ClusterPage() {
       const { data: res } = await clusterAPI.list({ page: 1, page_size: 100 });
       setClusters(res.data?.items || []);
     } catch (err) {
-      enqueueSnackbar(extractApiError(err, '获取集群列表失败'), { variant: 'error' });
+      enqueueSnackbar(extractApiError(err, '获取可观测集群列表失败'), { variant: 'error' });
     } finally {
       setLoading(false);
     }
   }, [enqueueSnackbar]);
 
+  useEffect(() => { fetch(); }, [fetch]);
+
   useEffect(() => {
-    fetch();
-  }, [fetch]);
+    (async () => {
+      try {
+        const { data: res } = await zoneAPI.list({ page: 1, page_size: 100 });
+        setZones(res.data?.items || []);
+      } catch { /* zones optional for binding display */ }
+    })();
+  }, []);
 
   const openCreate = () => {
     setEditingId(null);
@@ -104,7 +122,7 @@ export default function ClusterPage() {
 
   const handleSave = async () => {
     if (!form.name) {
-      enqueueSnackbar('集群名称必填', { variant: 'warning' });
+      enqueueSnackbar('可观测集群名称必填', { variant: 'warning' });
       return;
     }
     if (!form.in_cluster && !form.kubeconfig && !form.kubeconfig_path) {
@@ -122,7 +140,7 @@ export default function ClusterPage() {
           kubeconfig_path: form.kubeconfig_path || undefined,
           status: form.status,
         });
-        enqueueSnackbar('集群更新成功', { variant: 'success' });
+        enqueueSnackbar('可观测集群更新成功', { variant: 'success' });
       } else {
         await clusterAPI.create({
           name: form.name,
@@ -132,12 +150,12 @@ export default function ClusterPage() {
           kubeconfig: form.kubeconfig || undefined,
           kubeconfig_path: form.kubeconfig_path || undefined,
         });
-        enqueueSnackbar('集群注册成功', { variant: 'success' });
+        enqueueSnackbar('可观测集群注册成功', { variant: 'success' });
       }
       setDialogOpen(false);
       fetch();
     } catch (err) {
-      enqueueSnackbar(extractApiError(err, editingId ? '更新失败' : '创建失败'), { variant: 'error' });
+      enqueueSnackbar(extractApiError(err, editingId ? '更新可观测集群失败' : '注册可观测集群失败'), { variant: 'error' });
     } finally {
       setSaving(false);
     }
@@ -147,11 +165,11 @@ export default function ClusterPage() {
     if (!deleteDialog.cluster) return;
     try {
       await clusterAPI.delete(deleteDialog.cluster.id);
-      enqueueSnackbar('集群删除成功', { variant: 'success' });
+      enqueueSnackbar('可观测集群删除成功', { variant: 'success' });
       setDeleteDialog({ open: false });
       fetch();
     } catch (err) {
-      enqueueSnackbar(extractApiError(err, '删除失败（该集群可能仍有实例在使用）'), { variant: 'error' });
+      enqueueSnackbar(extractApiError(err, '删除失败（该集群可能绑定了可用区）'), { variant: 'error' });
     }
   };
 
@@ -160,19 +178,25 @@ export default function ClusterPage() {
   return (
     <Box>
       <PageHeader
-        title="集群管理"
-        subtitle="注册并管理作为监控目标的 Kubernetes 集群；实例通过 cluster_id 绑定目标集群"
+        title="可观测集群"
+        subtitle="管理承载 VictoriaMetrics / Grafana / 告警引擎的 K8s 集群。每个可用区绑定一个可观测集群，在可用区管理中关联。"
         actionLabel={isAdmin ? '注册集群' : undefined}
         onAction={isAdmin ? openCreate : undefined}
       />
 
       {!isAdmin && (
         <Alert severity="info" sx={{ mb: 2 }}>
-          仅管理员可注册/编辑/删除集群。当前仅提供只读视图。
+          仅管理员可注册/编辑/删除可观测集群。当前仅提供只读视图。
         </Alert>
       )}
 
-      <Card>
+      <FilterToolbar>
+        <Typography variant="body2" color="text.secondary">
+          可观测集群是 Zone 的基础设施底座，注册后需在可用区管理中绑定 Zone 才能部署实例。
+        </Typography>
+      </FilterToolbar>
+
+      <DataTableCard>
         <TableContainer>
           <Table size="small">
             <TableHead>
@@ -180,7 +204,7 @@ export default function ClusterPage() {
                 <TableCell>名称</TableCell>
                 <TableCell>显示名</TableCell>
                 <TableCell>模式</TableCell>
-                <TableCell>Kubeconfig 路径</TableCell>
+                <TableCell>关联可用区</TableCell>
                 <TableCell>状态</TableCell>
                 <TableCell>创建时间</TableCell>
                 <TableCell align="right">操作</TableCell>
@@ -190,69 +214,83 @@ export default function ClusterPage() {
               {clusters.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={7}>
-                    <EmptyState title="暂无集群" description="点击右上角按钮注册第一个目标集群（或继续使用平台默认集群）" />
+                    <EmptyState title="暂无可观测集群" description="点击右上角按钮注册第一个可观测集群，再到可用区管理中完成绑定" />
                   </TableCell>
                 </TableRow>
               ) : (
-                clusters.map((c) => (
-                  <TableRow key={c.id}>
-                    <TableCell sx={{ fontWeight: 500 }}>{c.name}</TableCell>
-                    <TableCell sx={{ color: 'text.secondary' }}>{c.display_name || '-'}</TableCell>
-                    <TableCell>
-                      {c.in_cluster ? (
-                        <Typography variant="caption" color="success.main">In-Cluster</Typography>
-                      ) : (
-                        <Typography variant="caption" color="text.secondary">External</Typography>
-                      )}
-                    </TableCell>
-                    <TableCell sx={{ fontFamily: 'monospace', fontSize: '0.8125rem' }}>
-                      {c.kubeconfig_path || '-'}
-                    </TableCell>
-                    <TableCell><StatusChip status={c.status || 'active'} /></TableCell>
-                    <TableCell sx={{ color: 'text.secondary', fontSize: '0.8125rem' }}>
-                      {new Date(c.created_at).toLocaleDateString()}
-                    </TableCell>
-                    <TableCell align="right">
-                      {isAdmin && (
-                        <>
-                          <Tooltip title="编辑">
-                            <IconButton size="small" onClick={() => openEdit(c)}>
-                              <EditOutlinedIcon fontSize="small" />
-                            </IconButton>
-                          </Tooltip>
-                          <Tooltip title="删除">
-                            <IconButton
-                              size="small"
-                              color="error"
-                              onClick={() => setDeleteDialog({ open: true, cluster: c })}
-                            >
-                              <DeleteOutlinedIcon fontSize="small" />
-                            </IconButton>
-                          </Tooltip>
-                        </>
-                      )}
-                    </TableCell>
-                  </TableRow>
-                ))
+                clusters.map((c) => {
+                  const zone = zoneByClusterId[c.id];
+                  return (
+                    <TableRow key={c.id}>
+                      <TableCell sx={{ fontWeight: 500 }}>{c.name}</TableCell>
+                      <TableCell sx={{ color: 'text.secondary' }}>{c.display_name || '-'}</TableCell>
+                      <TableCell>
+                        {c.in_cluster ? (
+                          <Typography variant="caption" color="success.main">In-Cluster</Typography>
+                        ) : (
+                          <Typography variant="caption" color="text.secondary">External</Typography>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        {zone ? (
+                          <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                            {zone.display_name || zone.slug}
+                          </Typography>
+                        ) : (
+                          <Typography variant="caption" color="text.disabled">
+                            未绑定
+                          </Typography>
+                        )}
+                      </TableCell>
+                      <TableCell><StatusChip status={c.status || 'active'} /></TableCell>
+                      <TableCell sx={{ color: 'text.secondary', fontSize: '0.8125rem' }}>
+                        {new Date(c.created_at).toLocaleDateString()}
+                      </TableCell>
+                      <TableCell align="right">
+                        {isAdmin && (
+                          <>
+                            <Tooltip title="编辑">
+                              <IconButton size="small" onClick={() => openEdit(c)}>
+                                <EditOutlinedIcon fontSize="small" />
+                              </IconButton>
+                            </Tooltip>
+                            <Tooltip title="删除">
+                              <IconButton
+                                size="small"
+                                color="error"
+                                onClick={() => setDeleteDialog({ open: true, cluster: c })}
+                              >
+                                <DeleteOutlinedIcon fontSize="small" />
+                              </IconButton>
+                            </Tooltip>
+                          </>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })
               )}
             </TableBody>
           </Table>
         </TableContainer>
-      </Card>
+      </DataTableCard>
 
       <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="md" fullWidth>
-        <DialogTitle>{editingId ? '编辑集群' : '注册集群'}</DialogTitle>
+        <DialogTitle>{editingId ? '编辑可观测集群' : '注册可观测集群'}</DialogTitle>
         <DialogContent sx={{ pt: '16px !important' }}>
+          <Alert severity="info" sx={{ mb: 2 }}>
+            注册后可观测集群后，需到「可用区管理」中将 Zone 与该集群绑定，才能在此集群上部署实例。
+          </Alert>
           <TextField
             fullWidth
             size="small"
-            label="集群唯一标识 (name)"
+            label="可观测集群唯一标识 (name)"
             value={form.name}
             onChange={(e) => setForm({ ...form, name: e.target.value })}
             sx={{ mb: 2 }}
             required
             disabled={!!editingId}
-            helperText="小写字母与数字，创建后不可修改"
+            helperText="小写字母与数字，创建后不可修改。注册后在可用区管理中绑定 Zone"
           />
           <TextField
             fullWidth
@@ -328,8 +366,8 @@ export default function ClusterPage() {
 
       <ConfirmDialog
         open={deleteDialog.open}
-        title="删除集群"
-        message={`确定要删除集群「${deleteDialog.cluster?.name}」吗？关联的实例将回退到平台默认集群。`}
+        title="删除可观测集群"
+        message={`确定要删除可观测集群「${deleteDialog.cluster?.name}」吗？如有 Zone 绑定，需先在可用区管理中解除关联。`}
         severity="error"
         confirmLabel="删除"
         onConfirm={handleDelete}

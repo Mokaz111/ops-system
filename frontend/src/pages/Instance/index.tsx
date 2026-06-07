@@ -22,7 +22,9 @@ import {
   TableContainer,
   TableHead,
   TablePagination,
+  Tab,
   TableRow,
+  Tabs,
   TextField,
   Tooltip,
   Typography,
@@ -42,6 +44,7 @@ import FilterToolbar from '../../components/common/FilterToolbar';
 import DataTableCard from '../../components/common/DataTableCard';
 import { instanceAPI } from '../../api/instance';
 import { clusterAPI, type Cluster } from '../../api/cluster';
+import { zoneAPI, type Zone } from '../../api/zone';
 import { grafanaInstanceAPI, type GrafanaInstance } from '../../api/grafanaInstance';
 import { extractApiError } from '../../api';
 import type { Instance } from '../../types/api';
@@ -75,6 +78,7 @@ export default function InstancePage() {
   const [pageSize, setPageSize] = useState(10);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
+  const [typeFilter, setTypeFilter] = useState('');
 
   const [createOpen, setCreateOpen] = useState(false);
   const [deleteDialog, setDeleteDialog] = useState<{ open: boolean; instance?: Instance }>({ open: false });
@@ -82,10 +86,12 @@ export default function InstancePage() {
   const [saving, setSaving] = useState(false);
 
   const [clusters, setClusters] = useState<Cluster[]>([]);
+  const [zones, setZones] = useState<Zone[]>([]);
   const [grafanaHosts, setGrafanaHosts] = useState<GrafanaInstance[]>([]);
   const [createForm, setCreateForm] = useState({
     tenant_id: '',
     cluster_id: '',
+    zone_id: '',
     instance_name: '',
     instance_type: 'metrics',
     template_type: 'dedicated_single',
@@ -110,7 +116,7 @@ export default function InstancePage() {
         page: page + 1,
         page_size: pageSize,
         search,
-        instance_type: 'metrics',
+        instance_type: typeFilter || undefined,
         status: statusFilter || undefined,
       });
       setInstances(res.data?.items || []);
@@ -120,7 +126,7 @@ export default function InstancePage() {
     } finally {
       setLoading(false);
     }
-  }, [page, pageSize, search, statusFilter, enqueueSnackbar]);
+  }, [page, pageSize, search, statusFilter, typeFilter, enqueueSnackbar]);
 
   useEffect(() => {
     fetchInstances();
@@ -133,6 +139,14 @@ export default function InstancePage() {
         setClusters(res.data?.items || []);
       } catch {
         /* cluster list optional */
+      }
+    })();
+    (async () => {
+      try {
+        const { data: res } = await zoneAPI.list({ page: 1, page_size: 100 });
+        setZones(res.data?.items || []);
+      } catch {
+        /* zone list optional */
       }
     })();
     (async () => {
@@ -151,6 +165,13 @@ export default function InstancePage() {
       return acc;
     }, {});
   }, [clusters]);
+
+  const zoneNameById = useMemo(() => {
+    return zones.reduce<Record<string, string>>((acc, z) => {
+      acc[z.id] = z.display_name || z.slug;
+      return acc;
+    }, {});
+  }, [zones]);
 
   const grafanaHostNameById = useMemo(() => {
     return grafanaHosts.reduce<Record<string, string>>((acc, h) => {
@@ -184,6 +205,7 @@ export default function InstancePage() {
       await instanceAPI.create({
         tenant_id: createForm.tenant_id,
         cluster_id: createForm.cluster_id || undefined,
+        zone_id: createForm.zone_id || undefined,
         instance_name: createForm.instance_name,
         instance_type: createForm.instance_type,
         template_type: createForm.template_type,
@@ -239,15 +261,28 @@ export default function InstancePage() {
   return (
     <Box>
       <PageHeader
-        title="VictoriaMetrics管理"
-        subtitle="管理 VictoriaMetrics 指标实例，支持扩缩容与生命周期操作"
+        title="实例"
+        subtitle="管理监控实例，支持扩缩容与生命周期操作"
         actionLabel="创建实例"
         onAction={() => setCreateOpen(true)}
       />
 
+      <Tabs
+        value={typeFilter}
+        onChange={(_, v) => {
+          setTypeFilter(v);
+          setPage(0);
+        }}
+        sx={{ mb: 2 }}
+      >
+        <Tab value="" label="全部" />
+        <Tab value="metrics" label="Metrics" />
+        <Tab value="logs" label="Logs" />
+      </Tabs>
+
       <Card sx={{ mb: 2 }}>
         <Box sx={{ p: 2 }}>
-          <Typography variant="subtitle2" sx={{ mb: 1.5 }}>VictoriaMetrics 实例概览（当前页）</Typography>
+          <Typography variant="subtitle2" sx={{ mb: 1.5 }}>实例概览（当前页）</Typography>
           <Grid container spacing={1.5}>
             <Grid size={{ xs: 6, md: 3 }}>
               <Card variant="outlined" sx={{ p: 1.5 }}>
@@ -338,6 +373,7 @@ export default function InstancePage() {
                 <TableCell>模板</TableCell>
                 <TableCell>规格</TableCell>
                 <TableCell>命名空间</TableCell>
+                <TableCell>可用区</TableCell>
                 <TableCell>目标集群</TableCell>
                 <TableCell>关联 Grafana</TableCell>
                 <TableCell>状态</TableCell>
@@ -348,7 +384,7 @@ export default function InstancePage() {
             <TableBody>
               {instances.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={10}>
+                  <TableCell colSpan={11}>
                     <EmptyState title="暂无实例" description="点击右上角按钮创建第一个实例" />
                   </TableCell>
                 </TableRow>
@@ -372,6 +408,9 @@ export default function InstancePage() {
                         {spec.cpu}C / {spec.memory}G / {spec.storage}Gi
                       </TableCell>
                       <TableCell sx={{ fontSize: '0.8125rem', color: 'text.secondary' }}>{inst.namespace || '-'}</TableCell>
+                      <TableCell sx={{ fontSize: '0.8125rem', color: 'text.secondary' }}>
+                        {inst.zone_id ? (zoneNameById[inst.zone_id] || inst.zone_id.slice(0, 8)) : '-'}
+                      </TableCell>
                       <TableCell sx={{ fontSize: '0.8125rem', color: 'text.secondary' }}>
                         {inst.cluster_id ? (clusterNameById[inst.cluster_id] || inst.cluster_id.slice(0, 8)) : '默认'}
                       </TableCell>
@@ -506,6 +545,30 @@ export default function InstancePage() {
                     <MenuItem key={c.id} value={c.id}>
                       {c.display_name || c.name}
                       {c.in_cluster ? ' · in-cluster' : ''}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            </Grid>
+            <Grid size={{ xs: 12 }}>
+              <FormControl fullWidth size="small">
+                <InputLabel>可用区（可选）</InputLabel>
+                <Select
+                  value={createForm.zone_id}
+                  label="可用区（可选）"
+                  onChange={(e) => setCreateForm({ ...createForm, zone_id: e.target.value })}
+                >
+                  <MenuItem value="">未指定</MenuItem>
+                  {zones.map((z) => (
+                    <MenuItem key={z.id} value={z.id}>
+                      {z.display_name || z.slug}
+                      <Chip
+                        size="small"
+                        label={z.status}
+                        variant="outlined"
+                        color={z.status === 'active' ? 'success' : 'default'}
+                        sx={{ ml: 1, height: 18, fontSize: '0.65rem' }}
+                      />
                     </MenuItem>
                   ))}
                 </Select>
