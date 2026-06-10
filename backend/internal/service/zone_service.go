@@ -4,8 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 
+	"ops-system/backend/internal/helm"
+	"ops-system/backend/internal/k8s"
 	"ops-system/backend/internal/model"
 	"ops-system/backend/internal/repository"
 
@@ -19,17 +22,53 @@ var (
 	ErrZoneHasInstances   = errors.New("zone has active instances")
 	ErrZoneOffline        = errors.New("zone is offline")
 	ErrZoneCapacityExhausted = errors.New("zone capacity exhausted")
+	ErrZoneClusterNotReady   = errors.New("zone cluster is not ready")
 )
+
+// ZoneInitSharedRequest 可用区初始化请求。
+type ZoneInitSharedRequest struct {
+	DryRun      bool                   `json:"dry_run"`
+	Namespace   string                 `json:"namespace"`    // 可选，默认 monitoring-{slug}
+	ReleaseName string                 `json:"release_name"` // 可选，默认 vm-shared-stack
+	Values      map[string]interface{} `json:"values"`       // 可选的 Helm values 覆盖
+}
+
+// ZoneInitSharedPlan 可用区初始化计划（复用 PlatformBootstrapService 的字段语义）。
+type ZoneInitSharedPlan struct {
+	DryRun      bool                   `json:"dry_run"`
+	ZoneID      string                 `json:"zone_id"`
+	ZoneSlug    string                 `json:"zone_slug"`
+	ClusterID   string                 `json:"cluster_id"`
+	Namespace   string                 `json:"namespace"`
+	ReleaseName string                 `json:"release_name"`
+	Chart       string                 `json:"chart"`
+	Action      string                 `json:"action"`
+	Values      map[string]interface{} `json:"values"`
+}
 
 // ZoneService 可用区业务。
 type ZoneService struct {
-	repo      *repository.ZoneRepository
-	instRepo  *repository.InstanceRepository
-	log       *zap.Logger
+	repo        *repository.ZoneRepository
+	instRepo    *repository.InstanceRepository
+	clusterRepo *repository.ClusterRepository
+	clientCache *k8s.ClusterClientCache
+	log         *zap.Logger
 }
 
-func NewZoneService(repo *repository.ZoneRepository, instRepo *repository.InstanceRepository, log *zap.Logger) *ZoneService {
-	return &ZoneService{repo: repo, instRepo: instRepo, log: log}
+func NewZoneService(
+	repo *repository.ZoneRepository,
+	instRepo *repository.InstanceRepository,
+	clusterRepo *repository.ClusterRepository,
+	clientCache *k8s.ClusterClientCache,
+	log *zap.Logger,
+) *ZoneService {
+	return &ZoneService{
+		repo:        repo,
+		instRepo:    instRepo,
+		clusterRepo: clusterRepo,
+		clientCache: clientCache,
+		log:         log,
+	}
 }
 
 // CreateZoneRequest 创建 Zone 请求。
@@ -240,4 +279,169 @@ func (s *ZoneService) CapacityCheck(ctx context.Context, zoneID uuid.UUID) error
 		return ErrZoneCapacityExhausted
 	}
 	return nil
+}
+
+// resolveClusterClients 解析 Zone 绑定的集群，构造 Helm 和 K8s client。
+// 复用 router.go 中 k8sResolver 的指纹 + ClusterClientCache 模式。
+func (s *ZoneService) resolveClusterClients(
+	ctx context.Context,
+	clusterID uuid.UUID,
+) (*helm.Client, *k8s.Client, error) {
+	cluster, err := s.clusterRepo.GetByID(ctx, clusterID)
+	if err != nil {
+		return nil, nil, fmt.Errorf("zone cluster lookup: %w", err)
+	}
+	if cluster == nil || cluster.Status != "active" {
+		return nil, nil, ErrZoneClusterNotReady
+	}
+
+	fp := fmt.Sprintf("%v|%s|%s", cluster.InCluster, cluster.KubeconfigPath, cluster.Kubeconfig)
+
+	k8sCli := s.clientCache.Get(clusterID, fp)
+	if k8sCli == nil {
+		kubeconfigPath := strings.TrimSpace(cluster.KubeconfigPath)
+		inCluster := cluster.InCluster
+		if !inCluster && kubeconfigPath == "" {
+			return nil, nil, ErrZoneClusterNotReady
+		}
+		if kubeconfigPath == "" && !inCluster {
+			// inline kubeconfig 没有落盘，跳过并提示。
+			if strings.TrimSpace(cluster.Kubeconfig) != "" {
+				s.log.Warn("zone_cluster_inline_kubeconfig_ignored",
+					zap.String("cluster_id", clusterID.String()),
+					zap.String("cluster_name", cluster.Name),
+				)
+			}
+			return nil, nil, ErrZoneClusterNotReady
+		}
+		k8sCli, err = k8s.NewClient(kubeconfigPath, inCluster)
+		if err != nil {
+			return nil, nil, fmt.Errorf("zone k8s client: %w", err)
+		}
+		s.clientCache.Put(clusterID, fp, k8sCli)
+	}
+
+	// Helm client 按需构造（仅存储 settings，足够轻量，不缓存）。
+	helmKubeconfig := strings.TrimSpace(cluster.KubeconfigPath)
+	if cluster.InCluster {
+		helmKubeconfig = ""
+	}
+	helmCli, err := helm.NewClient(helmKubeconfig)
+	if err != nil {
+		return nil, nil, fmt.Errorf("zone helm client: %w", err)
+	}
+
+	return helmCli, k8sCli, nil
+}
+
+// InitShared 在可用区绑定的集群中初始化共享 VM 监控栈。
+func (s *ZoneService) InitShared(ctx context.Context, zoneID uuid.UUID, req *ZoneInitSharedRequest) (*ZoneInitSharedPlan, error) {
+	z, err := s.repo.GetByID(ctx, zoneID)
+	if err != nil {
+		return nil, err
+	}
+	if z == nil {
+		return nil, ErrZoneNotFound
+	}
+	if z.Status == "offline" {
+		return nil, ErrZoneOffline
+	}
+
+	helmCli, k8sCli, err := s.resolveClusterClients(ctx, z.ClusterID)
+	if err != nil {
+		return nil, err
+	}
+
+	ns := strings.TrimSpace(req.Namespace)
+	if ns == "" {
+		ns = "monitoring-" + z.Slug
+	}
+	release := strings.TrimSpace(req.ReleaseName)
+	if release == "" {
+		release = "vm-shared-stack"
+	}
+
+	bootstrapSvc := NewPlatformBootstrapService(helmCli, k8sCli)
+	plan, err := bootstrapSvc.InitSharedVMStack(ctx, &InitSharedClusterRequest{
+		DryRun:      req.DryRun,
+		Namespace:   ns,
+		ReleaseName: release,
+		Values:      req.Values,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return &ZoneInitSharedPlan{
+		DryRun:      plan.DryRun,
+		ZoneID:      zoneID.String(),
+		ZoneSlug:    z.Slug,
+		ClusterID:   z.ClusterID.String(),
+		Namespace:   plan.Namespace,
+		ReleaseName: plan.ReleaseName,
+		Chart:       plan.Chart,
+		Action:      plan.Action,
+		Values:      plan.Values,
+	}, nil
+}
+
+// InitGrafana 在可用区绑定的集群中初始化 Grafana。
+// 复用 vm/victoria-metrics-k8s-stack chart，仅启用 Grafana 组件并禁用 VM 组件。
+func (s *ZoneService) InitGrafana(ctx context.Context, zoneID uuid.UUID, req *ZoneInitSharedRequest) (*ZoneInitSharedPlan, error) {
+	z, err := s.repo.GetByID(ctx, zoneID)
+	if err != nil {
+		return nil, err
+	}
+	if z == nil {
+		return nil, ErrZoneNotFound
+	}
+	if z.Status == "offline" {
+		return nil, ErrZoneOffline
+	}
+
+	helmCli, k8sCli, err := s.resolveClusterClients(ctx, z.ClusterID)
+	if err != nil {
+		return nil, err
+	}
+
+	ns := "monitoring-" + z.Slug
+	release := "grafana-" + z.Slug
+	chart := "vm/victoria-metrics-k8s-stack"
+	values := map[string]interface{}{
+		"grafana": map[string]interface{}{
+			"enabled": true,
+		},
+		"defaultRules":             map[string]interface{}{"enabled": false},
+		"vmsingle":                 map[string]interface{}{"enabled": false},
+		"vmcluster":                map[string]interface{}{"enabled": false},
+		"vmagent":                  map[string]interface{}{"enabled": false},
+		"kube-state-metrics":       map[string]interface{}{"enabled": false},
+		"prometheus-node-exporter": map[string]interface{}{"enabled": false},
+		"alertmanager":             map[string]interface{}{"enabled": false},
+	}
+
+	plan := &ZoneInitSharedPlan{
+		DryRun:      req.DryRun,
+		ZoneID:      zoneID.String(),
+		ZoneSlug:    z.Slug,
+		ClusterID:   z.ClusterID.String(),
+		Namespace:   ns,
+		ReleaseName: release,
+		Chart:       chart,
+		Action:      "install_or_upgrade",
+		Values:      values,
+	}
+	if req.DryRun {
+		return plan, nil
+	}
+	if helmCli == nil {
+		return nil, ErrHelmOperatorNotConfigured
+	}
+	if err := helmCli.InstallOrUpgrade(ctx, release, chart, ns, values); err != nil {
+		return nil, err
+	}
+	if k8sCli != nil {
+		k8sCli.InvalidateMapperCache()
+	}
+	return plan, nil
 }

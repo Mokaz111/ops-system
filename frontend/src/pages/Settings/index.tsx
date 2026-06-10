@@ -2,12 +2,9 @@ import { useEffect, useState } from 'react';
 import { Box, Card, CardContent, Typography, Divider, TextField, Button, Grid, Alert } from '@mui/material';
 import { useSnackbar } from 'notistack';
 import PageHeader from '../../components/common/PageHeader';
-import ConfirmDialog from '../../components/common/ConfirmDialog';
 import { useAuthStore } from '../../stores/useAuthStore';
 import { userAPI } from '../../api/user';
-import { platformAPI } from '../../api/platform';
 import { extractApiError } from '../../api';
-import type { PlatformInitSharedClusterPlan } from '../../types/api';
 
 export default function SettingsPage() {
   const { enqueueSnackbar } = useSnackbar();
@@ -15,13 +12,6 @@ export default function SettingsPage() {
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [saving, setSaving] = useState(false);
-  const [initLoading, setInitLoading] = useState(false);
-  const [initApplyConfirmOpen, setInitApplyConfirmOpen] = useState(false);
-  const [initPlan, setInitPlan] = useState<PlatformInitSharedClusterPlan | null>(null);
-  const [initForm, setInitForm] = useState({
-    namespace: 'monitoring',
-    release_name: 'vm-shared-stack',
-  });
 
   useEffect(() => {
     setEmail(user?.email || '');
@@ -42,39 +32,6 @@ export default function SettingsPage() {
       enqueueSnackbar(extractApiError(err, '保存失败，请稍后重试'), { variant: 'error' });
     } finally {
       setSaving(false);
-    }
-  };
-
-  const handleInitDryRun = async () => {
-    setInitLoading(true);
-    try {
-      const { data: res } = await platformAPI.initSharedCluster({
-        ...initForm,
-        dry_run: true,
-      });
-      setInitPlan(res.data);
-      enqueueSnackbar('共享集群初始化 dry-run 成功', { variant: 'success' });
-    } catch (err) {
-      enqueueSnackbar(extractApiError(err, '共享集群初始化 dry-run 失败'), { variant: 'error' });
-    } finally {
-      setInitLoading(false);
-    }
-  };
-
-  const handleInitApply = async () => {
-    setInitLoading(true);
-    try {
-      const { data: res } = await platformAPI.initSharedCluster({
-        ...initForm,
-        dry_run: false,
-      });
-      setInitPlan(res.data);
-      enqueueSnackbar('共享集群初始化已提交', { variant: 'success' });
-      setInitApplyConfirmOpen(false);
-    } catch (err) {
-      enqueueSnackbar(extractApiError(err, '共享集群初始化提交失败'), { variant: 'error' });
-    } finally {
-      setInitLoading(false);
     }
   };
 
@@ -121,82 +78,15 @@ export default function SettingsPage() {
             </CardContent>
           </Card>
         </Grid>
-        <Grid size={{ xs: 12 }}>
-          <Card>
-            <CardContent>
-              <Typography variant="subtitle1" sx={{ mb: 2 }}>共享监控集群初始化（仅管理员）</Typography>
-              <Divider sx={{ mb: 2 }} />
-              {user?.role !== 'admin' ? (
-                <Alert severity="info">当前账号不是 admin，无法执行共享集群初始化。</Alert>
-              ) : (
-                <>
-                  <Alert severity="info" sx={{ mb: 2 }}>
-                    将使用 Helm Chart `vm/victoria-metrics-k8s-stack` 初始化或升级全局共享监控集群，并启用内置 Grafana。
-                  </Alert>
-                  <Grid container spacing={2}>
-                    <Grid size={{ xs: 12, md: 6 }}>
-                      <TextField
-                        fullWidth
-                        size="small"
-                        label="Namespace"
-                        value={initForm.namespace}
-                        onChange={(e) => setInitForm((prev) => ({ ...prev, namespace: e.target.value }))}
-                      />
-                    </Grid>
-                    <Grid size={{ xs: 12, md: 6 }}>
-                      <TextField
-                        fullWidth
-                        size="small"
-                        label="Release Name"
-                        value={initForm.release_name}
-                        onChange={(e) => setInitForm((prev) => ({ ...prev, release_name: e.target.value }))}
-                      />
-                    </Grid>
-                  </Grid>
-                  <Box sx={{ mt: 2 }}>
-                    <Button variant="contained" onClick={handleInitDryRun} disabled={initLoading}>
-                      {initLoading ? '执行中...' : '生成初始化 Dry-run'}
-                    </Button>
-                    <Button
-                      variant="outlined"
-                      sx={{ ml: 1 }}
-                      onClick={() => setInitApplyConfirmOpen(true)}
-                      disabled={initLoading || !initPlan}
-                    >
-                      应用初始化
-                    </Button>
-                  </Box>
-                  <Box
-                    component="pre"
-                    sx={{
-                      p: 2,
-                      borderRadius: 1,
-                      backgroundColor: '#f8f9fa',
-                      fontSize: 12,
-                      overflowX: 'auto',
-                      m: 0,
-                      mt: 2,
-                    }}
-                  >
-                    {initPlan ? JSON.stringify(initPlan, null, 2) : '暂无初始化预览，请先执行 dry-run。'}
-                  </Box>
-                </>
-              )}
-            </CardContent>
-          </Card>
-        </Grid>
+        {user?.role === 'admin' && (
+          <Grid size={{ xs: 12 }}>
+            <Alert severity="info">
+              共享 VM 集群初始化（含 Grafana + VMAuth）已移至可用区页面操作。
+              请前往「可用区管理」→ 点击对应可用区的 <strong>初始化共享 VMCluster</strong> 或 <strong>初始化 Grafana</strong> 按钮。
+            </Alert>
+          </Grid>
+        )}
       </Grid>
-
-      <ConfirmDialog
-        open={initApplyConfirmOpen}
-        title="确认初始化共享监控集群"
-        message="将对共享监控集群执行 helm install/upgrade。建议先执行 dry-run 并核对预览内容。是否继续？"
-        confirmLabel="确认初始化"
-        severity="warning"
-        loading={initLoading}
-        onConfirm={handleInitApply}
-        onCancel={() => setInitApplyConfirmOpen(false)}
-      />
     </Box>
   );
 }

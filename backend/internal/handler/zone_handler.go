@@ -9,6 +9,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"go.uber.org/zap"
 )
 
 // ZoneHandler 可用区 HTTP handler。
@@ -93,12 +94,14 @@ func (h *ZoneHandler) InitShared(c *gin.Context) {
 		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid id")
 		return
 	}
-	_, err = h.svc.Get(c.Request.Context(), id)
+	var body service.ZoneInitSharedRequest
+	_ = c.ShouldBindJSON(&body) // values 可选，忽略 bind 错误
+	plan, err := h.svc.InitShared(c.Request.Context(), id, &body)
 	if err != nil {
 		h.handleErr(c, err)
 		return
 	}
-	response.Error(c, http.StatusNotImplemented, http.StatusNotImplemented, response.ErrCodeInternal, "init-shared not yet implemented")
+	response.JSON(c, plan)
 }
 
 // InitGrafana POST /api/v1/zones/:id/init-grafana (admin)
@@ -109,12 +112,12 @@ func (h *ZoneHandler) InitGrafana(c *gin.Context) {
 		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid id")
 		return
 	}
-	_, err = h.svc.Get(c.Request.Context(), id)
+	plan, err := h.svc.InitGrafana(c.Request.Context(), id, &service.ZoneInitSharedRequest{DryRun: false})
 	if err != nil {
 		h.handleErr(c, err)
 		return
 	}
-	response.Error(c, http.StatusNotImplemented, http.StatusNotImplemented, response.ErrCodeInternal, "init-grafana not yet implemented")
+	response.JSON(c, plan)
 }
 
 // Delete DELETE /api/v1/zones/:id (admin)
@@ -143,11 +146,18 @@ func (h *ZoneHandler) handleErr(c *gin.Context, err error) {
 		response.Error(c, http.StatusUnprocessableEntity, http.StatusUnprocessableEntity, response.ErrCodeZoneOffline, err.Error())
 	case errors.Is(err, service.ErrZoneCapacityExhausted):
 		response.Error(c, http.StatusConflict, http.StatusConflict, response.ErrCodeZoneCapacityExhausted, err.Error())
-	case errors.Is(err, service.ErrClusterInvalid):
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeClusterInvalid, err.Error())
+	case errors.Is(err, service.ErrZoneClusterNotReady):
+		response.Error(c, http.StatusUnprocessableEntity, http.StatusUnprocessableEntity, response.ErrCodeClusterInvalid, err.Error())
+	case errors.Is(err, service.ErrHelmOperatorNotConfigured):
+		response.Error(c, http.StatusServiceUnavailable, http.StatusServiceUnavailable, response.ErrCodeServiceUnavail, "helm operator not configured")
+	case errors.Is(err, service.ErrInvalidNamespace),
+		errors.Is(err, service.ErrInvalidReleaseName):
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, err.Error())
 	case errors.Is(err, service.ErrInvalidPagination):
 		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, err.Error())
 	default:
+		// 未识别的错误返回 500 前记录日志，方便排查。
+		zap.L().Error("zone_unhandled_error", zap.Error(err))
 		response.Error(c, http.StatusInternalServerError, http.StatusInternalServerError, response.ErrCodeInternal, "internal server error")
 	}
 }

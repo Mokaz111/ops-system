@@ -28,6 +28,7 @@ type InitSharedClusterRequest struct {
 	DryRun      bool
 	Namespace   string
 	ReleaseName string
+	Values      map[string]interface{} // 可选的 Helm values 覆盖
 }
 
 type InitSharedClusterPlan struct {
@@ -72,10 +73,17 @@ func (s *PlatformBootstrapService) InitSharedVMStack(
 	}
 
 	values := map[string]interface{}{
-		// 使用 vm/victoria-metrics-k8s-stack 统一安装共享监控栈，并启用内置 Grafana。
+		// 默认启用 Grafana + VMAuth（内置多租户路由/限速）
 		"grafana": map[string]interface{}{
 			"enabled": true,
 		},
+		"vmauth": map[string]interface{}{
+			"enabled": true,
+		},
+	}
+	// 合并用户自定义 values（覆盖默认）
+	if req.Values != nil {
+		values = helm.MergeValues(values, req.Values)
 	}
 	plan := &InitSharedClusterPlan{
 		DryRun:      req.DryRun,

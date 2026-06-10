@@ -269,7 +269,7 @@ func NewRouter(cfg *config.Config, log *zap.Logger, db *gorm.DB) *gin.Engine {
 			clusterSvc := service.NewClusterService(clusterRepo)
 			clusterH := handler.NewClusterHandler(clusterSvc)
 
-			zoneSvc := service.NewZoneService(zoneRepo, instanceRepo, log)
+			zoneSvc := service.NewZoneService(zoneRepo, instanceRepo, clusterRepo, clusterClientCache, log)
 			zoneH := handler.NewZoneHandler(zoneSvc)
 
 			businessClusterSvc := service.NewBusinessClusterService(businessClusterRepo, instanceRepo, log)

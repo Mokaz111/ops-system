@@ -122,6 +122,95 @@ func safeName(s string) string {
 	return s
 }
 
+// VMClusterSpec 定义要创建的 VMCluster CR 规格。
+type VMClusterSpec struct {
+	Name              string // CR name
+	Namespace         string // 目标命名空间
+	TenantID          string
+	RetentionPeriod   string // 例: "15d"
+	VMInsertReplicas  int32
+	VMInsertCPU       string // 例: "2"
+	VMInsertMemory    string // 例: "4Gi"
+	VMSelectReplicas  int32
+	VMSelectCPU       string
+	VMSelectMemory    string
+	VMStorageReplicas int32
+	VMStorageCPU      string
+	VMStorageMemory   string
+	VMStorageSize     string // 例: "200Gi"
+}
+
+// ApplyVMCluster 在目标集群中创建或更新 VMCluster CR。
+// Operator 会监听 CR 并自动创建 vminsert/vmselect/vmstorage 组件。
+func (c *VMOperatorClient) ApplyVMCluster(ctx context.Context, spec VMClusterSpec) error {
+	if !c.Enabled() {
+		return nil
+	}
+	ns := spec.Namespace
+	if ns == "" {
+		ns = "default"
+	}
+	retention := spec.RetentionPeriod
+	if retention == "" {
+		retention = "15d"
+	}
+
+	yaml := fmt.Sprintf(`apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMCluster
+metadata:
+  name: %s
+  namespace: %s
+  labels:
+    ops-system/tenant-id: %s
+    managed-by: ops-system
+spec:
+  retentionPeriod: "%s"
+  vminsert:
+    replicaCount: %d
+    resources:
+      requests:
+        cpu: "%s"
+        memory: "%s"
+      limits:
+        cpu: "%s"
+        memory: "%s"
+  vmselect:
+    replicaCount: %d
+    resources:
+      requests:
+        cpu: "%s"
+        memory: "%s"
+      limits:
+        cpu: "%s"
+        memory: "%s"
+  vmstorage:
+    replicaCount: %d
+    storageDataPath: /vm-data
+    resources:
+      requests:
+        cpu: "%s"
+        memory: "%s"
+      limits:
+        cpu: "%s"
+        memory: "%s"
+    storage:
+      volumeClaimTemplate:
+        spec:
+          resources:
+            requests:
+              storage: "%s"
+`,
+		safeName(spec.Name), ns, spec.TenantID,
+		retention,
+		spec.VMInsertReplicas, spec.VMInsertCPU, spec.VMInsertMemory, spec.VMInsertCPU, spec.VMInsertMemory,
+		spec.VMSelectReplicas, spec.VMSelectCPU, spec.VMSelectMemory, spec.VMSelectCPU, spec.VMSelectMemory,
+		spec.VMStorageReplicas, spec.VMStorageCPU, spec.VMStorageMemory, spec.VMStorageCPU, spec.VMStorageMemory,
+		spec.VMStorageSize,
+	)
+	_, err := c.k8s.ApplyYAML(ctx, yaml, ns)
+	return err
+}
+
 func quoteYAML(s string) string {
 	return fmt.Sprintf("%q", s)
 }

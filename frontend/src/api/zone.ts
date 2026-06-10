@@ -57,9 +57,6 @@ export const zoneAPI = {
   delete: (id: string) =>
     api.delete<ApiResponse<null>>(`/zones/${id}`),
 
-  initShared: (id: string) =>
-    api.post<ApiResponse<null>>(`/zones/${id}/init-shared`),
-
-  initGrafana: (id: string) =>
-    api.post<ApiResponse<null>>(`/zones/${id}/init-grafana`),
+  initShared: (id: string, body?: { dry_run?: boolean; namespace?: string; release_name?: string; values?: Record<string, unknown> }) =>
+    api.post<ApiResponse<any>>(`/zones/${id}/init-shared`, body || {}),
 };
