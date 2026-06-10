@@ -15,6 +15,7 @@ const GrafanaPage = lazy(() => import('./pages/Grafana'));
 const AlertPage = lazy(() => import('./pages/Alert'));
 const UserPage = lazy(() => import('./pages/User'));
 const SettingsPage = lazy(() => import('./pages/Settings'));
+const InstanceCreatePage = lazy(() => import('./pages/Instance/Create'));
 const InstanceDetailPage = lazy(() => import('./pages/InstanceDetail'));
 const IntegrationPage = lazy(() => import('./pages/Integration'));
 const MetricPage = lazy(() => import('./pages/Metric'));
@@ -59,6 +60,7 @@ const routeComponentMap: Record<AppRouteKey, React.ReactNode | null> = {
   integrations: <Lazy><IntegrationPage /></Lazy>,
   metrics: <Lazy><MetricPage /></Lazy>,
   instances: <Lazy><InstancePage /></Lazy>,
+  'instance-create': <Lazy><InstanceCreatePage /></Lazy>,
   'instance-detail': <Lazy><InstanceDetailPage /></Lazy>,
   'log-instances': <Lazy><LogInstancePage /></Lazy>,
   'log-query': <Lazy><LogQueryPage /></Lazy>,

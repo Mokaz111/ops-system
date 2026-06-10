@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Box,
   Card,
@@ -30,6 +31,7 @@ import {
 import SearchIcon from '@mui/icons-material/Search';
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
 import DeleteOutlinedIcon from '@mui/icons-material/DeleteOutlined';
+import AddCircleOutlineIcon from '@mui/icons-material/AddCircleOutline';
 import VisibilityOutlinedIcon from '@mui/icons-material/VisibilityOutlined';
 import { useSnackbar } from 'notistack';
 import PageHeader from '../../components/common/PageHeader';
@@ -57,6 +59,7 @@ const isolationLabels: Record<string, string> = {
 
 export default function TenantPage() {
   const { enqueueSnackbar } = useSnackbar();
+  const navigate = useNavigate();
   const [tenants, setTenants] = useState<Tenant[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [loading, setLoading] = useState(true);
@@ -224,6 +227,11 @@ export default function TenantPage() {
                     <TableCell><StatusChip status={t.status} /></TableCell>
                     <TableCell sx={{ color: 'text.secondary', fontSize: '0.8125rem' }}>{new Date(t.created_at).toLocaleDateString()}</TableCell>
                     <TableCell align="right">
+                      <Tooltip title="为此租户创建实例">
+                        <IconButton size="small" onClick={() => navigate(`/instances/create?tenant_id=${t.id}`)} aria-label="为此租户创建实例" color="primary">
+                          <AddCircleOutlineIcon fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
                       <Tooltip title="查看 VM 路由与指标">
                         <IconButton size="small" onClick={() => openDetail(t)} aria-label="查看租户详情">
                           <VisibilityOutlinedIcon fontSize="small" />

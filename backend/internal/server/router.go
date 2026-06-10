@@ -161,7 +161,7 @@ func NewRouter(cfg *config.Config, log *zap.Logger, db *gorm.DB) *gin.Engine {
 			tenantSvc := service.NewTenantService(deptRepo, tenantRepo, instanceRepo, vmSync, vmQuery, tenantProvisioner, grafanaResolver, orch, log)
 			tenantH := handler.NewTenantHandler(tenantSvc, userSvc)
 
-			instanceSvc := service.NewInstanceService(instanceRepo, tenantRepo, integrationInstallRepo, orch, vmQuery, log)
+			instanceSvc := service.NewInstanceService(instanceRepo, tenantRepo, integrationInstallRepo, orch, vmOperator, vmRoutes, vmQuery, log)
 			scaleEventRepo := repository.NewScaleEventRepository(db)
 			scaleSvc := service.NewScaleService(helmClient, k8sClient, instanceRepo, scaleEventRepo, log)
 			instanceH := handler.NewInstanceHandler(instanceSvc, scaleSvc, userSvc, grafanaInstanceSvc)

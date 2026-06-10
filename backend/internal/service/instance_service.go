@@ -2,7 +2,9 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 
 	"ops-system/backend/internal/model"
@@ -44,6 +46,7 @@ var allowedInstanceStatuses = map[string]struct{}{
 type CreateInstanceRequest struct {
 	TenantID          *uuid.UUID
 	ClusterID         *uuid.UUID
+	ZoneID            *uuid.UUID
 	InstanceName      string
 	InstanceType      string
 	TemplateType      string
@@ -66,6 +69,8 @@ type InstanceService struct {
 	tenant       *repository.TenantRepository
 	installation *repository.IntegrationInstallationRepository
 	orch         *OrchestratorService
+	vmOperator   *vm.VMOperatorClient
+	routeBuilder *vm.RouteBuilder
 	vmQuery      *vm.QueryClient
 	log          *zap.Logger
 }
@@ -75,6 +80,8 @@ func NewInstanceService(
 	tenant *repository.TenantRepository,
 	installation *repository.IntegrationInstallationRepository,
 	orch *OrchestratorService,
+	vmOperator *vm.VMOperatorClient,
+	routeBuilder *vm.RouteBuilder,
 	vmQuery *vm.QueryClient,
 	log *zap.Logger,
 ) *InstanceService {
@@ -83,6 +90,8 @@ func NewInstanceService(
 		tenant:       tenant,
 		installation: installation,
 		orch:         orch,
+		vmOperator:   vmOperator,
+		routeBuilder: routeBuilder,
 		vmQuery:      vmQuery,
 		log:          log,
 	}
@@ -99,6 +108,7 @@ func (s *InstanceService) Create(ctx context.Context, req *CreateInstanceRequest
 
 	var tenantID uuid.UUID
 	var grafanaInstanceID *uuid.UUID
+	var tenant *model.Tenant
 	if req.TenantID != nil && *req.TenantID != uuid.Nil {
 		t, err := s.tenant.GetByID(ctx, *req.TenantID)
 		if err != nil {
@@ -108,6 +118,7 @@ func (s *InstanceService) Create(ctx context.Context, req *CreateInstanceRequest
 			return nil, ErrTenantNotFoundForInstance
 		}
 		tenantID = *req.TenantID
+		tenant = t
 		grafanaInstanceID = req.GrafanaInstanceID
 		if grafanaInstanceID == nil {
 			grafanaInstanceID = t.GrafanaInstanceID
@@ -120,9 +131,12 @@ func (s *InstanceService) Create(ctx context.Context, req *CreateInstanceRequest
 	inst := &model.Instance{
 		TenantID:          tenantID,
 		ClusterID:         req.ClusterID,
+		ZoneID:            req.ZoneID,
 		InstanceName:      strings.TrimSpace(req.InstanceName),
 		InstanceType:      req.InstanceType,
 		TemplateType:      req.TemplateType,
+		ReleaseName:       "ops-" + strings.ReplaceAll(tenantID.String(), "-", ""),
+		Namespace:         "ops-" + strings.ReplaceAll(tenantID.String(), "-", ""),
 		Spec:              defaultJSONB(req.Spec),
 		GrafanaInstanceID: grafanaInstanceID,
 		Status:            "creating",
@@ -131,12 +145,47 @@ func (s *InstanceService) Create(ctx context.Context, req *CreateInstanceRequest
 		return nil, err
 	}
 
-	if s.orch != nil {
-		if s.log != nil {
-			s.log.Info("instance_deploy_placeholder",
-				zap.String("instance_id", inst.ID.String()),
-				zap.String("note", "instance deploy not yet implemented"))
+	// CR + Operator 模式部署
+	if s.vmOperator != nil && s.vmOperator.Enabled() && tenant != nil {
+		ns := inst.Namespace
+		if ns == "" {
+			ns = "ops-" + strings.ReplaceAll(tenantID.String(), "-", "")
 		}
+		if inst.TemplateType == "shared" {
+			// 共享模式：在已有共享 VMCluster 上创建 VMUser + VMRoute
+			routeSet := s.routeBuilder.BuildTenantRoutes(tenant)
+			if err := s.vmOperator.ApplyTenantUser(ctx, tenant, routeSet); err != nil {
+				s.log.Error("instance_vmuser_apply_failed",
+					zap.String("instance_id", inst.ID.String()),
+					zap.String("tenant_id", tenant.ID.String()),
+					zap.Error(err))
+				inst.Status = "failed"
+				_ = s.inst.Update(ctx, inst)
+				return nil, fmt.Errorf("apply vmuser: %w", err)
+			}
+			s.log.Info("instance_vmuser_created",
+				zap.String("instance_id", inst.ID.String()),
+				zap.String("tenant_id", tenant.ID.String()))
+		} else if inst.TemplateType == "dedicated_cluster" || inst.TemplateType == "dedicated_single" {
+			// 独享集群：创建 VMCluster CR，Operator 自动编排组件
+			clusterSpec := buildVMClusterSpecFromInstance(inst, ns)
+			if err := s.vmOperator.ApplyVMCluster(ctx, clusterSpec); err != nil {
+				s.log.Error("instance_vmcluster_apply_failed",
+					zap.String("instance_id", inst.ID.String()),
+					zap.String("tenant_id", tenant.ID.String()),
+					zap.Error(err))
+				inst.Status = "failed"
+				_ = s.inst.Update(ctx, inst)
+				return nil, fmt.Errorf("apply vmcluster: %w", err)
+			}
+			s.log.Info("instance_vmcluster_created",
+				zap.String("instance_id", inst.ID.String()),
+				zap.String("tenant_id", tenant.ID.String()))
+		}
+	} else if s.log != nil {
+		s.log.Info("instance_deploy_skipped_operator_disabled",
+			zap.String("instance_id", inst.ID.String()),
+			zap.String("reason", "vm operator or tenant not available"))
 	}
 
 	return inst, nil
@@ -353,4 +402,73 @@ func (s *InstanceService) GetMetrics(ctx context.Context, id uuid.UUID) (*Instan
 		MemoryUsagePercent: mem,
 		Note:               "queried from tenant-scoped VictoriaMetrics endpoint",
 	}, nil
+}
+
+// instanceSpecFromJSON 从实例 spec JSONB 解析结构化规格。
+type instanceSpecFromJSON struct {
+	Mode       string `json:"mode"`
+	Retention  int    `json:"retention"`
+	Replicas   int    `json:"replicas"`
+	VMStorage  componentSpec `json:"vmstorage"`
+	VMSelect   componentSpec `json:"vmselect"`
+	VMInsert   componentSpec `json:"vminsert"`
+}
+
+type componentSpec struct {
+	CPU     int `json:"cpu"`
+	Memory  int `json:"memory"`
+	Storage int `json:"storage"` // vmstorage only
+}
+
+// buildVMClusterSpecFromInstance 从 instance 记录和 spec JSON 构建 VMCluster CR 规格。
+func buildVMClusterSpecFromInstance(inst *model.Instance, namespace string) vm.VMClusterSpec {
+	var parsed instanceSpecFromJSON
+	_ = json.Unmarshal([]byte(inst.Spec), &parsed)
+
+	if parsed.Replicas < 1 {
+		parsed.Replicas = 2
+	}
+	if parsed.VMStorage.CPU < 1 {
+		parsed.VMStorage.CPU = 4
+	}
+	if parsed.VMStorage.Memory < 1 {
+		parsed.VMStorage.Memory = 8
+	}
+	if parsed.VMStorage.Storage < 1 {
+		parsed.VMStorage.Storage = 200
+	}
+	if parsed.VMSelect.CPU < 1 {
+		parsed.VMSelect.CPU = 2
+	}
+	if parsed.VMSelect.Memory < 1 {
+		parsed.VMSelect.Memory = 4
+	}
+	if parsed.VMInsert.CPU < 1 {
+		parsed.VMInsert.CPU = 2
+	}
+	if parsed.VMInsert.Memory < 1 {
+		parsed.VMInsert.Memory = 4
+	}
+
+	retention := fmt.Sprintf("%dd", parsed.Retention)
+	if parsed.Retention < 1 {
+		retention = "15d"
+	}
+
+	return vm.VMClusterSpec{
+		Name:              inst.ReleaseName,
+		Namespace:         namespace,
+		TenantID:          inst.TenantID.String(),
+		RetentionPeriod:   retention,
+		VMInsertReplicas:  int32(parsed.Replicas),
+		VMInsertCPU:       fmt.Sprintf("%d", parsed.VMInsert.CPU),
+		VMInsertMemory:    fmt.Sprintf("%dGi", parsed.VMInsert.Memory),
+		VMSelectReplicas:  int32(parsed.Replicas),
+		VMSelectCPU:       fmt.Sprintf("%d", parsed.VMSelect.CPU),
+		VMSelectMemory:    fmt.Sprintf("%dGi", parsed.VMSelect.Memory),
+		VMStorageReplicas: int32(parsed.Replicas),
+		VMStorageCPU:      fmt.Sprintf("%d", parsed.VMStorage.CPU),
+		VMStorageMemory:   fmt.Sprintf("%dGi", parsed.VMStorage.Memory),
+		VMStorageSize:     fmt.Sprintf("%dGi", parsed.VMStorage.Storage),
+	}
 }

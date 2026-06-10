@@ -29,6 +29,7 @@ func NewInstanceHandler(svc *service.InstanceService, scaleSvc *service.ScaleSer
 type instanceResp struct {
 	ID                uuid.UUID  `json:"id"`
 	TenantID          uuid.UUID  `json:"tenant_id"`
+	ZoneID            *uuid.UUID `json:"zone_id,omitempty"`
 	ClusterID         *uuid.UUID `json:"cluster_id,omitempty"`
 	InstanceName      string     `json:"instance_name"`
 	InstanceType      string     `json:"instance_type"`
@@ -47,6 +48,7 @@ func toInstanceResp(i *model.Instance) instanceResp {
 	return instanceResp{
 		ID:                i.ID,
 		TenantID:          i.TenantID,
+		ZoneID:            i.ZoneID,
 		ClusterID:         i.ClusterID,
 		InstanceName:      i.InstanceName,
 		InstanceType:      i.InstanceType,
@@ -65,6 +67,7 @@ func toInstanceResp(i *model.Instance) instanceResp {
 type createInstanceBody struct {
 	TenantID          *uuid.UUID `json:"tenant_id"`
 	ClusterID         *uuid.UUID `json:"cluster_id"`
+	ZoneID            *uuid.UUID `json:"zone_id"`
 	InstanceName      string     `json:"instance_name" binding:"required"`
 	InstanceType      string     `json:"instance_type" binding:"required"`
 	TemplateType      string     `json:"template_type"`
@@ -143,6 +146,7 @@ func (h *InstanceHandler) Create(c *gin.Context) {
 	inst, err := h.svc.Create(c.Request.Context(), &service.CreateInstanceRequest{
 		TenantID:          body.TenantID,
 		ClusterID:         body.ClusterID,
+		ZoneID:            body.ZoneID,
 		InstanceName:      body.InstanceName,
 		InstanceType:      body.InstanceType,
 		TemplateType:      body.TemplateType,

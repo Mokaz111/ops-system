@@ -3,6 +3,7 @@ export type AppRouteKey =
   | 'departments'
   | 'tenants'
   | 'instances'
+  | 'instance-create'
   | 'instance-detail'
   | 'grafana-instance-detail'
   | 'integrations'
@@ -63,6 +64,7 @@ export const appRouteMeta: AppRouteMeta[] = [
   // ── 隐藏路由（侧边栏不显示，供内链跳转）──
   { key: 'grafana', path: 'grafana', label: 'Grafana 管理' },
   { key: 'grafana-hosts', path: 'grafana-hosts', label: 'Grafana 纳管实例' },
+  { key: 'instance-create', path: 'instances/create' },
   { key: 'instance-detail', path: 'instances/:instanceId' },
   { key: 'grafana-instance-detail', path: 'grafana-instances/:instanceId' },
   { key: 'alerts', path: 'alerts' },

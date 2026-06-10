@@ -42,6 +42,7 @@ import EmptyState from '../../components/common/EmptyState';
 import LoadingScreen from '../../components/common/LoadingScreen';
 import FilterToolbar from '../../components/common/FilterToolbar';
 import DataTableCard from '../../components/common/DataTableCard';
+import { useAuthStore } from '../../stores/useAuthStore';
 import { instanceAPI } from '../../api/instance';
 import { clusterAPI, type Cluster } from '../../api/cluster';
 import { zoneAPI, type Zone } from '../../api/zone';
@@ -71,6 +72,8 @@ const statusFilterItems = [
 export default function InstancePage() {
   const navigate = useNavigate();
   const { enqueueSnackbar } = useSnackbar();
+  const { user } = useAuthStore();
+  const isAdmin = user?.role === 'admin';
   const [instances, setInstances] = useState<Instance[]>([]);
   const [loading, setLoading] = useState(true);
   const [total, setTotal] = useState(0);
@@ -80,7 +83,6 @@ export default function InstancePage() {
   const [statusFilter, setStatusFilter] = useState('');
   const [typeFilter, setTypeFilter] = useState('');
 
-  const [createOpen, setCreateOpen] = useState(false);
   const [deleteDialog, setDeleteDialog] = useState<{ open: boolean; instance?: Instance }>({ open: false });
   const [scaleDialog, setScaleDialog] = useState<{ open: boolean; instance?: Instance }>({ open: false });
   const [saving, setSaving] = useState(false);
@@ -88,19 +90,6 @@ export default function InstancePage() {
   const [clusters, setClusters] = useState<Cluster[]>([]);
   const [zones, setZones] = useState<Zone[]>([]);
   const [grafanaHosts, setGrafanaHosts] = useState<GrafanaInstance[]>([]);
-  const [createForm, setCreateForm] = useState({
-    tenant_id: '',
-    cluster_id: '',
-    zone_id: '',
-    instance_name: '',
-    instance_type: 'metrics',
-    template_type: 'dedicated_single',
-    cpu: '2',
-    memory: '4',
-    storage: '50',
-    retention: '15',
-    grafana_instance_id: '',
-  });
   const [scaleForm, setScaleForm] = useState({
     scale_type: 'vertical' as 'horizontal' | 'vertical' | 'storage',
     replicas: 1,
@@ -193,35 +182,6 @@ export default function InstancePage() {
     );
   }, [instances]);
 
-  const handleCreate = async () => {
-    setSaving(true);
-    try {
-      const spec = JSON.stringify({
-        cpu: parseInt(createForm.cpu, 10),
-        memory: parseInt(createForm.memory, 10),
-        storage: parseInt(createForm.storage, 10),
-        retention: parseInt(createForm.retention, 10),
-      });
-      await instanceAPI.create({
-        tenant_id: createForm.tenant_id,
-        cluster_id: createForm.cluster_id || undefined,
-        zone_id: createForm.zone_id || undefined,
-        instance_name: createForm.instance_name,
-        instance_type: createForm.instance_type,
-        template_type: createForm.template_type,
-        spec,
-        grafana_instance_id: createForm.grafana_instance_id || undefined,
-      });
-      enqueueSnackbar('实例创建成功', { variant: 'success' });
-      setCreateOpen(false);
-      fetchInstances();
-    } catch (err) {
-      enqueueSnackbar(extractApiError(err, '创建失败'), { variant: 'error' });
-    } finally {
-      setSaving(false);
-    }
-  };
-
   const handleScale = async () => {
     if (!scaleDialog.instance) return;
     setSaving(true);
@@ -263,8 +223,8 @@ export default function InstancePage() {
       <PageHeader
         title="实例"
         subtitle="管理监控实例，支持扩缩容与生命周期操作"
-        actionLabel="创建实例"
-        onAction={() => setCreateOpen(true)}
+        actionLabel={isAdmin ? '创建实例' : undefined}
+        onAction={isAdmin ? () => navigate('/instances/create') : undefined}
       />
 
       <Tabs
@@ -484,175 +444,6 @@ export default function InstancePage() {
           </Table>
         </TableContainer>
       </DataTableCard>
-
-      <Dialog open={createOpen} onClose={() => setCreateOpen(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>创建实例</DialogTitle>
-        <DialogContent sx={{ pt: '16px !important' }}>
-          <TextField
-            fullWidth
-            label="租户 ID"
-            value={createForm.tenant_id}
-            onChange={(e) => setCreateForm({ ...createForm, tenant_id: e.target.value })}
-            sx={{ mb: 2.5 }}
-            required
-            helperText="关联租户的 UUID"
-          />
-          <TextField
-            fullWidth
-            label="实例名称"
-            value={createForm.instance_name}
-            onChange={(e) => setCreateForm({ ...createForm, instance_name: e.target.value })}
-            sx={{ mb: 2.5 }}
-            required
-          />
-          <Grid container spacing={2} sx={{ mb: 2.5 }}>
-            <Grid size={{ xs: 6 }}>
-              <FormControl fullWidth size="small">
-                <InputLabel>实例类型</InputLabel>
-                <Select
-                  value={createForm.instance_type}
-                  label="实例类型"
-                  onChange={(e) => setCreateForm({ ...createForm, instance_type: e.target.value })}
-                >
-                  <MenuItem value="metrics">VictoriaMetrics</MenuItem>
-                </Select>
-              </FormControl>
-            </Grid>
-            <Grid size={{ xs: 6 }}>
-              <FormControl fullWidth size="small">
-                <InputLabel>模板类型</InputLabel>
-                <Select
-                  value={createForm.template_type}
-                  label="模板类型"
-                  onChange={(e) => setCreateForm({ ...createForm, template_type: e.target.value })}
-                >
-                  <MenuItem value="shared">共享版</MenuItem>
-                  <MenuItem value="dedicated_single">独享单节点</MenuItem>
-                  <MenuItem value="dedicated_cluster">独享集群</MenuItem>
-                </Select>
-              </FormControl>
-            </Grid>
-            <Grid size={{ xs: 12 }}>
-              <FormControl fullWidth size="small">
-                <InputLabel>目标集群（可选）</InputLabel>
-                <Select
-                  value={createForm.cluster_id}
-                  label="目标集群（可选）"
-                  onChange={(e) => setCreateForm({ ...createForm, cluster_id: e.target.value })}
-                >
-                  <MenuItem value="">使用平台默认集群</MenuItem>
-                  {clusters.map((c) => (
-                    <MenuItem key={c.id} value={c.id}>
-                      {c.display_name || c.name}
-                      {c.in_cluster ? ' · in-cluster' : ''}
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-            </Grid>
-            <Grid size={{ xs: 12 }}>
-              <FormControl fullWidth size="small">
-                <InputLabel>可用区（可选）</InputLabel>
-                <Select
-                  value={createForm.zone_id}
-                  label="可用区（可选）"
-                  onChange={(e) => setCreateForm({ ...createForm, zone_id: e.target.value })}
-                >
-                  <MenuItem value="">未指定</MenuItem>
-                  {zones.map((z) => (
-                    <MenuItem key={z.id} value={z.id}>
-                      {z.display_name || z.slug}
-                      <Chip
-                        size="small"
-                        label={z.status}
-                        variant="outlined"
-                        color={z.status === 'active' ? 'success' : 'default'}
-                        sx={{ ml: 1, height: 18, fontSize: '0.65rem' }}
-                      />
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-            </Grid>
-            <Grid size={{ xs: 12 }}>
-              <FormControl fullWidth size="small">
-                <InputLabel>关联 Grafana（可选）</InputLabel>
-                <Select
-                  value={createForm.grafana_instance_id}
-                  label="关联 Grafana（可选）"
-                  onChange={(e) => setCreateForm({ ...createForm, grafana_instance_id: e.target.value })}
-                >
-                  <MenuItem value="">继承租户默认</MenuItem>
-                  {grafanaHosts.map((h) => (
-                    <MenuItem key={h.id} value={h.id}>
-                      {h.name}
-                      <Chip
-                        size="small"
-                        label={h.scope === 'platform' ? '平台' : '租户'}
-                        variant="outlined"
-                        sx={{ ml: 1, height: 18, fontSize: '0.65rem' }}
-                      />
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-            </Grid>
-          </Grid>
-          <Typography variant="subtitle2" sx={{ mb: 1.5, color: 'text.secondary' }}>资源配置</Typography>
-          <Grid container spacing={2}>
-            <Grid size={{ xs: 3 }}>
-              <TextField
-                fullWidth
-                size="small"
-                label="CPU (核)"
-                type="number"
-                value={createForm.cpu}
-                onChange={(e) => setCreateForm({ ...createForm, cpu: e.target.value })}
-              />
-            </Grid>
-            <Grid size={{ xs: 3 }}>
-              <TextField
-                fullWidth
-                size="small"
-                label="内存 (GB)"
-                type="number"
-                value={createForm.memory}
-                onChange={(e) => setCreateForm({ ...createForm, memory: e.target.value })}
-              />
-            </Grid>
-            <Grid size={{ xs: 3 }}>
-              <TextField
-                fullWidth
-                size="small"
-                label="存储 (GB)"
-                type="number"
-                value={createForm.storage}
-                onChange={(e) => setCreateForm({ ...createForm, storage: e.target.value })}
-              />
-            </Grid>
-            <Grid size={{ xs: 3 }}>
-              <TextField
-                fullWidth
-                size="small"
-                label="保留 (天)"
-                type="number"
-                value={createForm.retention}
-                onChange={(e) => setCreateForm({ ...createForm, retention: e.target.value })}
-              />
-            </Grid>
-          </Grid>
-        </DialogContent>
-        <DialogActions sx={{ px: 3, pb: 2 }}>
-          <Button onClick={() => setCreateOpen(false)}>取消</Button>
-          <Button
-            variant="contained"
-            onClick={handleCreate}
-            disabled={saving || !createForm.tenant_id || !createForm.instance_name}
-          >
-            {saving ? '创建中...' : '创建'}
-          </Button>
-        </DialogActions>
-      </Dialog>
 
       <Dialog open={scaleDialog.open} onClose={() => setScaleDialog({ open: false })} maxWidth="xs" fullWidth>
         <DialogTitle>实例伸缩 - {scaleDialog.instance?.instance_name}</DialogTitle>

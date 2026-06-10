@@ -35,6 +35,7 @@ const iconMap: Record<AppRouteKey, React.ReactNode> = {
   integrations: <ExtensionOutlinedIcon />,
   metrics: <DataUsageOutlinedIcon />,
   instances: <StorageOutlinedIcon />,
+  'instance-create': <StorageOutlinedIcon />,
   'instance-detail': <StorageOutlinedIcon />,
   'log-instances': <DescriptionOutlinedIcon />,
   'log-query': <DescriptionOutlinedIcon />,
