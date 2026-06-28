@@ -9,7 +9,7 @@ import (
 )
 
 // CreatePrometheusDatasource 为租户注册 Prometheus 兼容数据源。
-func (c *Client) CreatePrometheusDatasource(ctx context.Context, t *model.Tenant) error {
+func (c *Client) CreatePrometheusDatasource(ctx context.Context, t *model.Workspace) error {
 	if !c.Enabled() || c.cfg == nil {
 		return nil
 	}

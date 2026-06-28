@@ -95,8 +95,8 @@ func (r *AlertRuleRepository) ListByTenantID(ctx context.Context, tenantID uuid.
 	return list, err
 }
 
-// CountByTenantID 按租户计数。
-func (r *AlertRuleRepository) CountByTenantID(ctx context.Context, tenantID uuid.UUID) (int64, error) {
+// CountByWorkspaceID 按租户计数。
+func (r *AlertRuleRepository) CountByWorkspaceID(ctx context.Context, tenantID uuid.UUID) (int64, error) {
 	var n int64
 	err := r.db.WithContext(ctx).Model(&model.AlertRule{}).Where("tenant_id = ?", tenantID).Count(&n).Error
 	return n, err

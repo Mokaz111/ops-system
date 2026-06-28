@@ -61,7 +61,7 @@ type UpdateAlertRuleRequest struct {
 // AlertService 告警规则业务。
 type AlertService struct {
 	ruleRepo   *repository.AlertRuleRepository
-	tenantRepo *repository.TenantRepository
+	workspaceRepo *repository.WorkspaceRepository
 	n9e        *n9e.Client
 	vmRules    *vm.VMOperatorClient
 	log        *zap.Logger
@@ -69,12 +69,12 @@ type AlertService struct {
 
 func NewAlertService(
 	ruleRepo *repository.AlertRuleRepository,
-	tenantRepo *repository.TenantRepository,
+	workspaceRepo *repository.WorkspaceRepository,
 	n9eClient *n9e.Client,
 	vmRules *vm.VMOperatorClient,
 	log *zap.Logger,
 ) *AlertService {
-	return &AlertService{ruleRepo: ruleRepo, tenantRepo: tenantRepo, n9e: n9eClient, vmRules: vmRules, log: log}
+	return &AlertService{ruleRepo: ruleRepo, workspaceRepo: workspaceRepo, n9e: n9eClient, vmRules: vmRules, log: log}
 }
 
 // CreateRule 创建告警规则。
@@ -92,12 +92,12 @@ func (s *AlertService) CreateRule(ctx context.Context, req *CreateAlertRuleReque
 		return nil, ErrQueryRequired
 	}
 
-	t, err := s.tenantRepo.GetByID(ctx, req.TenantID)
+	t, err := s.workspaceRepo.GetByID(ctx, req.TenantID)
 	if err != nil {
 		return nil, err
 	}
 	if t == nil {
-		return nil, ErrTenantNotFound
+		return nil, ErrWorkspaceNotFound
 	}
 
 	rule := &model.AlertRule{
@@ -208,7 +208,7 @@ func (s *AlertService) UpdateRule(ctx context.Context, id uuid.UUID, req *Update
 		return nil, err
 	}
 
-	if t, err := s.tenantRepo.GetByID(ctx, rule.TenantID); err == nil && t != nil {
+	if t, err := s.workspaceRepo.GetByID(ctx, rule.TenantID); err == nil && t != nil {
 		if err := s.applyVMRule(ctx, t, rule); err != nil {
 			s.log.Warn("vmrule_update_failed", zap.Error(err), zap.String("rule_id", rule.ID.String()))
 		}
@@ -223,7 +223,7 @@ func (s *AlertService) UpdateRule(ctx context.Context, id uuid.UUID, req *Update
 	return rule, nil
 }
 
-func (s *AlertService) applyVMRule(ctx context.Context, t *model.Tenant, rule *model.AlertRule) error {
+func (s *AlertService) applyVMRule(ctx context.Context, t *model.Workspace, rule *model.AlertRule) error {
 	if s == nil || s.vmRules == nil || t == nil || rule == nil || rule.RuleType != "metrics" {
 		return nil
 	}
