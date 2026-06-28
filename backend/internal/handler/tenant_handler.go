@@ -13,24 +13,27 @@ import (
 	"github.com/google/uuid"
 )
 
-// TenantHandler 租户 HTTP。
+// TenantHandler 工作空间 HTTP（路由保持 /tenants 用于 API 兼容）。
 type TenantHandler struct {
-	svc     *service.TenantService
+	svc     *service.WorkspaceService
 	userSvc *service.UserService
 }
 
-func NewTenantHandler(svc *service.TenantService, userSvc *service.UserService) *TenantHandler {
+func NewTenantHandler(svc *service.WorkspaceService, userSvc *service.UserService) *TenantHandler {
 	return &TenantHandler{svc: svc, userSvc: userSvc}
 }
 
 type tenantResp struct {
 	ID                uuid.UUID  `json:"id"`
-	TenantName        string     `json:"tenant_name"`
-	DeptID            uuid.UUID  `json:"dept_id"`
+	WorkspaceName     string     `json:"workspace_name"`
 	VMUserID          string     `json:"vmuser_id"`
 	VMUserKey         string     `json:"vmuser_key,omitempty"`
 	TemplateType      string     `json:"template_type"`
 	QuotaConfig       string     `json:"quota_config"`
+	IsolationLevel    string     `json:"isolation_level,omitempty"`
+	VMNamespace       string     `json:"vm_namespace,omitempty"`
+	VMSelectURL       string     `json:"vm_select_url,omitempty"`
+	VMInsertURL       string     `json:"vm_insert_url,omitempty"`
 	Status            string     `json:"status"`
 	N9ETeamID         int64      `json:"n9e_team_id"`
 	GrafanaOrgID      int64      `json:"grafana_org_id"`
@@ -40,31 +43,33 @@ type tenantResp struct {
 	InsertURL         string     `json:"insert_url,omitempty"`
 }
 
-func (h *TenantHandler) toTenantResp(t *model.Tenant, withKey bool) tenantResp {
+func (h *TenantHandler) toTenantResp(w *model.Workspace, withKey bool) tenantResp {
 	r := tenantResp{
-		ID:                t.ID,
-		TenantName:        t.TenantName,
-		DeptID:            t.DeptID,
-		VMUserID:          t.VMUserID,
-		TemplateType:      t.TemplateType,
-		QuotaConfig:       t.QuotaConfig,
-		Status:            t.Status,
-		N9ETeamID:         t.N9ETeamID,
-		GrafanaOrgID:      t.GrafanaOrgID,
-		GrafanaInstanceID: t.GrafanaInstanceID,
-		CreatedAt:         t.CreatedAt,
-		UpdatedAt:         t.UpdatedAt,
-		InsertURL:         h.svc.InsertURL(t.VMUserID),
+		ID:                w.ID,
+		WorkspaceName:     w.WorkspaceName,
+		VMUserID:          w.VMUserID,
+		TemplateType:      w.TemplateType,
+		QuotaConfig:       w.QuotaConfig,
+		IsolationLevel:    w.IsolationLevel,
+		VMNamespace:       w.VMNamespace,
+		VMSelectURL:       w.VMSelectURL,
+		VMInsertURL:       w.VMInsertURL,
+		Status:            w.Status,
+		N9ETeamID:         w.N9ETeamID,
+		GrafanaOrgID:      w.GrafanaOrgID,
+		GrafanaInstanceID: w.GrafanaInstanceID,
+		CreatedAt:         w.CreatedAt,
+		UpdatedAt:         w.UpdatedAt,
+		InsertURL:         h.svc.InsertURL(w.VMUserID),
 	}
 	if withKey {
-		r.VMUserKey = t.VMUserKey
+		r.VMUserKey = w.VMUserKey
 	}
 	return r
 }
 
 type createTenantBody struct {
-	TenantName        string     `json:"tenant_name" binding:"required"`
-	DeptID            uuid.UUID  `json:"dept_id" binding:"required"`
+	WorkspaceName     string     `json:"workspace_name" binding:"required"`
 	TemplateType      string     `json:"template_type" binding:"required"`
 	QuotaConfig       string     `json:"quota_config"`
 	GrafanaInstanceID *uuid.UUID `json:"grafana_instance_id"`
@@ -82,42 +87,42 @@ func (h *TenantHandler) List(c *gin.Context) {
 		if !ok {
 			return
 		}
-		if u.TenantID == nil {
-			raw := c.Query("tenant_id")
+		if u.WorkspaceID == nil {
+			raw := c.Query("workspace_id")
 			if raw == "" {
 				response.Error(c, http.StatusForbidden, http.StatusForbidden, response.ErrCodeForbidden, "forbidden")
 				return
 			}
 			id, err := uuid.Parse(raw)
 			if err != nil {
-				response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid tenant_id")
+				response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid workspace_id")
 				return
 			}
-			allowed, err := h.userSvc.CanAccessTenant(c.Request.Context(), u.ID, id, "read")
+			allowed, err := h.userSvc.CanAccessWorkspace(c.Request.Context(), u.ID, id, "read")
 			if err != nil || !allowed {
 				response.Error(c, http.StatusForbidden, http.StatusForbidden, response.ErrCodeForbidden, "forbidden")
 				return
 			}
-			t, err := h.svc.Get(c.Request.Context(), id)
+			w, err := h.svc.Get(c.Request.Context(), id)
 			if err != nil {
 				h.handleErr(c, err)
 				return
 			}
 			response.JSON(c, gin.H{
-				"items":     []tenantResp{h.toTenantResp(t, false)},
+				"items":     []tenantResp{h.toTenantResp(w, false)},
 				"total":     1,
 				"page":      page,
 				"page_size": ps,
 			})
 			return
 		}
-		t, err := h.svc.Get(c.Request.Context(), *u.TenantID)
+		w, err := h.svc.Get(c.Request.Context(), *u.WorkspaceID)
 		if err != nil {
 			h.handleErr(c, err)
 			return
 		}
 		response.JSON(c, gin.H{
-			"items":     []tenantResp{h.toTenantResp(t, false)},
+			"items":     []tenantResp{h.toTenantResp(w, false)},
 			"total":     1,
 			"page":      page,
 			"page_size": ps,
@@ -125,20 +130,11 @@ func (h *TenantHandler) List(c *gin.Context) {
 		return
 	}
 
-	var deptID *uuid.UUID
-	if s := c.Query("dept_id"); s != "" {
-		id, err := uuid.Parse(s)
-		if err != nil {
-			response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid dept_id")
-			return
-		}
-		deptID = &id
-	}
 	templateType := c.Query("template_type")
 	status := c.Query("status")
 	keyword := c.Query("keyword")
 
-	list, total, err := h.svc.List(c.Request.Context(), page, ps, deptID, templateType, status, keyword)
+	list, total, err := h.svc.List(c.Request.Context(), page, ps, templateType, status, keyword)
 	if err != nil {
 		h.handleErr(c, err)
 		return
@@ -162,9 +158,8 @@ func (h *TenantHandler) Create(c *gin.Context) {
 		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, response.TranslateBindingError(err))
 		return
 	}
-	t, err := h.svc.Create(c.Request.Context(), &service.CreateTenantRequest{
-		TenantName:        body.TenantName,
-		DeptID:            body.DeptID,
+	w, err := h.svc.Create(c.Request.Context(), &service.CreateWorkspaceRequest{
+		WorkspaceName:     body.WorkspaceName,
 		TemplateType:      body.TemplateType,
 		QuotaConfig:       body.QuotaConfig,
 		GrafanaInstanceID: body.GrafanaInstanceID,
@@ -173,7 +168,7 @@ func (h *TenantHandler) Create(c *gin.Context) {
 		h.handleErr(c, err)
 		return
 	}
-	response.JSON(c, h.toTenantResp(t, true))
+	response.JSON(c, h.toTenantResp(w, true))
 }
 
 // Get GET /api/v1/tenants/:id
@@ -189,23 +184,23 @@ func (h *TenantHandler) Get(c *gin.Context) {
 			response.Error(c, http.StatusUnauthorized, http.StatusUnauthorized, response.ErrCodeUnauthorized, "unauthorized")
 			return
 		}
-		allowed, err := h.userSvc.CanAccessTenant(c.Request.Context(), caller, id, "read")
+		allowed, err := h.userSvc.CanAccessWorkspace(c.Request.Context(), caller, id, "read")
 		if err != nil || !allowed {
 			response.Error(c, http.StatusForbidden, http.StatusForbidden, response.ErrCodeForbidden, "forbidden")
 			return
 		}
 	}
 
-	t, err := h.svc.Get(c.Request.Context(), id)
+	w, err := h.svc.Get(c.Request.Context(), id)
 	if err != nil {
 		h.handleErr(c, err)
 		return
 	}
-	response.JSON(c, h.toTenantResp(t, false))
+	response.JSON(c, h.toTenantResp(w, false))
 }
 
 type updateTenantBody struct {
-	TenantName        string     `json:"tenant_name"`
+	WorkspaceName     string     `json:"workspace_name"`
 	TemplateType      string     `json:"template_type"`
 	QuotaConfig       string     `json:"quota_config"`
 	Status            string     `json:"status"`
@@ -224,8 +219,8 @@ func (h *TenantHandler) Update(c *gin.Context) {
 		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, response.TranslateBindingError(err))
 		return
 	}
-	t, err := h.svc.Update(c.Request.Context(), id, &service.UpdateTenantRequest{
-		TenantName:        body.TenantName,
+	w, err := h.svc.Update(c.Request.Context(), id, &service.UpdateWorkspaceRequest{
+		WorkspaceName:     body.WorkspaceName,
 		TemplateType:      body.TemplateType,
 		QuotaConfig:       body.QuotaConfig,
 		Status:            body.Status,
@@ -235,7 +230,7 @@ func (h *TenantHandler) Update(c *gin.Context) {
 		h.handleErr(c, err)
 		return
 	}
-	response.JSON(c, h.toTenantResp(t, false))
+	response.JSON(c, h.toTenantResp(w, false))
 }
 
 // Delete DELETE /api/v1/tenants/:id
@@ -265,7 +260,7 @@ func (h *TenantHandler) Metrics(c *gin.Context) {
 			response.Error(c, http.StatusUnauthorized, http.StatusUnauthorized, response.ErrCodeUnauthorized, "unauthorized")
 			return
 		}
-		allowed, err := h.userSvc.CanAccessTenant(c.Request.Context(), caller, id, "read")
+		allowed, err := h.userSvc.CanAccessWorkspace(c.Request.Context(), caller, id, "read")
 		if err != nil || !allowed {
 			response.Error(c, http.StatusForbidden, http.StatusForbidden, response.ErrCodeForbidden, "forbidden")
 			return
@@ -282,23 +277,21 @@ func (h *TenantHandler) Metrics(c *gin.Context) {
 
 func (h *TenantHandler) handleErr(c *gin.Context, err error) {
 	switch {
-	case errors.Is(err, service.ErrTenantNotFound):
+	case errors.Is(err, service.ErrWorkspaceNotFound):
 		response.Error(c, http.StatusNotFound, http.StatusNotFound, response.ErrCodeTenantNotFound, err.Error())
-	case errors.Is(err, service.ErrDeptNotFound):
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeNotFound, err.Error())
-	case errors.Is(err, service.ErrDeptHasTenant):
-		response.Error(c, http.StatusConflict, http.StatusConflict, response.ErrCodeDeptHasTenant, err.Error())
-	case errors.Is(err, service.ErrTenantHasInstances):
+	case errors.Is(err, service.ErrWorkspaceSlugConflict):
+		response.Error(c, http.StatusConflict, http.StatusConflict, response.ErrCodeConflict, err.Error())
+	case errors.Is(err, service.ErrWorkspaceHasInstances):
 		response.Error(c, http.StatusConflict, http.StatusConflict, response.ErrCodeTenantHasInstances, err.Error())
 	case errors.Is(err, service.ErrInvalidTemplateType),
 		errors.Is(err, service.ErrQuotaConfigNotJSON),
-		errors.Is(err, service.ErrTenantNameRequired):
+		errors.Is(err, service.ErrWorkspaceNameRequired):
 		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, err.Error())
 	case errors.Is(err, service.ErrInvalidPagination):
 		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeInvalidPagination, err.Error())
-	case errors.Is(err, service.ErrTenantProvisionFailed),
-		errors.Is(err, service.ErrTenantDeprovisionFailed):
-		response.Error(c, http.StatusServiceUnavailable, http.StatusServiceUnavailable, response.ErrCodeTenantProvisionFailed, "tenant orchestration failed, please retry")
+	case errors.Is(err, service.ErrWorkspaceProvisionFailed),
+		errors.Is(err, service.ErrWorkspaceDeprovisionFailed):
+		response.Error(c, http.StatusServiceUnavailable, http.StatusServiceUnavailable, response.ErrCodeTenantProvisionFailed, "workspace orchestration failed, please retry")
 	default:
 		response.Error(c, http.StatusInternalServerError, http.StatusInternalServerError, response.ErrCodeInternal, "internal server error")
 	}

@@ -12,7 +12,7 @@ import (
 	"go.uber.org/zap"
 )
 
-type TenantProvisioner struct {
+type WorkspaceProvisioner struct {
 	tasks      *repository.ProvisioningTaskRepository
 	routes     *repository.VMRouteRepository
 	datasource *repository.DatasourceRepository
@@ -22,7 +22,7 @@ type TenantProvisioner struct {
 	log        *zap.Logger
 }
 
-func NewTenantProvisioner(
+func NewWorkspaceProvisioner(
 	tasks *repository.ProvisioningTaskRepository,
 	routes *repository.VMRouteRepository,
 	datasource *repository.DatasourceRepository,
@@ -30,21 +30,21 @@ func NewTenantProvisioner(
 	routeBuild *vm.RouteBuilder,
 	operator *vm.VMOperatorClient,
 	log *zap.Logger,
-) *TenantProvisioner {
+) *WorkspaceProvisioner {
 	if log == nil {
 		log = zap.NewNop()
 	}
 	if routeBuild == nil {
 		routeBuild = vm.NewRouteBuilder(nil)
 	}
-	return &TenantProvisioner{tasks: tasks, routes: routes, datasource: datasource, audit: audit, routeBuild: routeBuild, operator: operator, log: log}
+	return &WorkspaceProvisioner{tasks: tasks, routes: routes, datasource: datasource, audit: audit, routeBuild: routeBuild, operator: operator, log: log}
 }
 
-func (p *TenantProvisioner) ProvisionCreate(ctx context.Context, t *model.Tenant) error {
+func (p *WorkspaceProvisioner) ProvisionCreate(ctx context.Context, t *model.Workspace) error {
 	if p == nil || t == nil {
 		return nil
 	}
-	routes := p.routeBuild.BuildTenantRoutes(t)
+	routes := p.routeBuild.BuildWorkspaceRoutes(t)
 	t.VMNamespace = routes.Namespace
 	t.VMInsertURL = routes.InsertURL
 	t.VMSelectURL = routes.SelectURL
@@ -84,7 +84,7 @@ func (p *TenantProvisioner) ProvisionCreate(ctx context.Context, t *model.Tenant
 		if p.operator == nil {
 			return nil
 		}
-		return p.operator.ApplyTenantUser(ctx, t, routes)
+		return p.operator.ApplyWorkspaceUser(ctx, t, routes)
 	}); err != nil {
 		return err
 	}
@@ -110,7 +110,7 @@ func (p *TenantProvisioner) ProvisionCreate(ctx context.Context, t *model.Tenant
 	return nil
 }
 
-func (p *TenantProvisioner) ProvisionDelete(ctx context.Context, t *model.Tenant) error {
+func (p *WorkspaceProvisioner) ProvisionDelete(ctx context.Context, t *model.Workspace) error {
 	if p == nil || t == nil {
 		return nil
 	}
@@ -120,7 +120,7 @@ func (p *TenantProvisioner) ProvisionDelete(ctx context.Context, t *model.Tenant
 	})
 }
 
-func (p *TenantProvisioner) runStep(ctx context.Context, tenantID uuid.UUID, resource, action, step string, payload any, fn func() error) error {
+func (p *WorkspaceProvisioner) runStep(ctx context.Context, tenantID uuid.UUID, resource, action, step string, payload any, fn func() error) error {
 	task := &model.ProvisioningTask{
 		TenantID: tenantID,
 		Resource: resource,
@@ -149,7 +149,7 @@ func (p *TenantProvisioner) runStep(ctx context.Context, tenantID uuid.UUID, res
 	return nil
 }
 
-func (p *TenantProvisioner) auditCreate(ctx context.Context, tenantID *uuid.UUID, action, resource, resourceID string, details any) error {
+func (p *WorkspaceProvisioner) auditCreate(ctx context.Context, tenantID *uuid.UUID, action, resource, resourceID string, details any) error {
 	if p.audit == nil {
 		return nil
 	}

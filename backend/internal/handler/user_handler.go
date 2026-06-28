@@ -23,33 +23,30 @@ func NewUserHandler(userSvc *service.UserService, jwtSecret string) *UserHandler
 }
 
 type bootstrapBody struct {
-	Username string     `json:"username" binding:"required"`
-	Password string     `json:"password" binding:"required"`
-	Email    string     `json:"email"`
-	Phone    string     `json:"phone"`
-	DeptID   *uuid.UUID `json:"dept_id"`
-	TenantID *uuid.UUID `json:"tenant_id"`
+	Username    string     `json:"username" binding:"required"`
+	Password    string     `json:"password" binding:"required"`
+	Email       string     `json:"email"`
+	Phone       string     `json:"phone"`
+	WorkspaceID *uuid.UUID `json:"workspace_id"`
 }
 
 type createUserBody struct {
-	Username string     `json:"username" binding:"required"`
-	Password string     `json:"password" binding:"required"`
-	Email    string     `json:"email"`
-	Phone    string     `json:"phone"`
-	DeptID   *uuid.UUID `json:"dept_id"`
-	TenantID *uuid.UUID `json:"tenant_id"`
-	Role     string     `json:"role"`
-	Status   string     `json:"status"`
+	Username    string     `json:"username" binding:"required"`
+	Password    string     `json:"password" binding:"required"`
+	Email       string     `json:"email"`
+	Phone       string     `json:"phone"`
+	WorkspaceID *uuid.UUID `json:"workspace_id"`
+	Role        string     `json:"role"`
+	Status      string     `json:"status"`
 }
 
 type updateUserBody struct {
-	Email    *string    `json:"email"`
-	Phone    *string    `json:"phone"`
-	DeptID   *uuid.UUID `json:"dept_id"`
-	TenantID *uuid.UUID `json:"tenant_id"`
-	Role     *string    `json:"role"`
-	Status   *string    `json:"status"`
-	Password *string    `json:"password"`
+	Email       *string    `json:"email"`
+	Phone       *string    `json:"phone"`
+	WorkspaceID *uuid.UUID `json:"workspace_id"`
+	Role        *string    `json:"role"`
+	Status      *string    `json:"status"`
+	Password    *string    `json:"password"`
 }
 
 // Bootstrap POST /api/v1/users/bootstrap
@@ -64,8 +61,7 @@ func (h *UserHandler) Bootstrap(c *gin.Context) {
 		Password: body.Password,
 		Email:    body.Email,
 		Phone:    body.Phone,
-		DeptID:   body.DeptID,
-		TenantID: body.TenantID,
+		WorkspaceID: body.WorkspaceID,
 	})
 	if err != nil {
 		// bootstrap 失败也需留痕：多次失败的 bootstrap 请求往往意味着
@@ -122,10 +118,10 @@ func (h *UserHandler) List(c *gin.Context) {
 		}
 		deptID = &id
 	}
-	if s := c.Query("tenant_id"); s != "" {
+	if s := c.Query("workspace_id"); s != "" {
 		id, err := uuid.Parse(s)
 		if err != nil {
-			response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid tenant_id")
+			response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid workspace_id")
 			return
 		}
 		tenantID = &id
@@ -167,8 +163,7 @@ func (h *UserHandler) Create(c *gin.Context) {
 		Password: body.Password,
 		Email:    body.Email,
 		Phone:    body.Phone,
-		DeptID:   body.DeptID,
-		TenantID: body.TenantID,
+		WorkspaceID: body.WorkspaceID,
 		Role:     body.Role,
 		Status:   body.Status,
 	})
@@ -227,8 +222,7 @@ func (h *UserHandler) Update(c *gin.Context) {
 	u, err := h.userSvc.Update(c.Request.Context(), id, &service.UpdateUserRequest{
 		Email:    body.Email,
 		Phone:    body.Phone,
-		DeptID:   body.DeptID,
-		TenantID: body.TenantID,
+		WorkspaceID: body.WorkspaceID,
 		Role:     body.Role,
 		Status:   body.Status,
 		Password: body.Password,

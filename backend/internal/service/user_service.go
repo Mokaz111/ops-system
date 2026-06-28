@@ -23,40 +23,32 @@ var (
 
 // CreateUserRequest 创建用户。
 type CreateUserRequest struct {
-	Username string
-	Password string
-	Email    string
-	Phone    string
-	DeptID   *uuid.UUID
-	TenantID *uuid.UUID
-	Role     string
-	Status   string
+	Username    string
+	Password    string
+	Email       string
+	Phone       string
+	WorkspaceID *uuid.UUID
+	Role        string
+	Status      string
 }
 
 // UpdateUserRequest 更新用户。
 type UpdateUserRequest struct {
-	Email    *string
-	Phone    *string
-	DeptID   *uuid.UUID
-	TenantID *uuid.UUID
-	Role     *string
-	Status   *string
-	Password *string // 明文新密码，非空则更新
+	Email       *string
+	Phone       *string
+	WorkspaceID *uuid.UUID
+	Role        *string
+	Status      *string
+	Password    *string // 明文新密码，非空则更新
 }
 
 // UserService 用户业务。
 type UserService struct {
-	user    *repository.UserRepository
-	members *repository.TenantMemberRepository
-	authz   *AuthzService
+	user *repository.UserRepository
 }
 
-func NewUserService(user *repository.UserRepository, members ...*repository.TenantMemberRepository) *UserService {
-	var memberRepo *repository.TenantMemberRepository
-	if len(members) > 0 {
-		memberRepo = members[0]
-	}
-	return &UserService{user: user, members: memberRepo, authz: NewAuthzService(user, memberRepo)}
+func NewUserService(user *repository.UserRepository, _ ...*repository.WorkspaceRepository) *UserService {
+	return &UserService{user: user}
 }
 
 // Bootstrap 首个管理员（仅当用户表为空）。
@@ -81,8 +73,7 @@ func (s *UserService) Bootstrap(ctx context.Context, req *CreateUserRequest) (*m
 		PasswordHash: hash,
 		Email:        strings.TrimSpace(req.Email),
 		Phone:        strings.TrimSpace(req.Phone),
-		DeptID:       req.DeptID,
-		TenantID:     req.TenantID,
+		WorkspaceID:  req.WorkspaceID,
 		Role:         req.Role,
 		Status:       req.Status,
 	}
@@ -91,14 +82,6 @@ func (s *UserService) Bootstrap(ctx context.Context, req *CreateUserRequest) (*m
 			return nil, ErrBootstrapNotAllowed
 		}
 		return nil, err
-	}
-	if u.TenantID != nil && s.members != nil {
-		_ = s.members.Upsert(ctx, &model.TenantMember{
-			TenantID: *u.TenantID,
-			UserID:   u.ID,
-			Role:     model.TenantRoleAdmin,
-			Status:   "active",
-		})
 	}
 	// 首任管理员创建是高敏操作，必须在日志中留痕，便于事后审计与
 	// 发现异常的"二次 bootstrap"尝试。这里只记元数据，不落密码/hash。
@@ -143,34 +126,14 @@ func (s *UserService) create(ctx context.Context, req *CreateUserRequest) (*mode
 		PasswordHash: hash,
 		Email:        strings.TrimSpace(req.Email),
 		Phone:        strings.TrimSpace(req.Phone),
-		DeptID:       req.DeptID,
-		TenantID:     req.TenantID,
+		WorkspaceID:  req.WorkspaceID,
 		Role:         req.Role,
 		Status:       req.Status,
 	}
 	if err := s.user.Create(ctx, u); err != nil {
 		return nil, err
 	}
-	if u.TenantID != nil && s.members != nil {
-		_ = s.members.Upsert(ctx, &model.TenantMember{
-			TenantID: *u.TenantID,
-			UserID:   u.ID,
-			Role:     defaultTenantRole(req.Role),
-			Status:   "active",
-		})
-	}
 	return u, nil
-}
-
-func defaultTenantRole(role string) string {
-	switch role {
-	case "admin", model.PlatformRoleAdmin:
-		return model.TenantRoleAdmin
-	case model.TenantRoleAdmin, model.TenantRoleEditor, model.TenantRoleViewer, model.TenantRoleAlert:
-		return role
-	default:
-		return model.TenantRoleViewer
-	}
 }
 
 // Get 按 ID。
@@ -200,11 +163,8 @@ func (s *UserService) Update(ctx context.Context, id uuid.UUID, req *UpdateUserR
 	if req.Phone != nil {
 		u.Phone = strings.TrimSpace(*req.Phone)
 	}
-	if req.DeptID != nil {
-		u.DeptID = req.DeptID
-	}
-	if req.TenantID != nil {
-		u.TenantID = req.TenantID
+	if req.WorkspaceID != nil {
+		u.WorkspaceID = req.WorkspaceID
 	}
 	if req.Role != nil && *req.Role != "" {
 		u.Role = *req.Role
@@ -225,18 +185,6 @@ func (s *UserService) Update(ctx context.Context, id uuid.UUID, req *UpdateUserR
 	if err := s.user.Update(ctx, u); err != nil {
 		return nil, err
 	}
-	if u.TenantID != nil && s.members != nil {
-		role := u.Role
-		if req.Role != nil && *req.Role != "" {
-			role = *req.Role
-		}
-		_ = s.members.Upsert(ctx, &model.TenantMember{
-			TenantID: *u.TenantID,
-			UserID:   u.ID,
-			Role:     defaultTenantRole(role),
-			Status:   u.Status,
-		})
-	}
 	return u, nil
 }
 
@@ -252,11 +200,22 @@ func (s *UserService) Delete(ctx context.Context, id uuid.UUID) error {
 	return s.user.Delete(ctx, id)
 }
 
-func (s *UserService) CanAccessTenant(ctx context.Context, userID uuid.UUID, tenantID uuid.UUID, action string) (bool, error) {
-	if s == nil || s.authz == nil {
+// CanAccessWorkspace 检查用户是否有权访问指定工作空间。
+func (s *UserService) CanAccessWorkspace(ctx context.Context, userID uuid.UUID, workspaceID uuid.UUID, action string) (bool, error) {
+	if s == nil || s.user == nil {
 		return false, nil
 	}
-	return s.authz.CanAccessTenant(ctx, userID, tenantID, action)
+	u, err := s.user.GetByID(ctx, userID)
+	if err != nil || u == nil {
+		return false, err
+	}
+	if u.Role == "admin" {
+		return true, nil
+	}
+	if u.WorkspaceID != nil && *u.WorkspaceID == workspaceID {
+		return true, nil
+	}
+	return false, nil
 }
 
 // List 分页筛选。

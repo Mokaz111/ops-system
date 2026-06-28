@@ -13,6 +13,26 @@ import (
 	"ops-system/backend/pkg/response"
 )
 
+// setGrafanaProxyCookie 下发 Grafana 反向代理定位 cookie。
+// Secure 属性按 X-Forwarded-Proto 动态设置（https 时为 true），
+// HttpOnly=true、SameSite=Lax，防止明文 HTTP 下被截获冒充登录。
+func setGrafanaProxyCookie(c *gin.Context, instanceID uuid.UUID) {
+	secure := c.GetHeader("X-Forwarded-Proto") == "https"
+	c.SetSameSite(http.SameSiteLaxMode)
+	c.SetCookie("grafana_proxy_instance", instanceID.String(), 86400, "/api/v1/grafana/proxy", "", secure, true)
+}
+
+const grafanaProxyPrefix = "/api/v1/grafana/proxy"
+
+// buildGrafanaProxyURL 根据可选的 redirect 子路径拼接完整代理 URL。
+// redirect 仅允许相对路径（以 / 开头），防止 open redirect。
+func buildGrafanaProxyURL(redirect string) string {
+	if redirect == "" || redirect[0] != '/' {
+		return grafanaProxyPrefix + "/"
+	}
+	return grafanaProxyPrefix + redirect
+}
+
 func userIDFromContext(c *gin.Context) (uuid.UUID, bool) {
 	s := c.GetString(middleware.ContextUserIDKey)
 	if s == "" {
@@ -66,20 +86,20 @@ func currentUser(c *gin.Context, userSvc *service.UserService) (*model.User, boo
 	return u, true
 }
 
-// resolveTenantScope 解析列表/查询接口的租户作用域：
+// resolveWorkspaceScope 解析列表/查询接口的租户作用域：
 //   - admin：尊重 ?tenant_id=；未传则 nil（代表"全租户"）。
 //   - 普通用户：必须有自己的 tenant_id；若 ?tenant_id= 与自身不符则 403。
 //
 // 返回值 (scope, ok)；ok=false 时已写入错误响应，上层直接 return。
-func resolveTenantScope(c *gin.Context, userSvc *service.UserService) (*uuid.UUID, bool) {
-	raw := c.Query("tenant_id")
+func resolveWorkspaceScope(c *gin.Context, userSvc *service.UserService) (*uuid.UUID, bool) {
+	raw := c.Query("workspace_id")
 	if isAdmin(c) {
 		if raw == "" {
 			return nil, true
 		}
 		id, err := uuid.Parse(raw)
 		if err != nil {
-			response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid tenant_id")
+			response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid workspace_id")
 			return nil, false
 		}
 		return &id, true
@@ -88,17 +108,17 @@ func resolveTenantScope(c *gin.Context, userSvc *service.UserService) (*uuid.UUI
 	if !ok {
 		return nil, false
 	}
-	if u.TenantID == nil {
+	if u.WorkspaceID == nil {
 		if raw == "" {
 			response.Error(c, http.StatusForbidden, http.StatusForbidden, response.ErrCodeForbidden, "forbidden")
 			return nil, false
 		}
 		id, err := uuid.Parse(raw)
 		if err != nil {
-			response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid tenant_id")
+			response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid workspace_id")
 			return nil, false
 		}
-		allowed, err := userSvc.CanAccessTenant(c.Request.Context(), u.ID, id, "read")
+		allowed, err := userSvc.CanAccessWorkspace(c.Request.Context(), u.ID, id, "read")
 		if err != nil || !allowed {
 			response.Error(c, http.StatusForbidden, http.StatusForbidden, response.ErrCodeForbidden, "forbidden")
 			return nil, false
@@ -108,19 +128,19 @@ func resolveTenantScope(c *gin.Context, userSvc *service.UserService) (*uuid.UUI
 	if raw != "" {
 		id, err := uuid.Parse(raw)
 		if err != nil {
-			response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid tenant_id")
+			response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid workspace_id")
 			return nil, false
 		}
-		if id != *u.TenantID {
+		if id != *u.WorkspaceID {
 			response.Error(c, http.StatusForbidden, http.StatusForbidden, response.ErrCodeForbidden, "forbidden")
 			return nil, false
 		}
 	}
-	return u.TenantID, true
+	return u.WorkspaceID, true
 }
 
-// assertTenantAccess 非 admin 用户必须命中 ownerTenant，否则写 403 并返回 false。
-func assertTenantAccess(c *gin.Context, userSvc *service.UserService, ownerTenant uuid.UUID) bool {
+// assertWorkspaceAccess 非 admin 用户必须命中 ownerTenant，否则写 403 并返回 false。
+func assertWorkspaceAccess(c *gin.Context, userSvc *service.UserService, ownerTenant uuid.UUID) bool {
 	if isAdmin(c) {
 		return true
 	}
@@ -128,8 +148,8 @@ func assertTenantAccess(c *gin.Context, userSvc *service.UserService, ownerTenan
 	if !ok {
 		return false
 	}
-	if u.TenantID == nil || *u.TenantID != ownerTenant {
-		allowed, err := userSvc.CanAccessTenant(c.Request.Context(), u.ID, ownerTenant, "read")
+	if u.WorkspaceID == nil || *u.WorkspaceID != ownerTenant {
+		allowed, err := userSvc.CanAccessWorkspace(c.Request.Context(), u.ID, ownerTenant, "read")
 		if err != nil || !allowed {
 			response.Error(c, http.StatusForbidden, http.StatusForbidden, response.ErrCodeForbidden, "forbidden")
 			return false
@@ -138,14 +158,14 @@ func assertTenantAccess(c *gin.Context, userSvc *service.UserService, ownerTenan
 	return true
 }
 
-func resolveTenantID(c *gin.Context, userSvc *service.UserService) (uuid.UUID, bool) {
+func resolveWorkspaceID(c *gin.Context, userSvc *service.UserService) (uuid.UUID, bool) {
 	u, ok := currentUser(c, userSvc)
 	if !ok {
 		return uuid.Nil, false
 	}
-	if u.TenantID == nil {
+	if u.WorkspaceID == nil {
 		response.Error(c, http.StatusForbidden, http.StatusForbidden, response.ErrCodeForbidden, "user has no tenant")
 		return uuid.Nil, false
 	}
-	return *u.TenantID, true
+	return *u.WorkspaceID, true
 }

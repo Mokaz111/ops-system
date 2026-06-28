@@ -118,12 +118,12 @@ type GrafanaStats struct {
 type GrafanaService struct {
 	client       *grafana.Client
 	instanceRepo *repository.GrafanaInstanceRepository
-	tenantRepo   *repository.TenantRepository
+	workspaceRepo   *repository.WorkspaceRepository
 	log          *zap.Logger
 }
 
-func NewGrafanaService(client *grafana.Client, instanceRepo *repository.GrafanaInstanceRepository, tenantRepo *repository.TenantRepository, log *zap.Logger) *GrafanaService {
-	return &GrafanaService{client: client, instanceRepo: instanceRepo, tenantRepo: tenantRepo, log: log}
+func NewGrafanaService(client *grafana.Client, instanceRepo *repository.GrafanaInstanceRepository, workspaceRepo *repository.WorkspaceRepository, log *zap.Logger) *GrafanaService {
+	return &GrafanaService{client: client, instanceRepo: instanceRepo, workspaceRepo: workspaceRepo, log: log}
 }
 
 // ForInstance 根据 grafana_instance_id 返回对应 Grafana 实例的 Service；nil 返回自身。
@@ -145,7 +145,7 @@ func (s *GrafanaService) ForInstance(ctx context.Context, instanceID *uuid.UUID)
 		AdminUser:     inst.AdminUser,
 		AdminPassword: inst.AdminPassword,
 	}, s.log)
-	return &GrafanaService{client: resolved, instanceRepo: s.instanceRepo, tenantRepo: s.tenantRepo, log: s.log}, nil
+	return &GrafanaService{client: resolved, instanceRepo: s.instanceRepo, workspaceRepo: s.workspaceRepo, log: s.log}, nil
 }
 
 func (s *GrafanaService) ensureEnabled() error {
@@ -277,22 +277,29 @@ func (s *GrafanaService) ImportDashboard(ctx context.Context, orgID int64, dashb
 	return s.client.ImportDashboardJSON(ctx, orgID, dashboardJSON)
 }
 
-// CreateOrgForTenant 为租户自动创建 Grafana 组织并配置默认数据源。
-func (s *GrafanaService) CreateOrgForTenant(ctx context.Context, tenantID uuid.UUID) (int64, error) {
+// CreateOrgForWorkspace 为租户自动创建 Grafana 组织并配置默认数据源。
+func (s *GrafanaService) CreateOrgForWorkspace(ctx context.Context, tenantID uuid.UUID) (int64, error) {
 	if err := s.ensureEnabled(); err != nil {
 		return 0, err
 	}
-	t, err := s.tenantRepo.GetByID(ctx, tenantID)
+	t, err := s.workspaceRepo.GetByID(ctx, tenantID)
 	if err != nil {
 		return 0, err
 	}
 	if t == nil {
-		return 0, ErrTenantNotFound
+		return 0, ErrWorkspaceNotFound
 	}
-	if err := s.client.SyncTenantOnCreate(ctx, t); err != nil {
+	if err := s.client.SyncWorkspaceOnCreate(ctx, t); err != nil {
 		return 0, err
 	}
-	_ = s.tenantRepo.Update(ctx, t)
+	// 回写 GrafanaOrgID 映射；失败不再静默吞，记录日志并上抛以避免产生无映射的孤儿组织。
+	if err := s.workspaceRepo.Update(ctx, t); err != nil {
+		s.log.Error("grafana_create_org_for_tenant_persist_orgid_failed",
+			zap.Stringer("tenant_id", tenantID),
+			zap.Int64("org_id", t.GrafanaOrgID),
+			zap.Error(err))
+		return 0, fmt.Errorf("persist grafana org id for tenant %s: %w", tenantID, err)
+	}
 	return t.GrafanaOrgID, nil
 }
 
