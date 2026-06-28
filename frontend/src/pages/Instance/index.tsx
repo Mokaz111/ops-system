@@ -53,12 +53,11 @@ import { parseSpec } from '../../utils/instance';
 const typeLabels: Record<string, { label: string; color: 'primary' | 'secondary' | 'success' | 'warning' }> = {
   metrics: { label: 'Metrics', color: 'primary' },
   logs: { label: 'Logs', color: 'secondary' },
-  visual: { label: 'Grafana', color: 'success' },
   alert: { label: 'Alert', color: 'warning' },
 };
 
 function isInstanceLevelScalable(inst: Instance): boolean {
-  return inst.status === 'running' && inst.instance_type !== 'visual' && inst.template_type === 'dedicated_single';
+  return inst.status === 'running' && inst.template_type === 'dedicated_single';
 }
 
 const statusFilterItems = [
@@ -91,7 +90,7 @@ export default function InstancePage() {
   const [zones, setZones] = useState<Zone[]>([]);
   const [grafanaHosts, setGrafanaHosts] = useState<GrafanaInstance[]>([]);
   const [scaleForm, setScaleForm] = useState({
-    scale_type: 'vertical' as 'horizontal' | 'vertical' | 'storage',
+    scale_type: 'vertical' as 'vertical' | 'storage',
     replicas: 1,
     cpu: 2,
     memory: 4,
@@ -162,7 +161,7 @@ export default function InstancePage() {
     }, {});
   }, [zones]);
 
-  const grafanaHostNameById = useMemo(() => {
+  const grafanaInstanceNameById = useMemo(() => {
     return grafanaHosts.reduce<Record<string, string>>((acc, h) => {
       acc[h.id] = h.name;
       return acc;
@@ -184,11 +183,19 @@ export default function InstancePage() {
 
   const handleScale = async () => {
     if (!scaleDialog.instance) return;
+    // 下限保护：CPU/内存/存储不得小于 1。
+    if (scaleForm.scale_type === 'vertical' && (scaleForm.cpu < 1 || scaleForm.memory < 1)) {
+      enqueueSnackbar('CPU 和内存必须大于 0', { variant: 'warning' });
+      return;
+    }
+    if (scaleForm.scale_type === 'storage' && scaleForm.storage < 1) {
+      enqueueSnackbar('存储必须大于 0', { variant: 'warning' });
+      return;
+    }
     setSaving(true);
     try {
       const payload = {
         scale_type: scaleForm.scale_type,
-        replicas: scaleForm.scale_type === 'horizontal' ? Math.max(1, scaleForm.replicas) : undefined,
         cpu: scaleForm.scale_type === 'vertical' ? String(scaleForm.cpu) : undefined,
         memory: scaleForm.scale_type === 'vertical' ? `${scaleForm.memory}Gi` : undefined,
         storage: scaleForm.scale_type === 'storage' ? `${scaleForm.storage}Gi` : undefined,
@@ -206,6 +213,7 @@ export default function InstancePage() {
 
   const handleDelete = async () => {
     if (!deleteDialog.instance) return;
+    setSaving(true);
     try {
       await instanceAPI.delete(deleteDialog.instance.id);
       enqueueSnackbar('实例删除成功', { variant: 'success' });
@@ -213,6 +221,8 @@ export default function InstancePage() {
       fetchInstances();
     } catch (err) {
       enqueueSnackbar(extractApiError(err, '删除失败'), { variant: 'error' });
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -375,7 +385,7 @@ export default function InstancePage() {
                         {inst.cluster_id ? (clusterNameById[inst.cluster_id] || inst.cluster_id.slice(0, 8)) : '默认'}
                       </TableCell>
                       <TableCell sx={{ fontSize: '0.8125rem', color: 'text.secondary' }}>
-                        {inst.grafana_instance_id ? (grafanaHostNameById[inst.grafana_instance_id] || inst.grafana_instance_id.slice(0, 8)) : '默认'}
+                        {inst.grafana_instance_id ? (grafanaInstanceNameById[inst.grafana_instance_id] || inst.grafana_instance_id.slice(0, 8)) : '默认'}
                       </TableCell>
                       <TableCell><StatusChip status={inst.status} /></TableCell>
                       <TableCell sx={{ color: 'text.secondary', fontSize: '0.8125rem' }}>
@@ -453,7 +463,7 @@ export default function InstancePage() {
             <Select
               value={scaleForm.scale_type}
               label="伸缩类型"
-              onChange={(e) => setScaleForm({ ...scaleForm, scale_type: e.target.value as 'horizontal' | 'vertical' | 'storage' })}
+              onChange={(e) => setScaleForm({ ...scaleForm, scale_type: e.target.value as 'vertical' | 'storage' })}
             >
               <MenuItem value="vertical">垂直伸缩（CPU/内存）</MenuItem>
               <MenuItem value="storage">存储扩容</MenuItem>
@@ -467,7 +477,7 @@ export default function InstancePage() {
                 label="CPU (核)"
                 type="number"
                 value={scaleForm.cpu}
-                onChange={(e) => setScaleForm({ ...scaleForm, cpu: parseInt(e.target.value, 10) || 1 })}
+                onChange={(e) => setScaleForm({ ...scaleForm, cpu: Math.max(1, parseInt(e.target.value, 10) || 1) })}
                 sx={{ mb: 2 }}
               />
               <TextField
@@ -476,7 +486,7 @@ export default function InstancePage() {
                 label="内存 (Gi)"
                 type="number"
                 value={scaleForm.memory}
-                onChange={(e) => setScaleForm({ ...scaleForm, memory: parseInt(e.target.value, 10) || 1 })}
+                onChange={(e) => setScaleForm({ ...scaleForm, memory: Math.max(1, parseInt(e.target.value, 10) || 1) })}
               />
             </>
           )}
@@ -487,7 +497,7 @@ export default function InstancePage() {
               label="存储 (Gi)"
               type="number"
               value={scaleForm.storage}
-              onChange={(e) => setScaleForm({ ...scaleForm, storage: parseInt(e.target.value, 10) || 1 })}
+              onChange={(e) => setScaleForm({ ...scaleForm, storage: Math.max(1, parseInt(e.target.value, 10) || 1) })}
             />
           )}
         </DialogContent>
@@ -505,6 +515,7 @@ export default function InstancePage() {
         message={`确定要删除实例「${deleteDialog.instance?.instance_name}」吗？关联的 Helm Release 也将被卸载。`}
         severity="error"
         confirmLabel="删除"
+        loading={saving}
         onConfirm={handleDelete}
         onCancel={() => setDeleteDialog({ open: false })}
       />

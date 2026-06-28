@@ -12,7 +12,7 @@ import type {
 
 export const instanceAPI = {
   list: (
-    params?: PaginationParams & { tenant_id?: string; instance_type?: string; status?: string },
+    params?: PaginationParams & { workspace_id?: string; instance_type?: string; status?: string },
     config?: AxiosRequestConfig,
   ) =>
     api.get<ApiResponse<PaginatedResponse<Instance>>>('/instances', { ...config, params: normalizeListParams(params) }),
@@ -48,8 +48,10 @@ export const instanceAPI = {
   upgrade: (id: string) =>
     api.post<ApiResponse<null>>(`/instances/${id}/upgrade`),
 
-  login: (id: string) =>
-    api.post<ApiResponse<{ proxyUrl: string }>>(`/instances/${id}/login`),
+  login: (id: string, redirect?: string) =>
+    api.post<ApiResponse<{ proxyUrl: string }>>(`/instances/${id}/login`, null, {
+      params: redirect ? { redirect } : undefined,
+    }),
 };
 
 function normalizeListParams<T extends PaginationParams>(params?: T) {
@@ -62,7 +64,7 @@ export interface ScaleEvent {
   id: string;
   instance_id: string;
   instance_name: string;
-  tenant_id: string;
+  workspace_id: string;
   scale_type: 'horizontal' | 'vertical' | 'storage' | string;
   method: 'cr_patch' | 'helm_upgrade' | 'k8s_native' | 'rejected' | string;
   replicas?: number | null;

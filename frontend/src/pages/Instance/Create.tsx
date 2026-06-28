@@ -22,12 +22,12 @@ import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import { useSnackbar } from 'notistack';
 import { instanceAPI } from '../../api/instance';
-import { tenantAPI } from '../../api/tenant';
+import { workspaceAPI } from '../../api/workspace';
 import { clusterAPI, type Cluster } from '../../api/cluster';
 import { zoneAPI, type Zone } from '../../api/zone';
 import { grafanaInstanceAPI, type GrafanaInstance } from '../../api/grafanaInstance';
 import { extractApiError } from '../../api';
-import type { Tenant } from '../../types/api';
+import type { Workspace } from '../../types/api';
 import { useAuthStore } from '../../stores/useAuthStore';
 
 // ── 预配置规格选项（仅独享集群版使用）──
@@ -77,13 +77,18 @@ const replicaOptions = [
 const templateTypeOptions = [
   {
     value: 'shared',
-    label: '共享版 — 多租户共享 VM 集群',
-    desc: '复用可用区已部署的共享 VMCluster + VMAuth。通过 VMUser 实现租户隔离，VMAuth 解析 Token 动态路由 select/insert 请求并支持按用户限速。零额外资源开销，秒级开通。',
+    label: '共享版 — 多工作空间共享 VM 集群',
+    desc: '复用可用区已部署的共享 VMCluster + VMAuth。通过 VMUser 实现工作空间隔离，VMAuth 解析 Token 动态路由 select/insert 请求并支持按用户限速。零额外资源开销，秒级开通。',
+  },
+  {
+    value: 'dedicated_single',
+    label: '独享单机版 — 独立 VMSingle',
+    desc: '创建独立 VMSingle 实例，单节点部署，资源隔离且成本较低，适合中小规模或非高可用场景的工作空间。',
   },
   {
     value: 'dedicated_cluster',
     label: '独享集群版 — 独立 VMCluster CR',
-    desc: '创建独立 VMCluster CR → Operator 自动编排 vminsert/vmselect/vmstorage 组件。资源完全隔离，适合大规模或合规租户。',
+    desc: '创建独立 VMCluster CR → Operator 自动编排 vminsert/vmselect/vmstorage 组件。资源完全隔离，适合大规模或合规工作空间。',
   },
 ];
 
@@ -100,14 +105,14 @@ export default function InstanceCreatePage() {
     }
   }, [user, navigate, enqueueSnackbar]);
 
-  const [tenants, setTenants] = useState<Tenant[]>([]);
+  const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [clusters, setClusters] = useState<Cluster[]>([]);
   const [zones, setZones] = useState<Zone[]>([]);
   const [grafanaHosts, setGrafanaHosts] = useState<GrafanaInstance[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
-  const [selectedTenant, setSelectedTenant] = useState<Tenant | null>(null);
+  const [selectedWorkspace, setSelectedWorkspace] = useState<Workspace | null>(null);
   const [form, setForm] = useState({
     instance_name: '',
     template_type: 'shared',
@@ -128,19 +133,19 @@ export default function InstanceCreatePage() {
     const load = async () => {
       setLoading(true);
       const [tRes, cRes, zRes, gRes] = await Promise.allSettled([
-        tenantAPI.list({ page: 1, page_size: 200 }),
+        workspaceAPI.list({ page: 1, page_size: 200 }),
         clusterAPI.list({ page: 1, page_size: 100 }),
         zoneAPI.list({ page: 1, page_size: 100 }),
         grafanaInstanceAPI.list({ page: 1, page_size: 100 }),
       ]);
-      if (tRes.status === 'fulfilled') setTenants(tRes.value.data.data?.items || []);
+      if (tRes.status === 'fulfilled') setWorkspaces(tRes.value.data.data?.items || []);
       if (cRes.status === 'fulfilled') setClusters(cRes.value.data.data?.items || []);
       if (zRes.status === 'fulfilled') setZones(zRes.value.data.data?.items || []);
       if (gRes.status === 'fulfilled') setGrafanaHosts(gRes.value.data.data?.items || []);
-      const tenantIdFromQuery = searchParams.get('tenant_id');
+      const tenantIdFromQuery = searchParams.get('workspace_id');
       if (tenantIdFromQuery && tRes.status === 'fulfilled') {
-        const found = (tRes.value.data.data?.items || []).find((t: Tenant) => t.id === tenantIdFromQuery);
-        if (found) setSelectedTenant(found);
+        const found = (tRes.value.data.data?.items || []).find((t: Workspace) => t.id === tenantIdFromQuery);
+        if (found) setSelectedWorkspace(found);
       }
       setLoading(false);
     };
@@ -148,11 +153,11 @@ export default function InstanceCreatePage() {
   }, [searchParams]);
 
   useEffect(() => {
-    if (selectedTenant?.template_type) {
-      const mode = selectedTenant.template_type === 'dedicated_cluster' ? 'dedicated_cluster' : 'shared';
+    if (selectedWorkspace?.template_type) {
+      const mode = selectedWorkspace.template_type === 'dedicated_cluster' ? 'dedicated_cluster' : 'shared';
       setForm((prev) => ({ ...prev, template_type: mode }));
     }
-  }, [selectedTenant]);
+  }, [selectedWorkspace]);
 
   useEffect(() => {
     const qZone = searchParams.get('zone_id');
@@ -177,24 +182,24 @@ export default function InstanceCreatePage() {
         replicas: form.replicas,
       });
     }
-    // 共享版：无需组件配置，多租户隔离通过 VMUser + VMAuth token 路由实现
+    // 共享版：无需组件配置，多工作空间隔离通过 VMUser + VMAuth token 路由实现
     return JSON.stringify({ mode: 'shared', retention: form.retention });
   }, [form, isDedicated]);
 
   const validate = useCallback((): boolean => {
     const e: Record<string, string> = {};
-    if (!selectedTenant) e.tenant = '请选择租户';
+    if (!selectedWorkspace) e.tenant = '请选择工作空间';
     if (!form.instance_name.trim()) e.instance_name = '请输入实例名称';
     setErrors(e);
     return Object.keys(e).length === 0;
-  }, [selectedTenant, form]);
+  }, [selectedWorkspace, form]);
 
   const handleSubmit = async () => {
     if (!validate()) return;
     setSaving(true);
     try {
       await instanceAPI.create({
-        tenant_id: selectedTenant!.id,
+        workspace_id: selectedWorkspace!.id,
         cluster_id: form.cluster_id || undefined,
         zone_id: form.zone_id || undefined,
         instance_name: form.instance_name.trim(),
@@ -219,7 +224,7 @@ export default function InstanceCreatePage() {
         <Box>
           <Typography variant="h5" sx={{ fontWeight: 600 }}>创建实例</Typography>
           <Typography variant="body2" color="text.secondary">
-            为租户部署可观测性实例 — 基于 VictoriaMetrics Operator CR 模式
+            为工作空间部署可观测性实例 — 基于 VictoriaMetrics Operator CR 模式
           </Typography>
         </Box>
       </Box>
@@ -235,19 +240,18 @@ export default function InstanceCreatePage() {
                 <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 2 }}>基本信息</Typography>
 
                 <Autocomplete
-                  options={tenants}
-                  value={selectedTenant}
-                  onChange={(_, v) => { setSelectedTenant(v); if (v) setErrors((prev) => ({ ...prev, tenant: '' })); }}
-                  getOptionLabel={(t) => `${t.tenant_name}${t.dept_name ? ` · ${t.dept_name}` : ''}`}
+                  options={workspaces}
+                  value={selectedWorkspace}
+                  onChange={(_, v) => { setSelectedWorkspace(v); if (v) setErrors((prev) => ({ ...prev, tenant: '' })); }}
+                  getOptionLabel={(t) => t.workspace_name}
                   isOptionEqualToValue={(a, b) => a.id === b.id}
                   renderInput={(params) => (
-                    <TextField {...params} label="所属租户" required error={!!errors.tenant} helperText={errors.tenant || '选择该实例所属的租户'} />
+                    <TextField {...params} label="所属工作空间" required error={!!errors.tenant} helperText={errors.tenant || '选择该实例所属的工作空间'} />
                   )}
                   renderOption={(props, t) => (
                     <li {...props} key={t.id}>
                       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, width: '100%' }}>
-                        <Typography sx={{ fontWeight: 500 }}>{t.tenant_name}</Typography>
-                        {t.dept_name && <Typography variant="caption" color="text.secondary">{t.dept_name}</Typography>}
+                        <Typography sx={{ fontWeight: 500 }}>{t.workspace_name}</Typography>
                         <Chip size="small" label={t.template_type} variant="outlined" sx={{ ml: 'auto', height: 18, fontSize: '0.65rem' }} />
                         <Chip size="small" label={t.status} variant="outlined" color={t.status === 'active' ? 'success' : 'default'} sx={{ height: 18, fontSize: '0.65rem' }} />
                       </Box>
@@ -285,8 +289,8 @@ export default function InstanceCreatePage() {
                 ) : (
                   <Alert severity="info" icon={<InfoOutlinedIcon />} sx={{ mb: 1 }}>
                     <strong>共享版无需配置组件规格。</strong>开通后系统创建 VMUser + VMRoute CR，
-                    VMAuth 解析租户 Token 动态路由 select/insert 请求并支持按用户限速。
-                    VMAgent 配置 remote write 指向 VMAuth，由 VMAuth 完成多租户隔离。
+                    VMAuth 解析工作空间 Token 动态路由 select/insert 请求并支持按用户限速。
+                    VMAgent 配置 remote write 指向 VMAuth，由 VMAuth 完成多工作空间隔离。
                   </Alert>
                 )}
               </CardContent>
@@ -401,7 +405,7 @@ export default function InstanceCreatePage() {
                   <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 2 }}>共享集群 — 数据保留</Typography>
                   <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
                     共享版复用可用区已有的 VMCluster + VMAuth 基础设施。组件规格由管理员在可用区初始化时统一配置，
-                    租户通过 VMUser + VMRoute 实现逻辑隔离。
+                    工作空间通过 VMUser + VMRoute 实现逻辑隔离。
                   </Typography>
                   <FormControl fullWidth>
                     <InputLabel>数据保留时长</InputLabel>
@@ -412,7 +416,7 @@ export default function InstanceCreatePage() {
                         </MenuItem>
                       ))}
                     </Select>
-                    <FormHelperText>该租户指标数据的保留天数</FormHelperText>
+                    <FormHelperText>该工作空间指标数据的保留天数</FormHelperText>
                   </FormControl>
                 </CardContent>
               </Card>
@@ -467,12 +471,12 @@ export default function InstanceCreatePage() {
                 <FormControl fullWidth sx={{ mb: 2.5 }}>
                   <InputLabel>关联 Grafana</InputLabel>
                   <Select value={form.grafana_instance_id} label="关联 Grafana" onChange={(e) => setForm({ ...form, grafana_instance_id: e.target.value })}>
-                    <MenuItem value="">继承租户默认</MenuItem>
+                    <MenuItem value="">继承工作空间默认</MenuItem>
                     {grafanaHosts.map((h) => (
                       <MenuItem key={h.id} value={h.id}>
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, width: '100%' }}>
                           <Typography>{h.name}</Typography>
-                          <Chip size="small" label={h.scope === 'platform' ? '平台' : '租户'} variant="outlined" sx={{ ml: 'auto', height: 18, fontSize: '0.65rem' }} />
+                          <Chip size="small" label={h.source === 'platform' ? '平台' : '工作空间'} variant="outlined" sx={{ ml: 'auto', height: 18, fontSize: '0.65rem' }} />
                         </Box>
                       </MenuItem>
                     ))}

@@ -31,7 +31,7 @@ import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
 import ReplayIcon from '@mui/icons-material/Replay';
 import SystemUpdateAltIcon from '@mui/icons-material/SystemUpdateAlt';
-import LoginOutlinedIcon from '@mui/icons-material/LoginOutlined';
+import DeleteOutlinedIcon from '@mui/icons-material/DeleteOutlined';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExtensionOutlinedIcon from '@mui/icons-material/ExtensionOutlined';
 import NotificationsActiveOutlinedIcon from '@mui/icons-material/NotificationsActiveOutlined';
@@ -41,9 +41,9 @@ import PageHeader from '../../components/common/PageHeader';
 import StatusChip from '../../components/common/StatusChip';
 import LoadingScreen from '../../components/common/LoadingScreen';
 import EmptyState from '../../components/common/EmptyState';
+import ConfirmDialog from '../../components/common/ConfirmDialog';
 import DetailTabs from '../../components/common/DetailTabs';
 import { instanceAPI, type ScaleEvent } from '../../api/instance';
-import { ssoLoginToGrafana } from '../../api/grafanaSso';
 import {
   integrationAPI,
   latestAppliedRefs,
@@ -63,7 +63,6 @@ import { parseSpec } from '../../utils/instance';
 const typeLabels: Record<string, { label: string; color: 'primary' | 'secondary' | 'success' | 'warning' }> = {
   metrics: { label: 'Metrics', color: 'primary' },
   logs: { label: 'Logs', color: 'secondary' },
-  visual: { label: 'Grafana', color: 'success' },
   alert: { label: 'Alert', color: 'warning' },
 };
 
@@ -426,6 +425,8 @@ export default function InstanceDetailPage() {
   const [editOpen, setEditOpen] = useState(false);
   const [editForm, setEditForm] = useState({ instance_name: '', cpu: '', memory: '', storage: '', retention: '' });
   const [saving, setSaving] = useState(false);
+  const [rebuildOpen, setRebuildOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
 
   // Platform scaling (admin only)
   const { user } = useAuthStore();
@@ -555,6 +556,17 @@ export default function InstanceDetailPage() {
 
   const spec = useMemo(() => parseSpec(instance?.spec || '{}'), [instance?.spec]);
 
+  // 局部刷新实例记录，替代编辑/重建后的 window.location.reload() 整页刷新。
+  const fetchInstance = async () => {
+    if (!instanceId) return;
+    try {
+      const { data: res } = await instanceAPI.get(instanceId);
+      setInstance(res.data || null);
+    } catch (err) {
+      enqueueSnackbar(extractApiError(err, '刷新实例详情失败'), { variant: 'error' });
+    }
+  };
+
   if (loading) return <LoadingScreen />;
   if (!instance) {
     return (
@@ -573,11 +585,14 @@ export default function InstanceDetailPage() {
   const handleEdit = async () => {
     setSaving(true);
     try {
+      // 保留原 spec 中编辑表单未覆盖的字段（replicas / 独享集群 vmstorage/vmselect/vminsert 结构），
+      // 避免编辑保存破坏 dedicated_cluster 的 spec 结构。
       const newSpec = JSON.stringify({
-        cpu: parseInt(editForm.cpu, 10),
-        memory: parseInt(editForm.memory, 10),
-        storage: parseInt(editForm.storage, 10),
-        retention: parseInt(editForm.retention, 10),
+        ...spec,
+        cpu: parseInt(editForm.cpu, 10) || spec.cpu,
+        memory: parseInt(editForm.memory, 10) || spec.memory,
+        storage: parseInt(editForm.storage, 10) || spec.storage,
+        retention: parseInt(editForm.retention, 10) || spec.retention,
       });
       await instanceAPI.update(instance.id, {
         instance_name: editForm.instance_name || undefined,
@@ -585,7 +600,7 @@ export default function InstanceDetailPage() {
       });
       enqueueSnackbar('实例更新成功', { variant: 'success' });
       setEditOpen(false);
-      window.location.reload();
+      await fetchInstance();
     } catch (err) {
       enqueueSnackbar(extractApiError(err, '更新失败'), { variant: 'error' });
     } finally {
@@ -594,11 +609,29 @@ export default function InstanceDetailPage() {
   };
 
   const handleRebuild = async () => {
+    setSaving(true);
     try {
       await instanceAPI.rebuild(instance.id);
       enqueueSnackbar('重建请求已提交', { variant: 'success' });
+      setRebuildOpen(false);
+      await fetchInstance();
     } catch (err) {
       enqueueSnackbar(extractApiError(err, '重建失败'), { variant: 'error' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    setSaving(true);
+    try {
+      await instanceAPI.delete(instance.id);
+      enqueueSnackbar('实例删除成功', { variant: 'success' });
+      navigate(listPath);
+    } catch (err) {
+      enqueueSnackbar(extractApiError(err, '删除失败'), { variant: 'error' });
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -716,25 +749,12 @@ export default function InstanceDetailPage() {
                     >
                       打开实例监控页面
                     </Button>
-                    {instance.instance_type === 'visual' && (
-                      <Button
-                        variant="outlined"
-                        startIcon={<LoginOutlinedIcon />}
-                        onClick={() => {
-                          ssoLoginToGrafana(instanceAPI.login(instance.id)).catch((err) =>
-                            enqueueSnackbar(extractApiError(err, '获取登录信息失败'), { variant: 'error' })
-                          );
-                        }}
-                      >
-                        登录 Grafana
-                      </Button>
-                    )}
                     <Button
                       variant="outlined"
                       color="warning"
                       startIcon={<ReplayIcon />}
-                      onClick={handleRebuild}
-                      disabled={instance.status !== 'running' && instance.status !== 'failed'}
+                      onClick={() => setRebuildOpen(true)}
+                      disabled={instance.status !== 'running'}
                     >
                       重建实例
                     </Button>
@@ -746,6 +766,7 @@ export default function InstanceDetailPage() {
                         try {
                           await instanceAPI.upgrade(instance.id);
                           enqueueSnackbar('升级请求已提交', { variant: 'success' });
+                          await fetchInstance();
                         } catch (err) {
                           enqueueSnackbar(extractApiError(err, '升级失败'), { variant: 'error' });
                         }
@@ -753,6 +774,14 @@ export default function InstanceDetailPage() {
                       disabled={instance.status !== 'running'}
                     >
                       升级实例
+                    </Button>
+                    <Button
+                      variant="outlined"
+                      color="error"
+                      startIcon={<DeleteOutlinedIcon />}
+                      onClick={() => setDeleteOpen(true)}
+                    >
+                      删除实例
                     </Button>
                   </Box>
                 </Card>
@@ -935,7 +964,7 @@ export default function InstanceDetailPage() {
               <Card sx={{ p: 2.5 }}>
                 <Typography variant="subtitle2" sx={{ mb: 0.5 }}>平台级集群扩缩容</Typography>
                 <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                  此操作对共享 VMCluster 进行组件级扩缩容（vmselect / vminsert / vmstorage），影响该集群上的所有租户实例。
+                  此操作对共享 VMCluster 进行组件级扩缩容（vmselect / vminsert / vmstorage），影响该集群上的所有工作空间实例。
                 </Typography>
                 <Alert severity="warning" sx={{ mb: 2 }}>
                   请先执行 dry-run 预览变更内容，确认无误后再应用。
@@ -1092,6 +1121,28 @@ export default function InstanceDetailPage() {
           </Button>
         </DialogActions>
       </Dialog>
+
+      <ConfirmDialog
+        open={rebuildOpen}
+        title="重建实例"
+        message={`确定要重建实例「${instance.instance_name}」吗？将先回收该实例资源再重新部署，期间服务不可用。`}
+        severity="warning"
+        confirmLabel="重建"
+        loading={saving}
+        onConfirm={handleRebuild}
+        onCancel={() => setRebuildOpen(false)}
+      />
+
+      <ConfirmDialog
+        open={deleteOpen}
+        title="删除实例"
+        message={`确定要删除实例「${instance.instance_name}」吗？关联的 Helm Release 与 CR 资源也将被回收，此操作不可撤销。`}
+        severity="error"
+        confirmLabel="删除"
+        loading={saving}
+        onConfirm={handleDelete}
+        onCancel={() => setDeleteOpen(false)}
+      />
     </Box>
   );
 }
