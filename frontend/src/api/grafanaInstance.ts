@@ -5,8 +5,8 @@ import type { ApiResponse, PaginatedResponse, PaginationParams } from '../types/
 export interface GrafanaInstance {
   id: string;
   name: string;
-  scope: 'platform' | 'tenant';
-  tenant_id: string | null;
+  source: 'platform' | 'external';
+  zone_id: string | null;
   url: string;
   admin_user: string;
   status: string;
@@ -15,7 +15,7 @@ export interface GrafanaInstance {
 }
 
 export const grafanaInstanceAPI = {
-  list: (params?: PaginationParams & { scope?: string; tenant_id?: string }, config?: AxiosRequestConfig) =>
+  list: (params?: PaginationParams & { source?: string; zone_id?: string }, config?: AxiosRequestConfig) =>
     api.get<ApiResponse<PaginatedResponse<GrafanaInstance>>>('/grafana/instances', { ...config, params }),
 
   get: (id: string, config?: AxiosRequestConfig) =>
@@ -23,8 +23,8 @@ export const grafanaInstanceAPI = {
 
   create: (data: {
     name: string;
-    scope: 'platform' | 'tenant';
-    tenant_id?: string;
+    source: 'platform' | 'external';
+    zone_id?: string;
     url: string;
     admin_user?: string;
     admin_password?: string;
@@ -37,6 +37,8 @@ export const grafanaInstanceAPI = {
   delete: (id: string) =>
     api.delete<ApiResponse<null>>(`/grafana/instances/${id}`),
 
-  login: (id: string) =>
-    api.post<ApiResponse<{ proxyUrl: string }>>(`/grafana/instances/${id}/login`),
+  login: (id: string, redirect?: string) =>
+    api.post<ApiResponse<{ proxyUrl: string }>>(`/grafana/instances/${id}/login`, null, {
+      params: redirect ? { redirect } : undefined,
+    }),
 };
