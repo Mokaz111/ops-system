@@ -8,10 +8,8 @@ import { useAuthStore } from './stores/useAuthStore';
 
 const LoginPage = lazy(() => import('./pages/Login'));
 const DashboardPage = lazy(() => import('./pages/Dashboard'));
-const DepartmentPage = lazy(() => import('./pages/Department'));
-const TenantPage = lazy(() => import('./pages/Tenant'));
+const WorkspacePage = lazy(() => import('./pages/Workspace'));
 const InstancePage = lazy(() => import('./pages/Instance'));
-const GrafanaPage = lazy(() => import('./pages/Grafana'));
 const AlertPage = lazy(() => import('./pages/Alert'));
 const UserPage = lazy(() => import('./pages/User'));
 const SettingsPage = lazy(() => import('./pages/Settings'));
@@ -21,11 +19,9 @@ const IntegrationPage = lazy(() => import('./pages/Integration'));
 const MetricPage = lazy(() => import('./pages/Metric'));
 const LogInstancePage = lazy(() => import('./pages/LogInstance'));
 const LogQueryPage = lazy(() => import('./pages/LogQuery'));
-const DashboardMgmtPage = lazy(() => import('./pages/DashboardMgmt'));
 const ZonePage = lazy(() => import('./pages/Zone'));
 const ClusterPage = lazy(() => import('./pages/Cluster'));
 const BusinessClusterPage = lazy(() => import('./pages/BusinessCluster'));
-const GrafanaHostPage = lazy(() => import('./pages/GrafanaHost'));
 const GrafanaInstancePage = lazy(() => import('./pages/GrafanaInstance'));
 const GrafanaInstanceDetailPage = lazy(() => import('./pages/GrafanaInstanceDetail'));
 const StatsPage = lazy(() => import('./pages/Stats'));
@@ -56,7 +52,6 @@ function GuestGuard({ children }: { children: React.ReactNode }) {
 
 const routeComponentMap: Record<AppRouteKey, React.ReactNode | null> = {
   dashboard: <Lazy><DashboardPage /></Lazy>,
-  'dashboard-mgmt': <Lazy><DashboardMgmtPage /></Lazy>,
   integrations: <Lazy><IntegrationPage /></Lazy>,
   metrics: <Lazy><MetricPage /></Lazy>,
   instances: <Lazy><InstancePage /></Lazy>,
@@ -67,12 +62,9 @@ const routeComponentMap: Record<AppRouteKey, React.ReactNode | null> = {
   'business-clusters': <Lazy><BusinessClusterPage /></Lazy>,
   'grafana-instances': <Lazy><GrafanaInstancePage /></Lazy>,
   'grafana-instance-detail': <Lazy><GrafanaInstanceDetailPage /></Lazy>,
-  'grafana-hosts': <Lazy><GrafanaHostPage /></Lazy>,
-  grafana: <Lazy><GrafanaPage /></Lazy>,
   stats: <Lazy><StatsPage /></Lazy>,
   alerts: <Lazy><AlertPage /></Lazy>,
-  departments: <Lazy><DepartmentPage /></Lazy>,
-  tenants: <Lazy><TenantPage /></Lazy>,
+  workspaces: <Lazy><WorkspacePage /></Lazy>,
   users: <Lazy><UserPage /></Lazy>,
   zones: <Lazy><ZonePage /></Lazy>,
   clusters: <Lazy><ClusterPage /></Lazy>,

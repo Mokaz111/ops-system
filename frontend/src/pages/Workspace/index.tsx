@@ -39,11 +39,11 @@ import StatusChip from '../../components/common/StatusChip';
 import ConfirmDialog from '../../components/common/ConfirmDialog';
 import EmptyState from '../../components/common/EmptyState';
 import LoadingScreen from '../../components/common/LoadingScreen';
-import { tenantAPI } from '../../api/tenant';
-import { departmentAPI } from '../../api/department';
+import { workspaceAPI } from '../../api/workspace';
 import { grafanaInstanceAPI, type GrafanaInstance } from '../../api/grafanaInstance';
 import { extractApiError } from '../../api';
-import type { Department, Tenant, TenantMetrics } from '../../types/api';
+import { useAuthStore } from '../../stores/useAuthStore';
+import type { Workspace, WorkspaceMetrics } from '../../types/api';
 
 const templateLabels: Record<string, string> = {
   shared: '共享版',
@@ -57,51 +57,41 @@ const isolationLabels: Record<string, string> = {
   dedicated: '独享',
 };
 
-export default function TenantPage() {
+export default function WorkspacePage() {
   const { enqueueSnackbar } = useSnackbar();
   const navigate = useNavigate();
-  const [tenants, setTenants] = useState<Tenant[]>([]);
-  const [departments, setDepartments] = useState<Department[]>([]);
+  const { user } = useAuthStore();
+  const isAdmin = user?.role === 'admin';
+  const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [loading, setLoading] = useState(true);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(0);
   const [pageSize, setPageSize] = useState(10);
   const [search, setSearch] = useState('');
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [deleteDialog, setDeleteDialog] = useState<{ open: boolean; tenant?: Tenant }>({ open: false });
-  const [form, setForm] = useState({ tenant_name: '', dept_id: '', template_type: 'shared', grafana_instance_id: '' });
+  const [deleteDialog, setDeleteDialog] = useState<{ open: boolean; tenant?: Workspace }>({ open: false });
+  const [form, setForm] = useState({ workspace_name: '', template_type: 'shared', grafana_instance_id: '' });
   const [grafanaHosts, setGrafanaHosts] = useState<GrafanaInstance[]>([]);
   const [saving, setSaving] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [detail, setDetail] = useState<{ open: boolean; tenant?: Tenant; metrics?: TenantMetrics; loading?: boolean }>({ open: false });
+  const [detail, setDetail] = useState<{ open: boolean; tenant?: Workspace; metrics?: WorkspaceMetrics; loading?: boolean }>({ open: false });
 
-  const fetchTenants = useCallback(async () => {
+  const fetchWorkspaces = useCallback(async () => {
     setLoading(true);
     try {
-      const { data: res } = await tenantAPI.list({ page: page + 1, page_size: pageSize, search });
-      setTenants(res.data?.items || []);
+      const { data: res } = await workspaceAPI.list({ page: page + 1, page_size: pageSize, search });
+      setWorkspaces(res.data?.items || []);
       setTotal(res.data?.total || 0);
     } catch (err) {
-      enqueueSnackbar(extractApiError(err, '获取租户列表失败'), { variant: 'error' });
+      enqueueSnackbar(extractApiError(err, '获取工作空间列表失败'), { variant: 'error' });
     } finally {
       setLoading(false);
     }
   }, [page, pageSize, search, enqueueSnackbar]);
 
-  useEffect(() => { fetchTenants(); }, [fetchTenants]);
+  useEffect(() => { fetchWorkspaces(); }, [fetchWorkspaces]);
 
   useEffect(() => {
-    const fetchDepartments = async () => {
-      try {
-        const { data: res } = await departmentAPI.tree();
-        const flat = (rows: Department[]): Department[] =>
-          rows.flatMap((dept) => [dept, ...(dept.children ? flat(dept.children) : [])]);
-        setDepartments(flat(res.data || []));
-      } catch (err) {
-        enqueueSnackbar(extractApiError(err, '获取部门列表失败'), { variant: 'warning' });
-      }
-    };
-    fetchDepartments();
     (async () => {
       try {
         const { data: res } = await grafanaInstanceAPI.list({ page: 1, page_size: 100 });
@@ -115,17 +105,18 @@ export default function TenantPage() {
   const handleSave = async () => {
     setSaving(true);
     try {
+      const payload = { ...form, grafana_instance_id: form.grafana_instance_id || undefined };
       if (editingId) {
-        await tenantAPI.update(editingId, form);
-        enqueueSnackbar('租户更新成功', { variant: 'success' });
+        await workspaceAPI.update(editingId, payload);
+        enqueueSnackbar('工作空间更新成功', { variant: 'success' });
       } else {
-        await tenantAPI.create(form);
-        enqueueSnackbar('租户创建成功', { variant: 'success' });
+        await workspaceAPI.create(payload as Parameters<typeof workspaceAPI.create>[0]);
+        enqueueSnackbar('工作空间创建成功', { variant: 'success' });
       }
       setDialogOpen(false);
       setEditingId(null);
-      setForm({ tenant_name: '', dept_id: '', template_type: 'shared', grafana_instance_id: '' });
-      fetchTenants();
+      setForm({ workspace_name: '', template_type: 'shared', grafana_instance_id: '' });
+      fetchWorkspaces();
     } catch (err) {
       enqueueSnackbar(extractApiError(err, editingId ? '更新失败' : '创建失败'), { variant: 'error' });
     } finally {
@@ -136,42 +127,42 @@ export default function TenantPage() {
   const handleDelete = async () => {
     if (!deleteDialog.tenant) return;
     try {
-      await tenantAPI.delete(deleteDialog.tenant.id);
-      enqueueSnackbar('租户删除成功', { variant: 'success' });
+      await workspaceAPI.delete(deleteDialog.tenant.id);
+      enqueueSnackbar('工作空间删除成功', { variant: 'success' });
       setDeleteDialog({ open: false });
-      fetchTenants();
+      fetchWorkspaces();
     } catch (err) {
       enqueueSnackbar(extractApiError(err, '删除失败'), { variant: 'error' });
     }
   };
 
-  const openEdit = (tenant: Tenant) => {
+  const openEdit = (tenant: Workspace) => {
     setEditingId(tenant.id);
-    setForm({ tenant_name: tenant.tenant_name, dept_id: tenant.dept_id, template_type: tenant.template_type, grafana_instance_id: tenant.grafana_instance_id || '' });
+    setForm({ workspace_name: tenant.workspace_name, template_type: tenant.template_type, grafana_instance_id: tenant.grafana_instance_id || '' });
     setDialogOpen(true);
   };
 
-  const openDetail = async (tenant: Tenant) => {
+  const openDetail = async (tenant: Workspace) => {
     setDetail({ open: true, tenant, loading: true });
     try {
-      const { data: res } = await tenantAPI.metrics(tenant.id);
+      const { data: res } = await workspaceAPI.metrics(tenant.id);
       setDetail({ open: true, tenant, metrics: res.data, loading: false });
     } catch (err) {
-      enqueueSnackbar(extractApiError(err, '获取租户指标失败'), { variant: 'warning' });
+      enqueueSnackbar(extractApiError(err, '获取工作空间指标失败'), { variant: 'warning' });
       setDetail({ open: true, tenant, loading: false });
     }
   };
 
-  if (loading && tenants.length === 0) return <LoadingScreen />;
+  if (loading && workspaces.length === 0) return <LoadingScreen />;
 
   return (
     <Box>
-      <PageHeader title="租户管理" subtitle="管理平台所有租户及其资源配置" actionLabel="新建租户" onAction={() => { setEditingId(null); setForm({ tenant_name: '', dept_id: '', template_type: 'shared', grafana_instance_id: '' }); setDialogOpen(true); }} />
+      <PageHeader title="工作空间管理" subtitle="管理平台所有工作空间及其资源配置" actionLabel={isAdmin ? "新建工作空间" : undefined} onAction={isAdmin ? () => { setEditingId(null); setForm({ workspace_name: '', template_type: 'shared', grafana_instance_id: '' }); setDialogOpen(true); } : undefined} />
 
       <Card sx={{ mb: 2 }}>
         <Box sx={{ p: 2, display: 'flex', gap: 2 }}>
           <TextField
-            placeholder="搜索租户..."
+            placeholder="搜索工作空间..."
             size="small"
             value={search}
             onChange={(e) => { setSearch(e.target.value); setPage(0); }}
@@ -186,7 +177,7 @@ export default function TenantPage() {
           <Table>
             <TableHead>
               <TableRow>
-                <TableCell>租户名称</TableCell>
+                <TableCell>工作空间名称</TableCell>
                 <TableCell>VMUser ID</TableCell>
                 <TableCell>模板类型</TableCell>
                 <TableCell>隔离/命名空间</TableCell>
@@ -198,16 +189,16 @@ export default function TenantPage() {
               </TableRow>
             </TableHead>
             <TableBody>
-              {tenants.length === 0 ? (
+              {workspaces.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={9}>
-                    <EmptyState title="暂无租户" description="点击右上角按钮创建第一个租户" />
+                    <EmptyState title="暂无工作空间" description="点击右上角按钮创建第一个工作空间" />
                   </TableCell>
                 </TableRow>
               ) : (
-                tenants.map((t) => (
+                workspaces.map((t) => (
                   <TableRow key={t.id}>
-                    <TableCell sx={{ fontWeight: 500 }}>{t.tenant_name}</TableCell>
+                    <TableCell sx={{ fontWeight: 500 }}>{t.workspace_name}</TableCell>
                     <TableCell>
                       <Chip label={t.vmuser_id || '-'} size="small" variant="outlined" sx={{ fontFamily: 'monospace', fontSize: '0.75rem' }} />
                     </TableCell>
@@ -227,26 +218,30 @@ export default function TenantPage() {
                     <TableCell><StatusChip status={t.status} /></TableCell>
                     <TableCell sx={{ color: 'text.secondary', fontSize: '0.8125rem' }}>{new Date(t.created_at).toLocaleDateString()}</TableCell>
                     <TableCell align="right">
-                      <Tooltip title="为此租户创建实例">
-                        <IconButton size="small" onClick={() => navigate(`/instances/create?tenant_id=${t.id}`)} aria-label="为此租户创建实例" color="primary">
+                      <Tooltip title="为此工作空间创建实例">
+                        <IconButton size="small" onClick={() => navigate(`/instances/create?workspace_id=${t.id}`)} aria-label="为此工作空间创建实例" color="primary">
                           <AddCircleOutlineIcon fontSize="small" />
                         </IconButton>
                       </Tooltip>
                       <Tooltip title="查看 VM 路由与指标">
-                        <IconButton size="small" onClick={() => openDetail(t)} aria-label="查看租户详情">
+                        <IconButton size="small" onClick={() => openDetail(t)} aria-label="查看工作空间详情">
                           <VisibilityOutlinedIcon fontSize="small" />
                         </IconButton>
                       </Tooltip>
-                      <Tooltip title="编辑">
-                        <IconButton size="small" onClick={() => openEdit(t)} aria-label="编辑租户">
-                          <EditOutlinedIcon fontSize="small" />
-                        </IconButton>
-                      </Tooltip>
-                      <Tooltip title="删除">
-                        <IconButton size="small" color="error" onClick={() => setDeleteDialog({ open: true, tenant: t })} aria-label="删除租户">
-                          <DeleteOutlinedIcon fontSize="small" />
-                        </IconButton>
-                      </Tooltip>
+                      {isAdmin && (
+                        <Tooltip title="编辑">
+                          <IconButton size="small" onClick={() => openEdit(t)} aria-label="编辑工作空间">
+                            <EditOutlinedIcon fontSize="small" />
+                          </IconButton>
+                        </Tooltip>
+                      )}
+                      {isAdmin && (
+                        <Tooltip title="删除">
+                          <IconButton size="small" color="error" onClick={() => setDeleteDialog({ open: true, tenant: t })} aria-label="删除工作空间">
+                            <DeleteOutlinedIcon fontSize="small" />
+                          </IconButton>
+                        </Tooltip>
+                      )}
                     </TableCell>
                   </TableRow>
                 ))
@@ -269,24 +264,9 @@ export default function TenantPage() {
       </Card>
 
       <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>{editingId ? '编辑租户' : '新建租户'}</DialogTitle>
+        <DialogTitle>{editingId ? '编辑工作空间' : '新建工作空间'}</DialogTitle>
         <DialogContent sx={{ pt: '16px !important' }}>
-          <TextField fullWidth label="租户名称" value={form.tenant_name} onChange={(e) => setForm({ ...form, tenant_name: e.target.value })} sx={{ mb: 2.5 }} required />
-          <FormControl fullWidth size="small" sx={{ mb: 2.5 }}>
-            <InputLabel>所属部门</InputLabel>
-            <Select
-              value={form.dept_id}
-              label="所属部门"
-              onChange={(e) => setForm({ ...form, dept_id: e.target.value })}
-            >
-              <MenuItem value="">请选择部门</MenuItem>
-              {departments.map((dept) => (
-                <MenuItem key={dept.id} value={dept.id}>
-                  {dept.dept_name}
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
+          <TextField fullWidth label="工作空间名称" value={form.workspace_name} onChange={(e) => setForm({ ...form, workspace_name: e.target.value })} sx={{ mb: 2.5 }} required />
           <FormControl fullWidth size="small" sx={{ mb: 2.5 }}>
             <InputLabel>模板类型</InputLabel>
             <Select value={form.template_type} label="模板类型" onChange={(e) => setForm({ ...form, template_type: e.target.value })}>
@@ -302,7 +282,7 @@ export default function TenantPage() {
               {grafanaHosts.map((h) => (
                 <MenuItem key={h.id} value={h.id}>
                   {h.name}
-                  {h.scope === 'platform' ? ' · 平台' : ' · 租户'}
+                  {h.scope === 'platform' ? ' · 平台' : ' · 工作空间'}
                 </MenuItem>
               ))}
             </Select>
@@ -310,21 +290,21 @@ export default function TenantPage() {
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2 }}>
           <Button onClick={() => setDialogOpen(false)}>取消</Button>
-          <Button variant="contained" onClick={handleSave} disabled={saving || !form.tenant_name}>
+          <Button variant="contained" onClick={handleSave} disabled={saving || !form.workspace_name}>
             {saving ? '保存中...' : editingId ? '更新' : '创建'}
           </Button>
         </DialogActions>
       </Dialog>
 
       <Dialog open={detail.open} onClose={() => setDetail({ open: false })} maxWidth="md" fullWidth>
-        <DialogTitle>租户可观测性控制面</DialogTitle>
+        <DialogTitle>工作空间可观测性控制面</DialogTitle>
         <DialogContent sx={{ pt: '16px !important' }}>
           {detail.tenant && (
             <Box>
               <Grid container spacing={2} sx={{ mb: 2 }}>
                 <Grid size={{ xs: 12, md: 4 }}>
                   <Card variant="outlined" sx={{ p: 2 }}>
-                    <Typography variant="caption" color="text.secondary">租户状态</Typography>
+                    <Typography variant="caption" color="text.secondary">工作空间状态</Typography>
                     <Box sx={{ mt: 1 }}><StatusChip status={detail.tenant.status} /></Box>
                   </Card>
                 </Grid>
@@ -365,8 +345,8 @@ export default function TenantPage() {
 
       <ConfirmDialog
         open={deleteDialog.open}
-        title="删除租户"
-        message={`确定要删除租户「${deleteDialog.tenant?.tenant_name}」吗？此操作不可撤销。`}
+        title="删除工作空间"
+        message={`确定要删除工作空间「${deleteDialog.tenant?.workspace_name}」吗？此操作不可撤销。`}
         severity="error"
         confirmLabel="删除"
         onConfirm={handleDelete}
