@@ -3,7 +3,7 @@ import type { ApiResponse, PaginatedResponse, PaginationParams } from '../types/
 
 export interface LogInstance {
   id: string;
-  tenant_id: string;
+  workspace_id: string;
   instance_name: string;
   release_name: string;
   namespace: string;
@@ -22,14 +22,14 @@ export interface LogQueryResult {
 }
 
 export const logAPI = {
-  list: (params?: PaginationParams & { tenant_id?: string; keyword?: string }) =>
+  list: (params?: PaginationParams & { workspace_id?: string; keyword?: string }) =>
     api.get<ApiResponse<PaginatedResponse<LogInstance>>>('/log-instances', { params }),
 
   get: (id: string) =>
     api.get<ApiResponse<LogInstance>>(`/log-instances/${id}`),
 
   create: (data: {
-    tenant_id: string;
+    workspace_id: string;
     instance_name: string;
     namespace?: string;
     release_name?: string;

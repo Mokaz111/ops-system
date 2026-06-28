@@ -9,7 +9,7 @@ import type {
 } from '../types/api';
 
 export const alertAPI = {
-  listRules: (params?: PaginationParams & { tenant_id?: string; rule_type?: string; level?: string }) =>
+  listRules: (params?: PaginationParams & { workspace_id?: string; rule_type?: string; level?: string }) =>
     api.get<ApiResponse<PaginatedResponse<AlertRule>>>('/alerts/rules', { params: normalizeListParams(params) }),
 
   createRule: (data: CreateAlertRuleRequest) =>
@@ -21,7 +21,7 @@ export const alertAPI = {
   deleteRule: (id: string) =>
     api.delete<ApiResponse<null>>(`/alerts/rules/${id}`),
 
-  listEvents: (params?: PaginationParams & { tenant_id?: string; rule_id?: string; level?: string; status?: string }) =>
+  listEvents: (params?: PaginationParams & { workspace_id?: string; rule_id?: string; level?: string; status?: string }) =>
     api.get<ApiResponse<PaginatedResponse<AlertEvent>>>('/alerts/events', { params }),
 
   ackEvent: (id: string) =>
