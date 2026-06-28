@@ -34,7 +34,7 @@ func (c *Client) TestDatasource(ctx context.Context, orgID int64, body map[strin
 type GrafanaAdminSettings map[string]any
 
 // CreatePrometheusDatasource 在指定组织下创建 Prometheus 数据源。
-func (c *Client) CreatePrometheusDatasource(ctx context.Context, orgID int64, t *model.Tenant) error {
+func (c *Client) CreatePrometheusDatasource(ctx context.Context, orgID int64, t *model.Workspace) error {
 	if !c.Enabled() || c.cfg == nil || orgID <= 0 || t == nil {
 		return nil
 	}

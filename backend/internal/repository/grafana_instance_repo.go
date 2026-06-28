@@ -45,19 +45,19 @@ func (r *GrafanaInstanceRepository) Delete(ctx context.Context, id uuid.UUID) er
 
 // GrafanaInstanceListFilter 列表筛选条件。
 type GrafanaInstanceListFilter struct {
-	Scope    string
-	TenantID *uuid.UUID
-	Offset   int
-	Limit    int
+	Source string
+	ZoneID *uuid.UUID
+	Offset int
+	Limit  int
 }
 
 func (r *GrafanaInstanceRepository) List(ctx context.Context, f GrafanaInstanceListFilter) ([]model.GrafanaInstance, int64, error) {
 	q := r.db.WithContext(ctx).Model(&model.GrafanaInstance{})
-	if f.Scope != "" {
-		q = q.Where("scope = ?", f.Scope)
+	if f.Source != "" {
+		q = q.Where("source = ?", f.Source)
 	}
-	if f.TenantID != nil {
-		q = q.Where("tenant_id = ?", *f.TenantID)
+	if f.ZoneID != nil {
+		q = q.Where("zone_id = ?", *f.ZoneID)
 	}
 	var total int64
 	if err := q.Count(&total).Error; err != nil {

@@ -572,7 +572,7 @@ func (h *GrafanaHandler) handleErr(c *gin.Context, err error) {
 		response.Error(c, http.StatusServiceUnavailable, http.StatusServiceUnavailable, response.ErrCodeGrafanaDisabled, err.Error())
 	case errors.Is(err, service.ErrGrafanaOrgNameRequired):
 		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeOrgNameRequired, err.Error())
-	case errors.Is(err, service.ErrTenantNotFound):
+	case errors.Is(err, service.ErrWorkspaceNotFound):
 		response.Error(c, http.StatusNotFound, http.StatusNotFound, response.ErrCodeTenantNotFound, err.Error())
 	default:
 		h.log.Error("grafana_handler_error", zap.Error(err))

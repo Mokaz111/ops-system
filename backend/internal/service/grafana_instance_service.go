@@ -27,8 +27,8 @@ func NewGrafanaInstanceService(repo *repository.GrafanaInstanceRepository) *Graf
 // CreateGrafanaInstanceRequest 创建。
 type CreateGrafanaInstanceRequest struct {
 	Name          string     `json:"name" binding:"required"`
-	Scope         string     `json:"scope" binding:"required"` // platform / tenant
-	TenantID      *uuid.UUID `json:"tenant_id"`
+	Source        string     `json:"source" binding:"required"` // platform / external
+	ZoneID        *uuid.UUID `json:"zone_id"`
 	URL           string     `json:"url" binding:"required"`
 	AdminUser     string     `json:"admin_user"`
 	AdminPassword string     `json:"admin_password"`
@@ -40,16 +40,13 @@ func (s *GrafanaInstanceService) Create(ctx context.Context, req *CreateGrafanaI
 	if req.Name == "" || req.URL == "" {
 		return nil, errors.New("name and url required")
 	}
-	if req.Scope != "platform" && req.Scope != "tenant" {
-		return nil, errors.New("scope must be platform or tenant")
-	}
-	if req.Scope == "tenant" && req.TenantID == nil {
-		return nil, errors.New("tenant_id required for tenant-scoped grafana instance")
+	if req.Source != "platform" && req.Source != "external" {
+		return nil, errors.New("source must be platform or external")
 	}
 	m := &model.GrafanaInstance{
 		Name:          req.Name,
-		Scope:         req.Scope,
-		TenantID:      req.TenantID,
+		Source:        req.Source,
+		ZoneID:        req.ZoneID,
 		URL:           req.URL,
 		AdminUser:     req.AdminUser,
 		AdminPassword: req.AdminPassword,
@@ -76,12 +73,13 @@ func (s *GrafanaInstanceService) Get(ctx context.Context, id uuid.UUID) (*model.
 
 // UpdateGrafanaInstanceRequest 更新。
 type UpdateGrafanaInstanceRequest struct {
-	Name          string `json:"name"`
-	URL           string `json:"url"`
-	AdminUser     string `json:"admin_user"`
-	AdminPassword string `json:"admin_password"`
-	AdminToken    string `json:"admin_token"`
-	Status        string `json:"status"`
+	Name          string     `json:"name"`
+	URL           string     `json:"url"`
+	ZoneID        *uuid.UUID `json:"zone_id"`
+	AdminUser     string     `json:"admin_user"`
+	AdminPassword string     `json:"admin_password"`
+	AdminToken    string     `json:"admin_token"`
+	Status        string     `json:"status"`
 }
 
 // Update 更新。
@@ -98,6 +96,9 @@ func (s *GrafanaInstanceService) Update(ctx context.Context, id uuid.UUID, req *
 	}
 	if req.URL != "" {
 		m.URL = req.URL
+	}
+	if req.ZoneID != nil {
+		m.ZoneID = req.ZoneID
 	}
 	if req.AdminUser != "" {
 		m.AdminUser = req.AdminUser
@@ -130,7 +131,7 @@ func (s *GrafanaInstanceService) Delete(ctx context.Context, id uuid.UUID) error
 }
 
 // List 分页列表。
-func (s *GrafanaInstanceService) List(ctx context.Context, scope string, tenantID *uuid.UUID, page, pageSize int) ([]model.GrafanaInstance, int64, error) {
+func (s *GrafanaInstanceService) List(ctx context.Context, source string, zoneID *uuid.UUID, page, pageSize int) ([]model.GrafanaInstance, int64, error) {
 	if page < 1 {
 		page = 1
 	}
@@ -139,9 +140,9 @@ func (s *GrafanaInstanceService) List(ctx context.Context, scope string, tenantI
 	}
 	offset := (page - 1) * pageSize
 	return s.repo.List(ctx, repository.GrafanaInstanceListFilter{
-		Scope:    scope,
-		TenantID: tenantID,
-		Offset:   offset,
-		Limit:    pageSize,
+		Source: source,
+		ZoneID: zoneID,
+		Offset: offset,
+		Limit:  pageSize,
 	})
 }

@@ -26,16 +26,16 @@ func (h *GrafanaInstanceHandler) List(c *gin.Context) {
 	if !ok {
 		return
 	}
-	var tenantID *uuid.UUID
-	if raw := c.Query("tenant_id"); raw != "" {
+	var zoneID *uuid.UUID
+	if raw := c.Query("zone_id"); raw != "" {
 		id, err := uuid.Parse(raw)
 		if err != nil {
-			response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid tenant_id")
+			response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid zone_id")
 			return
 		}
-		tenantID = &id
+		zoneID = &id
 	}
-	list, total, err := h.svc.List(c.Request.Context(), c.Query("scope"), tenantID, page, ps)
+	list, total, err := h.svc.List(c.Request.Context(), c.Query("source"), zoneID, page, ps)
 	if err != nil {
 		h.handleErr(c, err)
 		return
@@ -108,6 +108,7 @@ func (h *GrafanaInstanceHandler) Delete(c *gin.Context) {
 }
 
 // Login POST /api/v1/grafana/instances/:instanceId/login
+// 支持 ?redirect=/d/uid/title 指定登录后跳转的 Grafana 子路径。
 func (h *GrafanaInstanceHandler) Login(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("instanceId"))
 	if err != nil {
@@ -123,10 +124,9 @@ func (h *GrafanaInstanceHandler) Login(c *gin.Context) {
 		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "grafana url not configured")
 		return
 	}
-	// Set cookie so the reverse proxy knows which Grafana instance to target.
-	c.SetCookie("grafana_proxy_instance", id.String(), 86400, "/api/v1/grafana/proxy", "", false, true)
+	setGrafanaProxyCookie(c, id)
 	response.JSON(c, gin.H{
-		"proxyUrl": "/api/v1/grafana/proxy/",
+		"proxyUrl": buildGrafanaProxyURL(c.Query("redirect")),
 	})
 }
 

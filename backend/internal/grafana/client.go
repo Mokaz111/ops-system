@@ -5,8 +5,10 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -18,10 +20,11 @@ import (
 
 // Client Grafana HTTP API（§2.5）。
 type Client struct {
-	cfg          *config.GrafanaConfig
-	log          *zap.Logger
-	http         *http.Client
+	cfg            *config.GrafanaConfig
+	log            *zap.Logger
+	http           *http.Client
 	adminBasicAuth string // cached "user:password" base64
+	maxRetries     int
 }
 
 // NewClient 创建客户端。
@@ -36,6 +39,10 @@ func NewClient(cfg *config.GrafanaConfig, log *zap.Logger) *Client {
 	if sec <= 0 {
 		sec = 30
 	}
+	maxRetries := cfg.MaxRetries
+	if maxRetries <= 0 {
+		maxRetries = 2
+	}
 	var basicAuth string
 	if cfg.AdminUser != "" && cfg.AdminPassword != "" {
 		basicAuth = base64.StdEncoding.EncodeToString([]byte(cfg.AdminUser + ":" + cfg.AdminPassword))
@@ -47,6 +54,7 @@ func NewClient(cfg *config.GrafanaConfig, log *zap.Logger) *Client {
 			Timeout: time.Duration(sec) * time.Second,
 		},
 		adminBasicAuth: basicAuth,
+		maxRetries:     maxRetries,
 	}
 }
 
@@ -66,51 +74,116 @@ func (c *Client) base() string {
 }
 
 // doJSON 调用 Grafana API；orgID>0 时设置 X-Grafana-Org-Id（组织内操作）。
+// 对网络错误与 5xx 做有限重试（指数退避），由 client.maxRetries 控制。
 func (c *Client) doJSON(ctx context.Context, method, path string, body any, orgID int64, out any) error {
 	if !c.Enabled() {
 		return fmt.Errorf("grafana disabled")
 	}
-	var rdr io.Reader
+	var rawBody []byte
 	if body != nil {
-		raw, err := json.Marshal(body)
+		var err error
+		rawBody, err = json.Marshal(body)
 		if err != nil {
 			return err
 		}
-		rdr = bytes.NewReader(raw)
 	}
 	u := c.base() + path
-	req, err := http.NewRequestWithContext(ctx, method, u, rdr)
-	if err != nil {
-		return err
+
+	var lastErr error
+	for attempt := 0; attempt <= c.maxRetries; attempt++ {
+		if attempt > 0 {
+			if err := c.backoffSleep(ctx, attempt); err != nil {
+				return err
+			}
+		}
+		var rdr io.Reader
+		if rawBody != nil {
+			rdr = bytes.NewReader(rawBody)
+		}
+		req, err := http.NewRequestWithContext(ctx, method, u, rdr)
+		if err != nil {
+			return err
+		}
+		// 优先使用 Basic Auth（admin 凭据拥有完整权限），API Key 作为回退。
+		if c.hasAdminAuth() {
+			req.Header.Set("Authorization", "Basic "+c.adminBasicAuth)
+		} else {
+			req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(c.cfg.APIKey))
+		}
+		if rawBody != nil {
+			req.Header.Set("Content-Type", "application/json")
+		}
+		if orgID > 0 {
+			req.Header.Set("X-Grafana-Org-Id", fmt.Sprintf("%d", orgID))
+		}
+		resp, err := c.http.Do(req)
+		if err != nil {
+			lastErr = err
+			if isRetryableErr(err) && attempt < c.maxRetries {
+				continue
+			}
+			return err
+		}
+		b, rerr := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if rerr != nil {
+			lastErr = rerr
+			if isRetryableErr(rerr) && attempt < c.maxRetries {
+				continue
+			}
+			return rerr
+		}
+		if resp.StatusCode >= 500 {
+			lastErr = fmt.Errorf("grafana %s %s http %d: %s", method, path, resp.StatusCode, string(b))
+			if attempt < c.maxRetries {
+				continue
+			}
+			return lastErr
+		}
+		if resp.StatusCode >= 300 {
+			return fmt.Errorf("grafana %s %s http %d: %s", method, path, resp.StatusCode, string(b))
+		}
+		if out != nil && len(b) > 0 {
+			return json.Unmarshal(b, out)
+		}
+		return nil
 	}
-	// 优先使用 Basic Auth（admin 凭据拥有完整权限），API Key 作为回退。
-	if c.hasAdminAuth() {
-		req.Header.Set("Authorization", "Basic "+c.adminBasicAuth)
-	} else {
-		req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(c.cfg.APIKey))
+	return lastErr
+}
+
+// isRetryableErr 判断是否为可重试的网络错误（超时、连接重置等）。
+func isRetryableErr(err error) bool {
+	if err == nil {
+		return false
 	}
-	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return false
 	}
-	if orgID > 0 {
-		req.Header.Set("X-Grafana-Org-Id", fmt.Sprintf("%d", orgID))
+	var netErr net.Error
+	if errors.As(err, &netErr) && netErr.Timeout() {
+		return true
 	}
-	resp, err := c.http.Do(req)
-	if err != nil {
-		return err
+	msg := err.Error()
+	return strings.Contains(msg, "connection reset") ||
+		strings.Contains(msg, "EOF") ||
+		strings.Contains(msg, "refused") ||
+		strings.Contains(msg, "no such host")
+}
+
+// backoffSleep 指数退避等待（attempt 秒级：1s, 2s, 4s...），支持 ctx 取消。
+func (c *Client) backoffSleep(ctx context.Context, attempt int) error {
+	d := time.Duration(1<<(attempt-1)) * time.Second
+	if d > 8*time.Second {
+		d = 8 * time.Second
 	}
-	defer resp.Body.Close()
-	b, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return err
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-t.C:
+		return nil
 	}
-	if resp.StatusCode >= 300 {
-		return fmt.Errorf("grafana %s %s http %d: %s", method, path, resp.StatusCode, string(b))
-	}
-	if out != nil && len(b) > 0 {
-		return json.Unmarshal(b, out)
-	}
-	return nil
 }
 
 // DoJSON 公开方法，供 GrafanaService 调用。

@@ -29,11 +29,17 @@ func (c *Client) RemoveOrgUser(ctx context.Context, orgID, userID int64) error {
 	return c.doJSON(ctx, "DELETE", path, nil, 0, nil)
 }
 
-// DeleteDatasource DELETE /api/datasources/:id（需在对应组织上下文中）。
+// DeleteDatasource DELETE /api/datasources/:id（需在对应组织上下文中）。404 视为成功，使清理可重试。
 func (c *Client) DeleteDatasource(ctx context.Context, orgID, dsID int64) error {
 	if !c.Enabled() || dsID <= 0 {
 		return nil
 	}
 	path := fmt.Sprintf("/api/datasources/%d", dsID)
-	return c.doJSON(ctx, "DELETE", path, nil, orgID, nil)
+	if err := c.doJSON(ctx, "DELETE", path, nil, orgID, nil); err != nil {
+		if isNotFound(err) {
+			return nil
+		}
+		return err
+	}
+	return nil
 }

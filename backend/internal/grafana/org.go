@@ -24,13 +24,19 @@ func (c *Client) CreateOrg(ctx context.Context, name string) (int64, error) {
 	return out.OrgID, nil
 }
 
-// DeleteOrg 删除组织（需 Grafana 服务账号具备权限）。
+// DeleteOrg 删除组织（需 Grafana 服务账号具备权限）。404 视为成功，使租户清理可重试。
 func (c *Client) DeleteOrg(ctx context.Context, orgID int64) error {
 	if !c.Enabled() || orgID <= 0 {
 		return nil
 	}
 	path := fmt.Sprintf("/api/orgs/%d", orgID)
-	return c.doJSON(ctx, "DELETE", path, nil, 0, nil)
+	if err := c.doJSON(ctx, "DELETE", path, nil, 0, nil); err != nil {
+		if isNotFound(err) {
+			return nil
+		}
+		return err
+	}
+	return nil
 }
 
 // UpdateOrg 更新组织名称。
