@@ -18,9 +18,16 @@ grafana:
     port: 3000
   grafana.ini:
     server:
-      root_url: "%(protocol)s://%(domain)s:%(http_port)s/"
+      root_url: "%(protocol)s://%(domain)s/api/v1/grafana/proxy/"
+      serve_from_sub_path: true
     auth.anonymous:
       enabled: false
+    auth.proxy:
+      enabled: true
+      header_name: X-WEBAUTH-USER
+      header_property: username
+      auto_sign_up: true
+      enable_login_token: true
     security:
       admin_user: admin
       admin_password: "${GRAFANA_ADMIN_PASSWORD}"

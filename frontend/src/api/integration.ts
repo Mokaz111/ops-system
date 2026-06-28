@@ -36,7 +36,7 @@ export interface IntegrationInstallation {
   template_id: string;
   template_version: string;
   instance_id: string;
-  tenant_id: string;
+  workspace_id: string;
   grafana_instance_id: string | null;
   grafana_org_id: number;
   installed_parts: string;
@@ -104,7 +104,7 @@ export interface InstallRequest {
   template_id: string;
   template_version: string;
   instance_id: string;
-  tenant_id: string;
+  workspace_id: string;
   grafana_instance_id?: string;
   grafana_org_id?: number;
   installed_parts?: string[];
@@ -194,7 +194,7 @@ export const integrationAPI = {
     api.post<ApiResponse<InstallResponse>>('/integrations/install', data),
 
   listInstallations: (
-    params?: PaginationParams & { tenant_id?: string; instance_id?: string; template_id?: string; status?: string },
+    params?: PaginationParams & { workspace_id?: string; instance_id?: string; template_id?: string; status?: string },
     config?: AxiosRequestConfig,
   ) =>
     api.get<ApiResponse<PaginatedResponse<IntegrationInstallation>>>('/integrations/installations', { ...config, params }),

@@ -5,7 +5,7 @@ import GroupsOutlinedIcon from '@mui/icons-material/GroupsOutlined';
 import NotificationsActiveOutlinedIcon from '@mui/icons-material/NotificationsActiveOutlined';
 import SpeedOutlinedIcon from '@mui/icons-material/SpeedOutlined';
 import PageHeader from '../../components/common/PageHeader';
-import { tenantAPI } from '../../api/tenant';
+import { workspaceAPI } from '../../api/workspace';
 import { instanceAPI } from '../../api/instance';
 
 interface StatCard {
@@ -19,17 +19,17 @@ interface StatCard {
 
 export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
-  const [stats, setStats] = useState({ tenants: 0, instances: 0 });
+  const [stats, setStats] = useState({ workspaces: 0, instances: 0 });
 
   useEffect(() => {
     const fetchStats = async () => {
       try {
         const [tenantRes, instanceRes] = await Promise.allSettled([
-          tenantAPI.list({ page: 1, page_size: 1 }),
+          workspaceAPI.list({ page: 1, page_size: 1 }),
           instanceAPI.list({ page: 1, page_size: 1 }),
         ]);
         setStats({
-          tenants: tenantRes.status === 'fulfilled' ? tenantRes.value.data.data?.total || 0 : 0,
+          workspaces: tenantRes.status === 'fulfilled' ? tenantRes.value.data.data?.total || 0 : 0,
           instances: instanceRes.status === 'fulfilled' ? instanceRes.value.data.data?.total || 0 : 0,
         });
       } catch {
@@ -42,7 +42,7 @@ export default function DashboardPage() {
   }, []);
 
   const statCards: StatCard[] = [
-    { label: '租户总数', value: stats.tenants, icon: <GroupsOutlinedIcon />, color: '#1a73e8', bgColor: '#e8f0fe' },
+    { label: '工作空间总数', value: stats.workspaces, icon: <GroupsOutlinedIcon />, color: '#1a73e8', bgColor: '#e8f0fe' },
     { label: '实例总数', value: stats.instances, icon: <StorageOutlinedIcon />, color: '#1e8e3e', bgColor: '#e6f4ea' },
     { label: '活跃告警', value: '--', change: '由夜莺 N9E 提供', icon: <NotificationsActiveOutlinedIcon />, color: '#d93025', bgColor: '#fce8e6' },
     { label: '指标写入速率', value: '--', change: '监控接口接入后展示', icon: <SpeedOutlinedIcon />, color: '#e37400', bgColor: '#fef7e0' },

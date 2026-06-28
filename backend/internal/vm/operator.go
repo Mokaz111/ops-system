@@ -21,7 +21,7 @@ func (c *VMOperatorClient) Enabled() bool {
 	return c != nil && c.k8s != nil
 }
 
-func (c *VMOperatorClient) ApplyTenantUser(ctx context.Context, t *model.Tenant, routes RouteSet) error {
+func (c *VMOperatorClient) ApplyWorkspaceUser(ctx context.Context, t *model.Workspace, routes RouteSet) error {
 	if !c.Enabled() || t == nil {
 		return nil
 	}
@@ -209,6 +209,35 @@ spec:
 	)
 	_, err := c.k8s.ApplyYAML(ctx, yaml, ns)
 	return err
+}
+
+// DeleteVMCluster 删除 VMCluster CR；CR 已不存在视为成功（幂等）。
+func (c *VMOperatorClient) DeleteVMCluster(ctx context.Context, name, namespace string) error {
+	if !c.Enabled() {
+		return nil
+	}
+	ns := namespace
+	if ns == "" {
+		ns = "default"
+	}
+	return c.k8s.DeleteByGVK(ctx, "operator.victoriametrics.com/v1beta1", "VMCluster", ns, safeName(name))
+}
+
+// DeleteVMUser 删除租户 VMUser CR 及其认证 Secret；资源已不存在视为成功（幂等）。
+func (c *VMOperatorClient) DeleteVMUser(ctx context.Context, vmUserID, namespace string) error {
+	if !c.Enabled() || vmUserID == "" {
+		return nil
+	}
+	ns := namespace
+	if ns == "" {
+		ns = "default"
+	}
+	if err := c.k8s.DeleteByGVK(ctx, "operator.victoriametrics.com/v1beta1", "VMUser", ns, safeName(vmUserID)); err != nil {
+		return err
+	}
+	// best-effort 清理认证 Secret；失败不阻塞（Secret 残留不影响重建）。
+	_ = c.k8s.DeleteByGVK(ctx, "v1", "Secret", ns, safeName(vmUserID)+"-auth")
+	return nil
 }
 
 func quoteYAML(s string) string {

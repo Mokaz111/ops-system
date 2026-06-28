@@ -65,10 +65,8 @@ func NewRouter(cfg *config.Config, log *zap.Logger, db *gorm.DB) *gin.Engine {
 				c.JSON(http.StatusOK, gin.H{"code": 0, "message": "success", "data": gin.H{"status": "ok", "database": "postgresql"}})
 			})
 
-			deptRepo := repository.NewDepartmentRepository(db)
-			tenantRepo := repository.NewTenantRepository(db)
+			workspaceRepo := repository.NewWorkspaceRepository(db)
 			userRepo := repository.NewUserRepository(db)
-			tenantMemberRepo := repository.NewTenantMemberRepository(db)
 			vmRouteRepo := repository.NewVMRouteRepository(db)
 			datasourceRepo := repository.NewDatasourceRepository(db)
 			provisioningTaskRepo := repository.NewProvisioningTaskRepository(db)
@@ -88,20 +86,19 @@ func NewRouter(cfg *config.Config, log *zap.Logger, db *gorm.DB) *gin.Engine {
 			zoneRepo := repository.NewZoneRepository(db)
 			businessClusterRepo := repository.NewBusinessClusterRepository(db)
 
-			userSvc := service.NewUserService(userRepo, tenantMemberRepo)
+			userSvc := service.NewUserService(userRepo)
 			authSvc := service.NewAuthService(userRepo, cfg.JWT.Secret, cfg.JWT.ExpireHours)
 			authH := handler.NewAuthHandler(authSvc, userSvc, cfg.JWT.Secret)
 			userH := handler.NewUserHandler(userSvc, cfg.JWT.Secret)
 
-			deptSvc := service.NewDepartmentService(deptRepo, tenantRepo, userRepo)
-			deptH := handler.NewDepartmentHandler(deptSvc)
 
 			vmSync := vm.NewSyncService(&cfg.VM, log)
 			vmQuery := vm.NewQueryClient(&cfg.VM)
 			vmRoutes := vm.NewRouteBuilder(&cfg.VM)
 			grafanaClient := grafana.NewClient(&cfg.Grafana, log)
+			grafanaSvc := service.NewGrafanaService(grafanaClient, grafanaInstanceRepo, workspaceRepo, log)
 
-			// Grafana resolver：按 Grafana 实例 id 动态构造 client；供 TenantService 和 integration applier 共用。
+			// Grafana resolver：按 Grafana 实例 id 动态构造 client；供 WorkspaceService 和 integration applier 共用。
 			grafanaResolver := func(ctx context.Context, instanceID *uuid.UUID) (*grafana.Client, error) {
 				if instanceID == nil {
 					return grafanaClient, nil
@@ -149,7 +146,7 @@ func NewRouter(cfg *config.Config, log *zap.Logger, db *gorm.DB) *gin.Engine {
 				}
 			}
 			vmOperator := vm.NewVMOperatorClient(k8sClient)
-			tenantProvisioner := service.NewTenantProvisioner(
+			tenantProvisioner := service.NewWorkspaceProvisioner(
 				provisioningTaskRepo,
 				vmRouteRepo,
 				datasourceRepo,
@@ -158,10 +155,10 @@ func NewRouter(cfg *config.Config, log *zap.Logger, db *gorm.DB) *gin.Engine {
 				vmOperator,
 				log,
 			)
-			tenantSvc := service.NewTenantService(deptRepo, tenantRepo, instanceRepo, vmSync, vmQuery, tenantProvisioner, grafanaResolver, orch, log)
-			tenantH := handler.NewTenantHandler(tenantSvc, userSvc)
+			workspaceSvc := service.NewWorkspaceService(workspaceRepo, instanceRepo, vmSync, vmQuery, tenantProvisioner, grafanaResolver, grafanaSvc, orch, log)
+			workspaceH := handler.NewTenantHandler(workspaceSvc, userSvc)
 
-			instanceSvc := service.NewInstanceService(instanceRepo, tenantRepo, integrationInstallRepo, orch, vmOperator, vmRoutes, vmQuery, log)
+			instanceSvc := service.NewInstanceService(instanceRepo, workspaceRepo, integrationInstallRepo, orch, vmOperator, vmRoutes, vmQuery, log)
 			scaleEventRepo := repository.NewScaleEventRepository(db)
 			scaleSvc := service.NewScaleService(helmClient, k8sClient, instanceRepo, scaleEventRepo, log)
 			instanceH := handler.NewInstanceHandler(instanceSvc, scaleSvc, userSvc, grafanaInstanceSvc)
@@ -180,13 +177,13 @@ func NewRouter(cfg *config.Config, log *zap.Logger, db *gorm.DB) *gin.Engine {
 			}
 			platformH := handler.NewPlatformHandler(platformScaleSvc, platformBootstrapSvc, log, idemStore, platformAuditRepo)
 
-			grafanaSvc := service.NewGrafanaService(grafanaClient, grafanaInstanceRepo, tenantRepo, log)
+			// grafanaSvc moved up(grafanaClient, grafanaInstanceRepo, workspaceRepo, log)
 			grafanaH := handler.NewGrafanaHandler(grafanaSvc, log)
 			n9eClient := n9e.NewClient(&cfg.N9E, log)
 			notifySvc := notify.NewNotifyService(log)
-			alertSvc := service.NewAlertService(alertRepo, tenantRepo, n9eClient, vmOperator, log)
+			alertSvc := service.NewAlertService(alertRepo, workspaceRepo, n9eClient, vmOperator, log)
 			alertEventSvc := service.NewAlertEventService(alertEventRepo, alertRepo, channelRepo, n9eClient, notifySvc, log)
-			channelSvc := service.NewNotificationChannelService(channelRepo, tenantRepo, log)
+			channelSvc := service.NewNotificationChannelService(channelRepo, workspaceRepo, log)
 			alertH := handler.NewAlertHandler(alertSvc, alertEventSvc, channelSvc, userSvc)
 
 			logInstanceSvc := service.NewLogInstanceService(logInstanceRepo)
@@ -269,7 +266,7 @@ func NewRouter(cfg *config.Config, log *zap.Logger, db *gorm.DB) *gin.Engine {
 			clusterSvc := service.NewClusterService(clusterRepo)
 			clusterH := handler.NewClusterHandler(clusterSvc)
 
-			zoneSvc := service.NewZoneService(zoneRepo, instanceRepo, clusterRepo, clusterClientCache, log)
+			zoneSvc := service.NewZoneService(zoneRepo, instanceRepo, grafanaInstanceRepo, clusterRepo, clusterClientCache, log)
 			zoneH := handler.NewZoneHandler(zoneSvc)
 
 			businessClusterSvc := service.NewBusinessClusterService(businessClusterRepo, instanceRepo, log)
@@ -285,28 +282,23 @@ func NewRouter(cfg *config.Config, log *zap.Logger, db *gorm.DB) *gin.Engine {
 			protected.Use(middleware.JWTAuth(cfg.JWT.Secret))
 			protected.GET("/auth/me", authH.Me)
 
-			dg := protected.Group("/departments")
-			dg.GET("/tree", deptH.Tree)
-			dg.GET("", deptH.List)
-			dg.GET("/:id/users", deptH.ListUsers)
-			dg.GET("/:id", deptH.Get)
 
-			tg := protected.Group("/tenants")
-			tg.GET("", tenantH.List)
-			tg.GET("/:id/metrics", tenantH.Metrics)
-			tg.GET("/:id", tenantH.Get)
+			tg := protected.Group("/workspaces")
+			tg.GET("", workspaceH.List)
+			tg.GET("/:id/metrics", workspaceH.Metrics)
+			tg.GET("/:id", workspaceH.Get)
 
 			ug := protected.Group("/users")
 			ug.GET("", userH.List)
 			ug.GET("/:id", userH.Get)
 			ug.PUT("/:id", userH.Update)
 
-			ig := protected.Group("/instances")
-			ig.GET("", instanceH.List)
-			ig.GET("/:id", instanceH.Get)
-			ig.GET("/:id/metrics", instanceH.Metrics)
-			ig.GET("/:id/scale-events", instanceH.ListScaleEvents)
-			ig.POST("/:id/login", instanceH.LoginGrafana)
+		ig := protected.Group("/instances")
+		ig.GET("", instanceH.List)
+		ig.GET("/:id", instanceH.Get)
+		ig.GET("/:id/metrics", instanceH.Metrics)
+		ig.GET("/:id/scale-events", instanceH.ListScaleEvents)
+		ig.POST("/:id/login", instanceH.Login)
 
 			gig := protected.Group("/grafana/instances/:instanceId")
 			gig.GET("/orgs", grafanaH.ListOrgs)
@@ -378,15 +370,11 @@ func NewRouter(cfg *config.Config, log *zap.Logger, db *gorm.DB) *gin.Engine {
 			admin := protected.Group("")
 			admin.Use(middleware.RequireRole("admin"))
 
-			adminDG := admin.Group("/departments")
-			adminDG.POST("", deptH.Create)
-			adminDG.PUT("/:id", deptH.Update)
-			adminDG.DELETE("/:id", deptH.Delete)
 
-			adminTG := admin.Group("/tenants")
-			adminTG.POST("", tenantH.Create)
-			adminTG.PUT("/:id", tenantH.Update)
-			adminTG.DELETE("/:id", tenantH.Delete)
+			adminTG := admin.Group("/workspaces")
+			adminTG.POST("", workspaceH.Create)
+			adminTG.PUT("/:id", workspaceH.Update)
+			adminTG.DELETE("/:id", workspaceH.Delete)
 
 			adminUG := admin.Group("/users")
 			adminUG.POST("", userH.Create)

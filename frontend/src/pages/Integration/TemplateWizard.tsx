@@ -285,7 +285,7 @@ export default function TemplateWizard({ open, categories, onClose, onSuccess }:
                 fullWidth
                 multiline
                 minRows={6}
-                placeholder={`# 多段 YAML 以 --- 分隔\napiVersion: operator.victoriametrics.com/v1beta1\nkind: VMPodScrape\nmetadata:\n  name: {{ .Values.component }}-{{ .Ctx.TenantID }}\n  namespace: {{ .Ctx.Namespace }}\nspec:\n  podMetricsEndpoints: []\n`}
+                placeholder={`# 多段 YAML 以 --- 分隔\napiVersion: operator.victoriametrics.com/v1beta1\nkind: VMPodScrape\nmetadata:\n  name: {{ .Values.component }}-{{ .Ctx.WorkspaceID }}\n  namespace: {{ .Ctx.Namespace }}\nspec:\n  podMetricsEndpoints: []\n`}
                 value={version.collector_spec}
                 onChange={(e) => setVersion({ ...version, collector_spec: e.target.value })}
                 InputProps={{ sx: { fontFamily: 'monospace', fontSize: 12.5 } }}

@@ -37,9 +37,9 @@ import EmptyState from '../../components/common/EmptyState';
 import LoadingScreen from '../../components/common/LoadingScreen';
 import ConfirmDialog from '../../components/common/ConfirmDialog';
 import { alertAPI } from '../../api/alert';
-import { tenantAPI } from '../../api/tenant';
+import { workspaceAPI } from '../../api/workspace';
 import { extractApiError } from '../../api';
-import type { AlertEvent, AlertRule, Tenant } from '../../types/api';
+import type { AlertEvent, AlertRule, Workspace } from '../../types/api';
 
 const levelMeta: Record<string, { label: string; color: 'error' | 'warning' | 'info' | 'default' }> = {
   critical: { label: '严重', color: 'error' },
@@ -52,20 +52,20 @@ export default function AlertPage() {
   const [searchParams] = useSearchParams();
   const instanceId = searchParams.get('instance_id');
   const instanceName = searchParams.get('instance_name');
-  const [tenants, setTenants] = useState<Tenant[]>([]);
+  const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [rules, setRules] = useState<AlertRule[]>([]);
   const [events, setEvents] = useState<AlertEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(0);
   const [pageSize, setPageSize] = useState(10);
   const [total, setTotal] = useState(0);
-  const [tenantFilter, setTenantFilter] = useState('');
+  const [tenantFilter, setWorkspaceFilter] = useState('');
   const [levelFilter, setLevelFilter] = useState('');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [deleteDialog, setDeleteDialog] = useState<{ open: boolean; rule?: AlertRule }>({ open: false });
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({
-    tenant_id: '',
+    workspace_id: '',
     rule_name: '',
     rule_type: 'metrics',
     query: '',
@@ -80,7 +80,7 @@ export default function AlertPage() {
       const { data: res } = await alertAPI.listRules({
         page: page + 1,
         page_size: pageSize,
-        tenant_id: tenantFilter || undefined,
+        workspace_id: tenantFilter || undefined,
         level: levelFilter || undefined,
       });
       setRules(res.data?.items || []);
@@ -97,7 +97,7 @@ export default function AlertPage() {
       const { data: res } = await alertAPI.listEvents({
         page: 1,
         page_size: 5,
-        tenant_id: tenantFilter || undefined,
+        workspace_id: tenantFilter || undefined,
       });
       setEvents(res.data?.items || []);
     } catch {
@@ -113,21 +113,21 @@ export default function AlertPage() {
   useEffect(() => {
     (async () => {
       try {
-        const { data: res } = await tenantAPI.list({ page: 1, page_size: 200 });
-        setTenants(res.data?.items || []);
+        const { data: res } = await workspaceAPI.list({ page: 1, page_size: 200 });
+        setWorkspaces(res.data?.items || []);
       } catch {
         /* tenant filter optional */
       }
     })();
   }, []);
 
-  const tenantName = (id: string) => tenants.find((t) => t.id === id)?.tenant_name || id.slice(0, 8);
+  const tenantName = (id: string) => workspaces.find((t) => t.id === id)?.workspace_name || id.slice(0, 8);
 
   const handleCreate = async () => {
     setSaving(true);
     try {
       await alertAPI.createRule({
-        tenant_id: form.tenant_id,
+        workspace_id: form.workspace_id,
         rule_name: form.rule_name,
         rule_type: form.rule_type,
         query: form.query,
@@ -137,7 +137,7 @@ export default function AlertPage() {
       });
       enqueueSnackbar('VMRule 告警规则已创建', { variant: 'success' });
       setDialogOpen(false);
-      setForm({ tenant_id: '', rule_name: '', rule_type: 'metrics', query: '', level: 'warning', annotations: '', enabled: true });
+      setForm({ workspace_id: '', rule_name: '', rule_type: 'metrics', query: '', level: 'warning', annotations: '', enabled: true });
       fetchRules();
     } catch (err) {
       enqueueSnackbar(extractApiError(err, '创建告警规则失败'), { variant: 'error' });
@@ -164,7 +164,7 @@ export default function AlertPage() {
     <Box>
       <PageHeader
         title="告警引擎"
-        subtitle="以 VictoriaMetrics VMRule / vmalert / Alertmanager 为主链路管理租户告警"
+        subtitle="以 VictoriaMetrics VMRule / vmalert / Alertmanager 为主链路管理工作空间告警"
         actionLabel="新建 VMRule"
         onAction={() => setDialogOpen(true)}
       />
@@ -176,7 +176,7 @@ export default function AlertPage() {
       )}
 
       <Alert severity="info" sx={{ mb: 3 }}>
-        后端会把指标类规则落库后渲染为租户命名空间下的 VMRule，由 vmalert 计算并发送到 Alertmanager；N9E 仅作为兼容同步路径。
+        后端会把指标类规则落库后渲染为工作空间命名空间下的 VMRule，由 vmalert 计算并发送到 Alertmanager；N9E 仅作为兼容同步路径。
       </Alert>
 
       <Grid container spacing={2} sx={{ mb: 2 }}>
@@ -194,10 +194,10 @@ export default function AlertPage() {
         <Grid size={{ xs: 12, md: 8 }}>
           <Card sx={{ p: 2, display: 'flex', gap: 2, flexWrap: 'wrap' }}>
             <FormControl size="small" sx={{ minWidth: 220 }}>
-              <InputLabel>租户</InputLabel>
-              <Select value={tenantFilter} label="租户" onChange={(e) => { setTenantFilter(e.target.value); setPage(0); }}>
-                <MenuItem value="">全部租户</MenuItem>
-                {tenants.map((tenant) => <MenuItem key={tenant.id} value={tenant.id}>{tenant.tenant_name}</MenuItem>)}
+              <InputLabel>工作空间</InputLabel>
+              <Select value={tenantFilter} label="工作空间" onChange={(e) => { setWorkspaceFilter(e.target.value); setPage(0); }}>
+                <MenuItem value="">全部工作空间</MenuItem>
+                {workspaces.map((tenant) => <MenuItem key={tenant.id} value={tenant.id}>{tenant.workspace_name}</MenuItem>)}
               </Select>
             </FormControl>
             <FormControl size="small" sx={{ minWidth: 160 }}>
@@ -219,7 +219,7 @@ export default function AlertPage() {
             <TableHead>
               <TableRow>
                 <TableCell>规则</TableCell>
-                <TableCell>租户</TableCell>
+                <TableCell>工作空间</TableCell>
                 <TableCell>PromQL</TableCell>
                 <TableCell>级别</TableCell>
                 <TableCell>VMRule</TableCell>
@@ -233,7 +233,7 @@ export default function AlertPage() {
               ) : rules.map((rule) => (
                 <TableRow key={rule.id}>
                   <TableCell sx={{ fontWeight: 600 }}>{rule.rule_name}</TableCell>
-                  <TableCell>{tenantName(rule.tenant_id)}</TableCell>
+                  <TableCell>{tenantName(rule.workspace_id)}</TableCell>
                   <TableCell>
                     <Typography variant="caption" sx={{ fontFamily: 'monospace', wordBreak: 'break-all' }}>{rule.query}</Typography>
                   </TableCell>
@@ -300,9 +300,9 @@ export default function AlertPage() {
           <Grid container spacing={2}>
             <Grid size={{ xs: 12, md: 6 }}>
               <FormControl fullWidth size="small">
-                <InputLabel>租户</InputLabel>
-                <Select value={form.tenant_id} label="租户" onChange={(e) => setForm({ ...form, tenant_id: e.target.value })}>
-                  {tenants.map((tenant) => <MenuItem key={tenant.id} value={tenant.id}>{tenant.tenant_name}</MenuItem>)}
+                <InputLabel>工作空间</InputLabel>
+                <Select value={form.workspace_id} label="工作空间" onChange={(e) => setForm({ ...form, workspace_id: e.target.value })}>
+                  {workspaces.map((tenant) => <MenuItem key={tenant.id} value={tenant.id}>{tenant.workspace_name}</MenuItem>)}
                 </Select>
               </FormControl>
             </Grid>
@@ -337,7 +337,7 @@ export default function AlertPage() {
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2 }}>
           <Button onClick={() => setDialogOpen(false)}>取消</Button>
-          <Button startIcon={<AddIcon />} variant="contained" disabled={saving || !form.tenant_id || !form.rule_name || !form.query} onClick={handleCreate}>
+          <Button startIcon={<AddIcon />} variant="contained" disabled={saving || !form.workspace_id || !form.rule_name || !form.query} onClick={handleCreate}>
             {saving ? '创建中...' : '创建'}
           </Button>
         </DialogActions>

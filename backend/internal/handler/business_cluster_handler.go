@@ -27,7 +27,7 @@ func (h *BusinessClusterHandler) List(c *gin.Context) {
 	if !ok {
 		return
 	}
-	tenantID := c.Query("tenant_id")
+	tenantID := c.Query("workspace_id")
 	instanceID := c.Query("instance_id")
 	list, total, err := h.svc.List(c.Request.Context(), tenantID, instanceID, page, ps)
 	if err != nil {
@@ -59,7 +59,7 @@ func (h *BusinessClusterHandler) Create(c *gin.Context) {
 		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, response.TranslateBindingError(err))
 		return
 	}
-	tenantID, ok := resolveTenantID(c, h.userSvc)
+	tenantID, ok := resolveWorkspaceID(c, h.userSvc)
 	if !ok {
 		return
 	}

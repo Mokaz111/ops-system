@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 
 	"ops-system/backend/internal/helm"
@@ -48,26 +49,29 @@ type ZoneInitSharedPlan struct {
 
 // ZoneService 可用区业务。
 type ZoneService struct {
-	repo        *repository.ZoneRepository
-	instRepo    *repository.InstanceRepository
-	clusterRepo *repository.ClusterRepository
-	clientCache *k8s.ClusterClientCache
-	log         *zap.Logger
+	repo              *repository.ZoneRepository
+	instRepo          *repository.InstanceRepository
+	grafanaInstRepo   *repository.GrafanaInstanceRepository
+	clusterRepo       *repository.ClusterRepository
+	clientCache       *k8s.ClusterClientCache
+	log               *zap.Logger
 }
 
 func NewZoneService(
 	repo *repository.ZoneRepository,
 	instRepo *repository.InstanceRepository,
+	grafanaInstRepo *repository.GrafanaInstanceRepository,
 	clusterRepo *repository.ClusterRepository,
 	clientCache *k8s.ClusterClientCache,
 	log *zap.Logger,
 ) *ZoneService {
 	return &ZoneService{
-		repo:        repo,
-		instRepo:    instRepo,
-		clusterRepo: clusterRepo,
-		clientCache: clientCache,
-		log:         log,
+		repo:            repo,
+		instRepo:        instRepo,
+		grafanaInstRepo: grafanaInstRepo,
+		clusterRepo:     clusterRepo,
+		clientCache:     clientCache,
+		log:             log,
 	}
 }
 
@@ -410,6 +414,24 @@ func (s *ZoneService) InitGrafana(ctx context.Context, zoneID uuid.UUID, req *Zo
 	values := map[string]interface{}{
 		"grafana": map[string]interface{}{
 			"enabled": true,
+			"grafana.ini": map[string]interface{}{
+				"server": map[string]interface{}{
+					"root_url":           "%(protocol)s://%(domain)s/api/v1/grafana/proxy/",
+					"serve_from_sub_path": true,
+				},
+				"auth.anonymous": map[string]interface{}{"enabled": false},
+				"auth.proxy": map[string]interface{}{
+					"enabled":           true,
+					"header_name":       "X-WEBAUTH-USER",
+					"header_property":   "username",
+					"auto_sign_up":      true,
+					"enable_login_token": true,
+				},
+				"security": map[string]interface{}{
+					"admin_user":     grafanaAdminUser(),
+					"admin_password": grafanaAdminPassword(),
+				},
+			},
 		},
 		"defaultRules":             map[string]interface{}{"enabled": false},
 		"vmsingle":                 map[string]interface{}{"enabled": false},
@@ -443,5 +465,65 @@ func (s *ZoneService) InitGrafana(ctx context.Context, zoneID uuid.UUID, req *Zo
 	if k8sCli != nil {
 		k8sCli.InvalidateMapperCache()
 	}
+	// 部署成功后自动注册 GrafanaInstance（幂等：同 zone_id + source='platform' 已存在则跳过）。
+	if s.grafanaInstRepo != nil {
+		s.autoRegisterGrafanaInstance(ctx, z, ns)
+	}
 	return plan, nil
+}
+
+	// autoRegisterGrafanaInstance 确保 Zone Grafana 在 ops_grafana_instances 中有记录。
+	// 已存在相同 zone_id + source='platform' 的记录时跳过（幂等）。
+	func (s *ZoneService) autoRegisterGrafanaInstance(ctx context.Context, z *model.Zone, ns string) {
+		existing, _, err := s.grafanaInstRepo.List(ctx, repository.GrafanaInstanceListFilter{
+			Source: "platform",
+			ZoneID: &z.ID,
+			Offset: 0,
+			Limit:  1,
+		})
+		if err != nil || len(existing) > 0 {
+			if len(existing) > 0 {
+				s.log.Info("grafana_instance_already_registered",
+					zap.String("zone_id", z.ID.String()))
+			}
+			return
+		}
+
+		svcURL := fmt.Sprintf("http://grafana.%s.svc.cluster.local:3000", ns)
+		m := &model.GrafanaInstance{
+			Name:          "zone-" + z.Slug + "-grafana",
+			Source:        "platform",
+			ZoneID:        &z.ID,
+			URL:           svcURL,
+			AdminUser:     grafanaAdminUser(),
+			AdminPassword: grafanaAdminPassword(),
+			Status:        "active",
+		}
+		if err := s.grafanaInstRepo.Create(ctx, m); err != nil {
+			s.log.Error("grafana_instance_auto_register_failed",
+				zap.String("zone_id", z.ID.String()),
+				zap.Error(err))
+			return
+		}
+		s.log.Info("grafana_instance_auto_registered",
+			zap.String("grafana_instance_id", m.ID.String()),
+			zap.String("zone_id", z.ID.String()),
+			zap.String("url", svcURL))
+	}
+
+// grafanaAdminUser 返回 Zone Grafana 管理员用户名，优先取环境变量 OPS_GRAFANA_ADMIN_USER，默认 admin。
+func grafanaAdminUser() string {
+	if v := strings.TrimSpace(os.Getenv("OPS_GRAFANA_ADMIN_USER")); v != "" {
+		return v
+	}
+	return "admin"
+}
+
+// grafanaAdminPassword 返回 Zone Grafana 管理员密码，取环境变量 OPS_GRAFANA_ADMIN_PASSWORD；
+// 未设置时回退 chart 默认 admin/admin 并记录警告（弱口令，仅供调试）。
+func grafanaAdminPassword() string {
+	if v := os.Getenv("OPS_GRAFANA_ADMIN_PASSWORD"); v != "" {
+		return v
+	}
+	return "admin"
 }

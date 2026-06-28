@@ -41,7 +41,7 @@ func NewOrchestratorService(cfg *config.Config, log *zap.Logger) (*OrchestratorS
 }
 
 // TenantNamespace 租户专用命名空间名（DNS-1123，≤63）。
-func TenantNamespace(cfg *config.Config, t *model.Tenant) string {
+func WorkspaceNamespace(cfg *config.Config, t *model.Workspace) string {
 	p := cfg.Orchestration.NamespacePrefix
 	if p == "" {
 		p = "ops"
@@ -51,7 +51,7 @@ func TenantNamespace(cfg *config.Config, t *model.Tenant) string {
 }
 
 // ReleaseName Helm release 名（与历史部署一致，便于卸载）。
-func ReleaseName(t *model.Tenant) string {
+func ReleaseName(t *model.Workspace) string {
 	compact := strings.ReplaceAll(t.ID.String(), "-", "")
 	return "ops-" + compact
 }
@@ -82,7 +82,7 @@ func (s *OrchestratorService) valuesFilesForTemplate(tt string) []string {
 	}
 }
 
-func (s *OrchestratorService) mergeEmbeddedValues(t *model.Tenant, ns string) (map[string]interface{}, error) {
+func (s *OrchestratorService) mergeEmbeddedValues(t *model.Workspace, ns string) (map[string]interface{}, error) {
 	merged := map[string]interface{}{}
 	for _, f := range s.valuesFilesForTemplate(t.TemplateType) {
 		m, err := helm.LoadValuesYAML(f)
@@ -91,10 +91,16 @@ func (s *OrchestratorService) mergeEmbeddedValues(t *model.Tenant, ns string) (m
 		}
 		merged = helm.MergeValues(merged, m)
 	}
+	// 校验 dedicated 模板 Grafana 凭据：envsubst 后 admin_password 不得为空或仍是字面量占位符。
+	if t.TemplateType == "dedicated_single" || t.TemplateType == "dedicated_cluster" {
+		if err := validateGrafanaAdminPassword(merged); err != nil {
+			return nil, err
+		}
+	}
 	overlay := map[string]interface{}{
 		"tenant": map[string]interface{}{
 			"id":        t.ID.String(),
-			"name":      t.TenantName,
+			"name":      t.WorkspaceName,
 			"vmuser_id": t.VMUserID,
 			"template":  t.TemplateType,
 		},
@@ -105,9 +111,31 @@ func (s *OrchestratorService) mergeEmbeddedValues(t *model.Tenant, ns string) (m
 	return helm.MergeValues(merged, overlay), nil
 }
 
-// DeployTenant 创建命名空间、配额、可选 NetworkPolicy，并按模板执行 Helm install/upgrade。
-func (s *OrchestratorService) DeployTenant(ctx context.Context, t *model.Tenant) error {
-	ns := TenantNamespace(s.cfg, t)
+// validateGrafanaAdminPassword 校验合并后的 values 中 Grafana admin_password 已被环境变量替换：
+// 既不能为空，也不能仍是字面量占位符 ${GRAFANA_ADMIN_PASSWORD}。
+func validateGrafanaAdminPassword(merged map[string]interface{}) error {
+	g, ok := merged["grafana"].(map[string]interface{})
+	if !ok {
+		return nil
+	}
+	ini, ok := g["grafana.ini"].(map[string]interface{})
+	if !ok {
+		return nil
+	}
+	sec, ok := ini["security"].(map[string]interface{})
+	if !ok {
+		return nil
+	}
+	pw, _ := sec["admin_password"].(string)
+	if strings.TrimSpace(pw) == "" || pw == "${GRAFANA_ADMIN_PASSWORD}" {
+		return fmt.Errorf("grafana admin_password not configured: set GRAFANA_ADMIN_PASSWORD env before deploying dedicated grafana")
+	}
+	return nil
+}
+
+// DeployWorkspace 创建命名空间、配额、可选 NetworkPolicy，并按模板执行 Helm install/upgrade。
+func (s *OrchestratorService) DeployWorkspace(ctx context.Context, t *model.Workspace) error {
+	ns := WorkspaceNamespace(s.cfg, t)
 	labels := map[string]string{
 		"ops-system/tenant-id": t.ID.String(),
 		"ops-system/vmuser-id": t.VMUserID,
@@ -148,9 +176,9 @@ func (s *OrchestratorService) DeployTenant(ctx context.Context, t *model.Tenant)
 	return s.hc.InstallOrUpgrade(ctx, name, chart, ns, vals)
 }
 
-// DeleteTenant 卸载 Helm release 并删除命名空间。
-func (s *OrchestratorService) DeleteTenant(ctx context.Context, t *model.Tenant) error {
-	ns := TenantNamespace(s.cfg, t)
+// DeleteWorkspace 卸载 Helm release 并删除命名空间。
+func (s *OrchestratorService) DeleteWorkspace(ctx context.Context, t *model.Workspace) error {
+	ns := WorkspaceNamespace(s.cfg, t)
 	name := ReleaseName(t)
 
 	chart := s.chartRef(t.TemplateType)

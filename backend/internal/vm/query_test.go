@@ -23,7 +23,7 @@ func TestQueryClientScalarUsesTenantSelectPath(t *testing.T) {
 	defer srv.Close()
 
 	client := NewQueryClient(&config.VMConfig{VMAuthBaseURL: srv.URL})
-	tenant := &model.Tenant{VMUserID: "vmuser-test", VMUserKey: "secret"}
+	tenant := &model.Workspace{VMUserID: "vmuser-test", VMUserKey: "secret"}
 	value, err := client.Scalar(context.Background(), tenant, "up")
 	if err != nil {
 		t.Fatalf("scalar query failed: %v", err)

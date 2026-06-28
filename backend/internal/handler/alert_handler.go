@@ -66,15 +66,15 @@ func (h *AlertHandler) ListRules(c *gin.Context) {
 		if !ok {
 			return
 		}
-		if u.TenantID == nil {
+		if u.WorkspaceID == nil {
 			response.Error(c, http.StatusForbidden, http.StatusForbidden, response.ErrCodeForbidden, "forbidden")
 			return
 		}
-		tenantID = u.TenantID
-	} else if s := c.Query("tenant_id"); s != "" {
+		tenantID = u.WorkspaceID
+	} else if s := c.Query("workspace_id"); s != "" {
 		id, err := uuid.Parse(s)
 		if err != nil {
-			response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid tenant_id")
+			response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid workspace_id")
 			return
 		}
 		tenantID = &id
@@ -178,15 +178,15 @@ func (h *AlertHandler) ListEvents(c *gin.Context) {
 		if !ok {
 			return
 		}
-		if u.TenantID == nil {
+		if u.WorkspaceID == nil {
 			response.Error(c, http.StatusForbidden, http.StatusForbidden, response.ErrCodeForbidden, "forbidden")
 			return
 		}
-		tenantID = u.TenantID
-	} else if s := c.Query("tenant_id"); s != "" {
+		tenantID = u.WorkspaceID
+	} else if s := c.Query("workspace_id"); s != "" {
 		id, err := uuid.Parse(s)
 		if err != nil {
-			response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid tenant_id")
+			response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid workspace_id")
 			return
 		}
 		tenantID = &id
@@ -250,7 +250,7 @@ func (h *AlertHandler) GetEvent(c *gin.Context) {
 		if !ok {
 			return
 		}
-		if u.TenantID == nil || *u.TenantID != event.TenantID {
+		if u.WorkspaceID == nil || *u.WorkspaceID != event.TenantID {
 			response.Error(c, http.StatusForbidden, http.StatusForbidden, response.ErrCodeForbidden, "forbidden")
 			return
 		}
@@ -280,7 +280,7 @@ func (h *AlertHandler) AckEvent(c *gin.Context) {
 			h.handleErr(c, err)
 			return
 		}
-		if u.TenantID == nil || *u.TenantID != event.TenantID {
+		if u.WorkspaceID == nil || *u.WorkspaceID != event.TenantID {
 			response.Error(c, http.StatusForbidden, http.StatusForbidden, response.ErrCodeForbidden, "forbidden")
 			return
 		}
@@ -323,15 +323,15 @@ func (h *AlertHandler) ListChannels(c *gin.Context) {
 		if !ok {
 			return
 		}
-		if u.TenantID == nil {
+		if u.WorkspaceID == nil {
 			response.Error(c, http.StatusForbidden, http.StatusForbidden, response.ErrCodeForbidden, "forbidden")
 			return
 		}
-		tenantID = u.TenantID
-	} else if s := c.Query("tenant_id"); s != "" {
+		tenantID = u.WorkspaceID
+	} else if s := c.Query("workspace_id"); s != "" {
 		id, err := uuid.Parse(s)
 		if err != nil {
-			response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid tenant_id")
+			response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid workspace_id")
 			return
 		}
 		tenantID = &id
@@ -422,15 +422,15 @@ func (h *AlertHandler) Summary(c *gin.Context) {
 		if !ok {
 			return
 		}
-		if u.TenantID == nil {
+		if u.WorkspaceID == nil {
 			response.Error(c, http.StatusForbidden, http.StatusForbidden, response.ErrCodeForbidden, "forbidden")
 			return
 		}
-		tenantID = *u.TenantID
+		tenantID = *u.WorkspaceID
 	} else {
-		id, err := uuid.Parse(c.Query("tenant_id"))
+		id, err := uuid.Parse(c.Query("workspace_id"))
 		if err != nil {
-			response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid tenant_id")
+			response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid workspace_id")
 			return
 		}
 		tenantID = id
@@ -451,15 +451,15 @@ func (h *AlertHandler) Trend(c *gin.Context) {
 		if !ok {
 			return
 		}
-		if u.TenantID == nil {
+		if u.WorkspaceID == nil {
 			response.Error(c, http.StatusForbidden, http.StatusForbidden, response.ErrCodeForbidden, "forbidden")
 			return
 		}
-		tenantID = *u.TenantID
+		tenantID = *u.WorkspaceID
 	} else {
-		id, err := uuid.Parse(c.Query("tenant_id"))
+		id, err := uuid.Parse(c.Query("workspace_id"))
 		if err != nil {
-			response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid tenant_id")
+			response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid workspace_id")
 			return
 		}
 		tenantID = id
@@ -486,15 +486,15 @@ func (h *AlertHandler) StatsByLevel(c *gin.Context) {
 		if !ok {
 			return
 		}
-		if u.TenantID == nil {
+		if u.WorkspaceID == nil {
 			response.Error(c, http.StatusForbidden, http.StatusForbidden, response.ErrCodeForbidden, "forbidden")
 			return
 		}
-		tenantID = *u.TenantID
+		tenantID = *u.WorkspaceID
 	} else {
-		id, err := uuid.Parse(c.Query("tenant_id"))
+		id, err := uuid.Parse(c.Query("workspace_id"))
 		if err != nil {
-			response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid tenant_id")
+			response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid workspace_id")
 			return
 		}
 		tenantID = id
@@ -519,15 +519,15 @@ func (h *AlertHandler) StatsByRule(c *gin.Context) {
 		if !ok {
 			return
 		}
-		if u.TenantID == nil {
+		if u.WorkspaceID == nil {
 			response.Error(c, http.StatusForbidden, http.StatusForbidden, response.ErrCodeForbidden, "forbidden")
 			return
 		}
-		tenantID = *u.TenantID
+		tenantID = *u.WorkspaceID
 	} else {
-		id, err := uuid.Parse(c.Query("tenant_id"))
+		id, err := uuid.Parse(c.Query("workspace_id"))
 		if err != nil {
-			response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid tenant_id")
+			response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid workspace_id")
 			return
 		}
 		tenantID = id
@@ -568,7 +568,7 @@ func (h *AlertHandler) handleErr(c *gin.Context, err error) {
 		errors.Is(err, service.ErrAlertEventNotFound),
 		errors.Is(err, service.ErrChannelNotFound):
 		response.Error(c, http.StatusNotFound, http.StatusNotFound, response.ErrCodeNotFound, err.Error())
-	case errors.Is(err, service.ErrTenantNotFound):
+	case errors.Is(err, service.ErrWorkspaceNotFound):
 		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeTenantNotFound, err.Error())
 	case errors.Is(err, service.ErrRuleNameRequired),
 		errors.Is(err, service.ErrInvalidRuleType),

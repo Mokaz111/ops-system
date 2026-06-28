@@ -34,32 +34,16 @@ export interface User {
   display_name?: string;
   email?: string;
   phone?: string;
-  role: 'admin' | 'user' | 'platform_admin' | 'tenant_admin' | 'editor' | 'viewer' | 'alert_admin' | string;
-  dept_id?: string | null;
-  tenant_id?: string | null;
+  role: 'admin' | 'user' | string;
+  workspace_id?: string | null;
   status: string;
   created_at: string;
   updated_at: string;
 }
 
-export interface Department {
+export interface Workspace {
   id: string;
-  dept_name: string;
-  parent_id: string | null;
-  leader_id: string | null;
-  leader_name?: string;
-  sort_order: number;
-  status: string;
-  children?: Department[];
-  created_at: string;
-  updated_at: string;
-}
-
-export interface Tenant {
-  id: string;
-  tenant_name: string;
-  dept_id: string;
-  dept_name?: string;
+  workspace_name: string;
   slug?: string;
   vmuser_id: string;
   vmuser_key: string;
@@ -80,12 +64,12 @@ export interface Tenant {
 
 export interface Instance {
   id: string;
-  tenant_id: string;
-  tenant_name?: string;
+  workspace_id: string;
+  workspace_name?: string;
   cluster_id?: string | null;
   zone_id?: string | null;
   instance_name: string;
-  instance_type: 'metrics' | 'logs' | 'visual' | 'alert';
+  instance_type: 'metrics' | 'logs' | 'alert';
   template_type: 'shared' | 'dedicated_single' | 'dedicated_cluster';
   release_name: string;
   namespace: string;
@@ -105,16 +89,15 @@ export interface InstanceSpec {
   replicas?: number;
 }
 
-export interface CreateTenantRequest {
-  tenant_name: string;
-  dept_id: string;
+export interface CreateWorkspaceRequest {
+  workspace_name: string;
   template_type: string;
   quota_config?: string;
   grafana_instance_id?: string;
 }
 
 export interface CreateInstanceRequest {
-  tenant_id?: string;
+  workspace_id?: string;
   cluster_id?: string;
   zone_id?: string;
   instance_name: string;
@@ -180,7 +163,7 @@ export interface GrafanaHealthStatus {
   message?: string;
 }
 
-export interface TenantMetrics {
+export interface WorkspaceMetrics {
   cpu_usage_percent: number;
   memory_usage_percent: number;
   series_count: number;
@@ -197,7 +180,7 @@ export interface InstanceMetrics {
 
 export interface AlertRule {
   id: string;
-  tenant_id: string;
+  workspace_id: string;
   rule_name: string;
   rule_type: 'metrics' | 'logs' | string;
   query: string;
@@ -214,7 +197,7 @@ export interface AlertRule {
 }
 
 export interface CreateAlertRuleRequest {
-  tenant_id: string;
+  workspace_id: string;
   rule_name: string;
   rule_type: string;
   query: string;
@@ -227,7 +210,7 @@ export interface CreateAlertRuleRequest {
 
 export interface AlertEvent {
   id: string;
-  tenant_id: string;
+  workspace_id: string;
   rule_id: string;
   rule_name: string;
   level: string;

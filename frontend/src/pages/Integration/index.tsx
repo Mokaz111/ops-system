@@ -223,7 +223,7 @@ export default function IntegrationPage() {
   const applicableGrafanaHosts = useMemo(() => {
     if (!targetInstance) return grafanaHosts;
     return grafanaHosts.filter(
-      (h) => h.scope === 'platform' || (h.scope === 'tenant' && h.tenant_id === targetInstance.tenant_id),
+      (h) => h.source === 'platform' || (h.source === 'tenant' && h.workspace_id === targetInstance.workspace_id),
     );
   }, [grafanaHosts, targetInstance]);
 
@@ -238,7 +238,7 @@ export default function IntegrationPage() {
         template_id: selected.id,
         template_version: currentVersion.version,
         instance_id: targetInstance.id,
-        tenant_id: targetInstance.tenant_id,
+        workspace_id: targetInstance.workspace_id,
         grafana_instance_id: grafanaHostId || undefined,
         values,
       });
@@ -263,7 +263,7 @@ export default function IntegrationPage() {
         template_id: selected.id,
         template_version: currentVersion.version,
         instance_id: targetInstance.id,
-        tenant_id: targetInstance.tenant_id,
+        workspace_id: targetInstance.workspace_id,
         grafana_instance_id: grafanaHostId || undefined,
         values,
         force,
@@ -512,7 +512,7 @@ export default function IntegrationPage() {
                   <MenuItem value="">使用平台默认 Grafana</MenuItem>
                   {applicableGrafanaHosts.map((h) => (
                     <MenuItem key={h.id} value={h.id}>
-                      [{h.scope === 'platform' ? '平台' : '租户'}] {h.name}
+                      [{h.source === 'platform' ? '平台' : '工作空间'}] {h.name}
                     </MenuItem>
                   ))}
                 </Select>

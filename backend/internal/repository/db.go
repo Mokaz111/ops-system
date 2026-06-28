@@ -70,9 +70,7 @@ func NewPostgres(cfg *config.Config, log *zap.Logger) (*gorm.DB, error) {
 // 这里用 DROP INDEX IF EXISTS 让执行幂等（postgres 方言），首次升级后变成 no-op。
 func dropLegacyUniqueIndexes(db *gorm.DB) error {
 	legacy := []string{
-		"uni_ops_tenants_dept_id",
-		"uni_ops_tenants_vm_user_id",
-		"uni_ops_departments_tenant_id",
+		"uni_ops_workspaces_vm_user_id",
 		"uni_ops_users_username",
 		"uni_ops_clusters_name",
 		"uni_ops_integration_templates_name",
@@ -91,12 +89,8 @@ func AutoMigrate(db *gorm.DB) error {
 		return err
 	}
 	return db.AutoMigrate(
-		&model.Department{},
-		&model.Tenant{},
-		&model.TenantMember{},
+		&model.Workspace{},
 		&model.User{},
-		&model.ServiceAccount{},
-		&model.APIToken{},
 		&model.VMCluster{},
 		&model.VMRoute{},
 		&model.Datasource{},

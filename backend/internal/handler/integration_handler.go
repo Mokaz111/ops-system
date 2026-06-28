@@ -211,7 +211,7 @@ func (h *IntegrationHandler) Install(c *gin.Context) {
 		return
 	}
 	// 非 admin 只能在自己的 tenant 下安装。
-	if !assertTenantAccess(c, h.userSvc, body.TenantID) {
+	if !assertWorkspaceAccess(c, h.userSvc, body.TenantID) {
 		return
 	}
 	m, err := h.installSvc.Install(c.Request.Context(), u.Username, &body)
@@ -225,7 +225,7 @@ func (h *IntegrationHandler) Install(c *gin.Context) {
 // InstallPlan POST /api/v1/integrations/install/plan
 // Plan 和 Install 共用 InstallRequest，同样要校验租户。
 func (h *IntegrationHandler) installPlanTenantGuard(c *gin.Context, body *service.InstallRequest) bool {
-	return assertTenantAccess(c, h.userSvc, body.TenantID)
+	return assertWorkspaceAccess(c, h.userSvc, body.TenantID)
 }
 
 // ListInstallations GET /api/v1/integrations/installations
@@ -234,7 +234,7 @@ func (h *IntegrationHandler) ListInstallations(c *gin.Context) {
 	if !ok {
 		return
 	}
-	scope, ok := resolveTenantScope(c, h.userSvc)
+	scope, ok := resolveWorkspaceScope(c, h.userSvc)
 	if !ok {
 		return
 	}
@@ -277,7 +277,7 @@ func (h *IntegrationHandler) GetInstallation(c *gin.Context) {
 		h.handleErr(c, err)
 		return
 	}
-	if !assertTenantAccess(c, h.userSvc, m.TenantID) {
+	if !assertWorkspaceAccess(c, h.userSvc, m.TenantID) {
 		return
 	}
 	response.JSON(c, m)
@@ -296,7 +296,7 @@ func (h *IntegrationHandler) ListInstallationRevisions(c *gin.Context) {
 		h.handleErr(c, err)
 		return
 	}
-	if !assertTenantAccess(c, h.userSvc, m.TenantID) {
+	if !assertWorkspaceAccess(c, h.userSvc, m.TenantID) {
 		return
 	}
 	list, err := h.installSvc.ListRevisions(c.Request.Context(), id)
@@ -323,7 +323,7 @@ func (h *IntegrationHandler) Uninstall(c *gin.Context) {
 		h.handleErr(c, err)
 		return
 	}
-	if !assertTenantAccess(c, h.userSvc, m.TenantID) {
+	if !assertWorkspaceAccess(c, h.userSvc, m.TenantID) {
 		return
 	}
 	if err := h.installSvc.Uninstall(c.Request.Context(), id, u.Username); err != nil {

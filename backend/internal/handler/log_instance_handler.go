@@ -27,7 +27,7 @@ func (h *LogInstanceHandler) List(c *gin.Context) {
 	if !ok {
 		return
 	}
-	tenantID, ok := resolveTenantScope(c, h.userSvc)
+	tenantID, ok := resolveWorkspaceScope(c, h.userSvc)
 	if !ok {
 		return
 	}
@@ -52,7 +52,7 @@ func (h *LogInstanceHandler) Get(c *gin.Context) {
 		h.handleErr(c, err)
 		return
 	}
-	if !assertTenantAccess(c, h.userSvc, m.TenantID) {
+	if !assertWorkspaceAccess(c, h.userSvc, m.TenantID) {
 		return
 	}
 	response.JSON(c, m)
@@ -121,7 +121,7 @@ func (h *LogInstanceHandler) Query(c *gin.Context) {
 		h.handleErr(c, err)
 		return
 	}
-	if !assertTenantAccess(c, h.userSvc, m.TenantID) {
+	if !assertWorkspaceAccess(c, h.userSvc, m.TenantID) {
 		return
 	}
 	response.JSON(c, gin.H{

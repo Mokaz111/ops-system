@@ -159,6 +159,8 @@ type GrafanaConfig struct {
 	AdminUser           string `mapstructure:"admin_user"`
 	AdminPassword       string `mapstructure:"admin_password"`
 	HTTPTimeoutSeconds  int    `mapstructure:"http_timeout_seconds"`
+	// MaxRetries 写操作对 5xx/网络错误的最大重试次数（默认 2），指数退避。
+	MaxRetries int `mapstructure:"max_retries"`
 	// PrometheusDatasourceURL 租户组织内默认 Prometheus 数据源（如 VM select）。
 	PrometheusDatasourceURL string `mapstructure:"prometheus_datasource_url"`
 	// OrgNamePrefix 若非空，组织名 = 前缀 + vmuser_id，否则使用租户名。

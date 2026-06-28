@@ -10,7 +10,6 @@ import {
   Typography,
 } from '@mui/material';
 import HomeOutlinedIcon from '@mui/icons-material/HomeOutlined';
-import BusinessOutlinedIcon from '@mui/icons-material/BusinessOutlined';
 import GroupsOutlinedIcon from '@mui/icons-material/GroupsOutlined';
 import StorageOutlinedIcon from '@mui/icons-material/StorageOutlined';
 import BarChartOutlinedIcon from '@mui/icons-material/BarChartOutlined';
@@ -19,7 +18,6 @@ import SettingsOutlinedIcon from '@mui/icons-material/SettingsOutlined';
 import ExtensionOutlinedIcon from '@mui/icons-material/ExtensionOutlined';
 import DataUsageOutlinedIcon from '@mui/icons-material/DataUsageOutlined';
 import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined';
-import GridViewOutlinedIcon from '@mui/icons-material/GridViewOutlined';
 import HubOutlinedIcon from '@mui/icons-material/HubOutlined';
 import VisibilityOutlinedIcon from '@mui/icons-material/VisibilityOutlined';
 import LanguageOutlinedIcon from '@mui/icons-material/LanguageOutlined';
@@ -31,7 +29,6 @@ const DRAWER_WIDTH = 256;
 
 const iconMap: Record<AppRouteKey, React.ReactNode> = {
   dashboard: <HomeOutlinedIcon />,
-  'dashboard-mgmt': <GridViewOutlinedIcon />,
   integrations: <ExtensionOutlinedIcon />,
   metrics: <DataUsageOutlinedIcon />,
   instances: <StorageOutlinedIcon />,
@@ -42,12 +39,9 @@ const iconMap: Record<AppRouteKey, React.ReactNode> = {
   'business-clusters': <DnsOutlinedIcon />,
   'grafana-instances': <VisibilityOutlinedIcon />,
   'grafana-instance-detail': <VisibilityOutlinedIcon />,
-  'grafana-hosts': <VisibilityOutlinedIcon />,
-  grafana: <BarChartOutlinedIcon />,
   stats: <BarChartOutlinedIcon />,
   alerts: <BarChartOutlinedIcon />,
-  departments: <BusinessOutlinedIcon />,
-  tenants: <GroupsOutlinedIcon />,
+  workspaces: <GroupsOutlinedIcon />,
   users: <PeopleOutlinedIcon />,
   zones: <LanguageOutlinedIcon />,
   clusters: <HubOutlinedIcon />,

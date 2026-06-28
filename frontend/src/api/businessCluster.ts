@@ -4,7 +4,7 @@ import type { ApiResponse, PaginatedResponse, PaginationParams } from '../types/
 
 export interface BusinessCluster {
   id: string;
-  tenant_id: string;
+  workspace_id: string;
   instance_id: string;
   name: string;
   display_name: string;
@@ -26,7 +26,7 @@ export interface CreateBusinessClusterRequest {
 
 export const businessClusterAPI = {
   list: (
-    params?: PaginationParams & { tenant_id?: string; instance_id?: string },
+    params?: PaginationParams & { workspace_id?: string; instance_id?: string },
     config?: AxiosRequestConfig,
   ) =>
     api.get<ApiResponse<PaginatedResponse<BusinessCluster>>>('/business-clusters', { ...config, params }),

@@ -9,12 +9,12 @@ import (
 	"go.uber.org/zap"
 )
 
-// SyncTenantOnCreate 创建 N9E 团队、同步管理员用户、注册数据源；成功时写入 t.N9ETeamID。
-func (c *Client) SyncTenantOnCreate(ctx context.Context, t *model.Tenant) error {
+// SyncWorkspaceOnCreate 创建 N9E 团队、同步管理员用户、注册数据源；成功时写入 t.N9ETeamID。
+func (c *Client) SyncWorkspaceOnCreate(ctx context.Context, t *model.Workspace) error {
 	if c == nil || !c.Enabled() || t == nil {
 		return nil
 	}
-	teamID, err := c.CreateTeam(ctx, t.TenantName, "platform tenant "+t.ID.String())
+	teamID, err := c.CreateTeam(ctx, t.WorkspaceName, "platform tenant "+t.ID.String())
 	if err != nil {
 		c.log.Warn("n9e_create_team_failed", zap.String("tenant_id", t.ID.String()), zap.Error(err))
 		return err
@@ -36,8 +36,8 @@ func (c *Client) SyncTenantOnCreate(ctx context.Context, t *model.Tenant) error 
 	return nil
 }
 
-// SyncTenantOnDelete 删除 N9E 团队（幂等）。
-func (c *Client) SyncTenantOnDelete(ctx context.Context, t *model.Tenant) {
+// SyncWorkspaceOnDelete 删除 N9E 团队（幂等）。
+func (c *Client) SyncWorkspaceOnDelete(ctx context.Context, t *model.Workspace) {
 	if c == nil || !c.Enabled() || t == nil || t.N9ETeamID <= 0 {
 		return
 	}

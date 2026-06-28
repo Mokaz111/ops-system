@@ -7,11 +7,11 @@ import (
 	"ops-system/backend/internal/model"
 )
 
-func TestRouteBuilderBuildTenantRoutes(t *testing.T) {
+func TestRouteBuilderBuildWorkspaceRoutes(t *testing.T) {
 	builder := NewRouteBuilder(&config.VMConfig{VMAuthBaseURL: "http://vm-auth:8427/"})
-	tenant := &model.Tenant{VMUserID: "vmuser-test"}
+	tenant := &model.Workspace{VMUserID: "vmuser-test"}
 
-	routes := builder.BuildTenantRoutes(tenant)
+	routes := builder.BuildWorkspaceRoutes(tenant)
 	if routes.InsertURL != "http://vm-auth:8427/insert/vmuser-test" {
 		t.Fatalf("unexpected insert url: %s", routes.InsertURL)
 	}

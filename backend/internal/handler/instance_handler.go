@@ -28,7 +28,7 @@ func NewInstanceHandler(svc *service.InstanceService, scaleSvc *service.ScaleSer
 
 type instanceResp struct {
 	ID                uuid.UUID  `json:"id"`
-	TenantID          uuid.UUID  `json:"tenant_id"`
+	WorkspaceID       uuid.UUID  `json:"workspace_id"`
 	ZoneID            *uuid.UUID `json:"zone_id,omitempty"`
 	ClusterID         *uuid.UUID `json:"cluster_id,omitempty"`
 	InstanceName      string     `json:"instance_name"`
@@ -47,7 +47,7 @@ type instanceResp struct {
 func toInstanceResp(i *model.Instance) instanceResp {
 	return instanceResp{
 		ID:                i.ID,
-		TenantID:          i.TenantID,
+		WorkspaceID:       i.TenantID,
 		ZoneID:            i.ZoneID,
 		ClusterID:         i.ClusterID,
 		InstanceName:      i.InstanceName,
@@ -65,7 +65,7 @@ func toInstanceResp(i *model.Instance) instanceResp {
 }
 
 type createInstanceBody struct {
-	TenantID          *uuid.UUID `json:"tenant_id"`
+	WorkspaceID       *uuid.UUID `json:"workspace_id"`
 	ClusterID         *uuid.UUID `json:"cluster_id"`
 	ZoneID            *uuid.UUID `json:"zone_id"`
 	InstanceName      string     `json:"instance_name" binding:"required"`
@@ -87,14 +87,14 @@ func (h *InstanceHandler) List(c *gin.Context) {
 		if !ok {
 			return
 		}
-		if u.TenantID == nil {
-			if s := c.Query("tenant_id"); s != "" {
+		if u.WorkspaceID == nil {
+			if s := c.Query("workspace_id"); s != "" {
 				id, err := uuid.Parse(s)
 				if err != nil {
-					response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid tenant_id")
+					response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid workspace_id")
 					return
 				}
-				allowed, err := h.userSvc.CanAccessTenant(c.Request.Context(), u.ID, id, "read")
+				allowed, err := h.userSvc.CanAccessWorkspace(c.Request.Context(), u.ID, id, "read")
 				if err != nil || !allowed {
 					response.Error(c, http.StatusForbidden, http.StatusForbidden, response.ErrCodeForbidden, "forbidden")
 					return
@@ -105,12 +105,12 @@ func (h *InstanceHandler) List(c *gin.Context) {
 				return
 			}
 		} else {
-			tenantID = u.TenantID
+			tenantID = u.WorkspaceID
 		}
-	} else if s := c.Query("tenant_id"); s != "" {
+	} else if s := c.Query("workspace_id"); s != "" {
 		id, err := uuid.Parse(s)
 		if err != nil {
-			response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid tenant_id")
+			response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid workspace_id")
 			return
 		}
 		tenantID = &id
@@ -144,7 +144,7 @@ func (h *InstanceHandler) Create(c *gin.Context) {
 		return
 	}
 	inst, err := h.svc.Create(c.Request.Context(), &service.CreateInstanceRequest{
-		TenantID:          body.TenantID,
+		TenantID:          body.WorkspaceID,
 		ClusterID:         body.ClusterID,
 		ZoneID:            body.ZoneID,
 		InstanceName:      body.InstanceName,
@@ -172,7 +172,7 @@ func (h *InstanceHandler) Get(c *gin.Context) {
 		h.handleErr(c, err)
 		return
 	}
-	if !assertTenantAccess(c, h.userSvc, inst.TenantID) {
+	if !assertWorkspaceAccess(c, h.userSvc, inst.TenantID) {
 		return
 	}
 	response.JSON(c, toInstanceResp(inst))
@@ -182,7 +182,7 @@ type updateInstanceBody struct {
 	InstanceName      string     `json:"instance_name"`
 	Spec              string     `json:"spec"`
 	Status            string     `json:"status"`
-	TenantID          *uuid.UUID `json:"tenant_id"`
+	WorkspaceID       *uuid.UUID `json:"workspace_id"`
 	GrafanaInstanceID *uuid.UUID `json:"grafana_instance_id"`
 }
 
@@ -202,7 +202,7 @@ func (h *InstanceHandler) Update(c *gin.Context) {
 		InstanceName:      body.InstanceName,
 		Spec:              body.Spec,
 		Status:            body.Status,
-		TenantID:          body.TenantID,
+		TenantID:          body.WorkspaceID,
 		GrafanaInstanceID: body.GrafanaInstanceID,
 	})
 	if err != nil {
@@ -277,7 +277,7 @@ func (h *InstanceHandler) ListScaleEvents(c *gin.Context) {
 		h.handleErr(c, err)
 		return
 	}
-	if !assertTenantAccess(c, h.userSvc, inst.TenantID) {
+	if !assertWorkspaceAccess(c, h.userSvc, inst.TenantID) {
 		return
 	}
 	page, ps, ok := parsePageAndSize(c, 20)
@@ -335,7 +335,7 @@ func (h *InstanceHandler) Metrics(c *gin.Context) {
 		h.handleErr(c, err)
 		return
 	}
-	if !assertTenantAccess(c, h.userSvc, inst.TenantID) {
+	if !assertWorkspaceAccess(c, h.userSvc, inst.TenantID) {
 		return
 	}
 
@@ -347,8 +347,9 @@ func (h *InstanceHandler) Metrics(c *gin.Context) {
 	response.JSON(c, m)
 }
 
-// LoginGrafana POST /api/v1/instances/:id/login
-func (h *InstanceHandler) LoginGrafana(c *gin.Context) {
+// Login POST /api/v1/instances/:id/login
+// 平台实例通过关联的 GrafanaInstanceID 设置代理 Cookie，支持 ?redirect= 指定跳转子路径。
+func (h *InstanceHandler) Login(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
 		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid id")
@@ -359,25 +360,22 @@ func (h *InstanceHandler) LoginGrafana(c *gin.Context) {
 		h.handleErr(c, err)
 		return
 	}
-
-	// 解析目标 Grafana 实例 ID。
-	var grafanaInstanceID uuid.UUID
-
-	if inst.GrafanaInstanceID != nil {
-		grafanaInstanceID = *inst.GrafanaInstanceID
-	} else {
-		grafanaInstances, _, err := h.grafanaInstanceSvc.List(c.Request.Context(), "platform", nil, 1, 1)
-		if err != nil || len(grafanaInstances) == 0 {
-			response.Error(c, http.StatusNotFound, http.StatusNotFound, response.ErrCodeNotFound, "no grafana instance configured")
-			return
-		}
-		grafanaInstanceID = grafanaInstances[0].ID
+	if inst.GrafanaInstanceID == nil {
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "instance has no associated grafana instance")
+		return
 	}
-
-	// Set cookie so the reverse proxy knows which Grafana instance to target.
-	c.SetCookie("grafana_proxy_instance", grafanaInstanceID.String(), 86400, "/api/v1/grafana/proxy", "", false, true)
+	gi, err := h.grafanaInstanceSvc.Get(c.Request.Context(), *inst.GrafanaInstanceID)
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, http.StatusInternalServerError, response.ErrCodeInternal, "failed to resolve grafana instance")
+		return
+	}
+	if gi.URL == "" {
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "grafana url not configured")
+		return
+	}
+	setGrafanaProxyCookie(c, *inst.GrafanaInstanceID)
 	response.JSON(c, gin.H{
-		"proxyUrl": "/api/v1/grafana/proxy/",
+		"proxyUrl": buildGrafanaProxyURL(c.Query("redirect")),
 	})
 }
 
@@ -387,7 +385,7 @@ func (h *InstanceHandler) handleErr(c *gin.Context, err error) {
 		response.Error(c, http.StatusNotFound, http.StatusNotFound, response.ErrCodeInstanceNotFound, err.Error())
 	case errors.Is(err, service.ErrScaleInstanceNotFound):
 		response.Error(c, http.StatusNotFound, http.StatusNotFound, response.ErrCodeScaleInstanceNotFound, err.Error())
-	case errors.Is(err, service.ErrTenantNotFoundForInstance):
+	case errors.Is(err, service.ErrWorkspaceNotFoundForInstance):
 		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeTenantNotFoundForInstance, err.Error())
 	case errors.Is(err, service.ErrInstanceNameRequired),
 		errors.Is(err, service.ErrInvalidInstanceType),

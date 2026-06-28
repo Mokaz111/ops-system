@@ -9,12 +9,12 @@ import (
 	"go.uber.org/zap"
 )
 
-// SyncTenantOnCreate 创建 Grafana 组织并可选数据源；成功时写入 t.GrafanaOrgID。
-func (c *Client) SyncTenantOnCreate(ctx context.Context, t *model.Tenant) error {
+// SyncWorkspaceOnCreate 创建 Grafana 组织并可选数据源；成功时写入 t.GrafanaOrgID。
+func (c *Client) SyncWorkspaceOnCreate(ctx context.Context, t *model.Workspace) error {
 	if c == nil || !c.Enabled() || t == nil {
 		return nil
 	}
-	name := t.TenantName
+	name := t.WorkspaceName
 	if c.cfg != nil && strings.TrimSpace(c.cfg.OrgNamePrefix) != "" {
 		name = strings.TrimSpace(c.cfg.OrgNamePrefix) + t.VMUserID
 	}
@@ -32,8 +32,8 @@ func (c *Client) SyncTenantOnCreate(ctx context.Context, t *model.Tenant) error 
 	return nil
 }
 
-// SyncTenantOnDelete 删除 Grafana 组织。
-func (c *Client) SyncTenantOnDelete(ctx context.Context, t *model.Tenant) error {
+// SyncWorkspaceOnDelete 删除 Grafana 组织。
+func (c *Client) SyncWorkspaceOnDelete(ctx context.Context, t *model.Workspace) error {
 	if c == nil || !c.Enabled() || t == nil || t.GrafanaOrgID <= 0 {
 		return nil
 	}

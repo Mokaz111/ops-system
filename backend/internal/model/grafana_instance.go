@@ -7,12 +7,12 @@ import (
 	"gorm.io/gorm"
 )
 
-// GrafanaInstance Grafana 纳管实例注册表（平台共享 or 租户自带）。
+// GrafanaInstance Grafana 实例连接信息（平台统一管理）。
+// source: platform（Zone 自动部署）/ external（管理员手动登记）。
 type GrafanaInstance struct {
 	ID            uuid.UUID      `json:"id" gorm:"type:uuid;primaryKey"`
 	Name          string         `json:"name" gorm:"type:varchar(255);not null"`
-	Scope         string         `json:"scope" gorm:"type:varchar(20);index"` // platform / tenant
-	TenantID      *uuid.UUID     `json:"tenant_id" gorm:"type:uuid;index"`
+	Source        string         `json:"source" gorm:"type:varchar(20);default:external;index"` // platform / external
 	ZoneID        *uuid.UUID     `json:"zone_id" gorm:"type:uuid;index"`
 	URL           string         `json:"url" gorm:"type:varchar(500)"`
 	AdminUser     string         `json:"admin_user" gorm:"type:varchar(100)"`

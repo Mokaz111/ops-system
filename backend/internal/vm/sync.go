@@ -54,14 +54,14 @@ func (s *SyncService) InsertURL(vmuserID string) string {
 type syncPayload struct {
 	Event       string `json:"event"`
 	TenantID    string `json:"tenant_id"`
-	TenantName  string `json:"tenant_name"`
+	TenantName  string `json:"workspace_name"`
 	VMUserID    string `json:"vmuser_id"`
 	VMUserKey   string `json:"vmuser_key,omitempty"`
 	QuotaConfig string `json:"quota_config,omitempty"`
 }
 
-// OnTenantCreated 租户落库成功后调用。
-func (s *SyncService) OnTenantCreated(ctx context.Context, t *model.Tenant) error {
+// OnWorkspaceCreated 租户落库成功后调用。
+func (s *SyncService) OnWorkspaceCreated(ctx context.Context, t *model.Workspace) error {
 	if s == nil || t == nil {
 		return nil
 	}
@@ -71,7 +71,7 @@ func (s *SyncService) OnTenantCreated(ctx context.Context, t *model.Tenant) erro
 	body := syncPayload{
 		Event:       "tenant.created",
 		TenantID:    t.ID.String(),
-		TenantName:  t.TenantName,
+		TenantName:  t.WorkspaceName,
 		VMUserID:    t.VMUserID,
 		VMUserKey:   t.VMUserKey,
 		QuotaConfig: t.QuotaConfig,
@@ -84,8 +84,8 @@ func (s *SyncService) OnTenantCreated(ctx context.Context, t *model.Tenant) erro
 	return nil
 }
 
-// OnTenantDeleted 删除租户前调用。
-func (s *SyncService) OnTenantDeleted(ctx context.Context, t *model.Tenant) error {
+// OnWorkspaceDeleted 删除租户前调用。
+func (s *SyncService) OnWorkspaceDeleted(ctx context.Context, t *model.Workspace) error {
 	if s == nil || t == nil {
 		return nil
 	}
@@ -95,7 +95,7 @@ func (s *SyncService) OnTenantDeleted(ctx context.Context, t *model.Tenant) erro
 	body := syncPayload{
 		Event:      "tenant.deleted",
 		TenantID:   t.ID.String(),
-		TenantName: t.TenantName,
+		TenantName: t.WorkspaceName,
 		VMUserID:   t.VMUserID,
 	}
 	if err := s.postWebhook(ctx, body); err != nil {

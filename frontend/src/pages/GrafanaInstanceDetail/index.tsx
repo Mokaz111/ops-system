@@ -47,10 +47,11 @@ import ConfirmDialog from '../../components/common/ConfirmDialog';
 import { instanceAPI } from '../../api/instance';
 import { grafanaAPI } from '../../api/grafana';
 import { grafanaInstanceAPI, type GrafanaInstance } from '../../api/grafanaInstance';
-import { ssoLoginToGrafana } from '../../api/grafanaSso';
+import { ssoLoginToGrafana, ssoLoginAndRedirect } from '../../api/grafanaSso';
 import { extractApiError } from '../../api';
 import type { Instance, GrafanaDashboard, GrafanaDatasource, GrafanaOrg, GrafanaOrgUser } from '../../types/api';
 import { parseSpec } from '../../utils/instance';
+import { useAuthStore } from '../../stores/useAuthStore';
 
 export default function GrafanaInstanceDetailPage() {
   const navigate = useNavigate();
@@ -59,6 +60,8 @@ export default function GrafanaInstanceDetailPage() {
   const [activeTab, setActiveTab] = useState('base');
   const [searchParams] = useSearchParams();
   const isManaged = searchParams.get('type') === 'managed';
+  const { user } = useAuthStore();
+  const isAdmin = user?.role === 'admin';
 
   // ---- Instance / Managed Host ----
   const [loading, setLoading] = useState(true);
@@ -70,7 +73,7 @@ export default function GrafanaInstanceDetailPage() {
   const hostId = useMemo(() => {
     if (isManaged) return instanceId;
     if (instance?.grafana_instance_id) return instance.grafana_instance_id;
-    const platform = grafanaHosts.find((h) => h.scope === 'platform');
+    const platform = grafanaHosts.find((h) => h.source === 'platform');
     return platform?.id || '';
   }, [isManaged, instanceId, instance, grafanaHosts]);
 
@@ -279,7 +282,13 @@ export default function GrafanaInstanceDetailPage() {
       });
       enqueueSnackbar('实例更新成功', { variant: 'success' });
       setEditOpen(false);
-      window.location.reload();
+      // 局部刷新实例记录，替代 window.location.reload() 整页刷新。
+      try {
+        const { data: res } = await instanceAPI.get(instance.id);
+        setInstance(res.data || null);
+      } catch (err) {
+        enqueueSnackbar(extractApiError(err, '刷新实例详情失败'), { variant: 'error' });
+      }
     } catch (err) {
       enqueueSnackbar(extractApiError(err, '更新失败'), { variant: 'error' });
     } finally {
@@ -523,7 +532,7 @@ export default function GrafanaInstanceDetailPage() {
                     <>
                       <Grid size={{ xs: 6, md: 2 }}>
                         <Typography variant="body2" color="text.secondary">范围</Typography>
-                        <Typography variant="body2">{managedHost?.scope === 'platform' ? '平台共享' : '租户专属'}</Typography>
+                        <Typography variant="body2">{managedHost?.source === 'platform' ? '平台共享' : '工作空间专属'}</Typography>
                       </Grid>
                       <Grid size={{ xs: 6, md: 3 }}>
                         <Typography variant="body2" color="text.secondary">Grafana 地址</Typography>
@@ -655,7 +664,7 @@ export default function GrafanaInstanceDetailPage() {
               <Card sx={{ p: 2.5 }}>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
                   <Typography variant="subtitle2">组织管理</Typography>
-                  {hostId && (
+                  {hostId && isAdmin && (
                     <Button size="small" variant="contained" onClick={() => setCreateOrgOpen(true)}>
                       创建组织
                     </Button>
@@ -707,14 +716,16 @@ export default function GrafanaInstanceDetailPage() {
                         {orgs.find((o) => o.id === selectedOrgId)!.name} — 成员管理
                       </Typography>
                       <Box sx={{ display: 'flex', gap: 1 }}>
-                        <Button
-                          size="small"
-                          variant="outlined"
-                          startIcon={<PersonAddOutlinedIcon />}
-                          onClick={() => setAddUserOpen(true)}
-                        >
-                          添加用户
-                        </Button>
+                        {isAdmin && (
+                          <Button
+                            size="small"
+                            variant="outlined"
+                            startIcon={<PersonAddOutlinedIcon />}
+                            onClick={() => setAddUserOpen(true)}
+                          >
+                            添加用户
+                          </Button>
+                        )}
                         <Button size="small" onClick={() => setSelectedOrgId(null)}>关闭</Button>
                       </Box>
                     </Box>
@@ -774,7 +785,7 @@ export default function GrafanaInstanceDetailPage() {
                       </Select>
                     </FormControl>
                   </Box>
-                  {selectedOrgId && (
+                  {selectedOrgId && isAdmin && (
                     <Button
                       size="small"
                       variant="outlined"
@@ -812,7 +823,14 @@ export default function GrafanaInstanceDetailPage() {
                             </TableCell>
                             <TableCell align="right">
                               {db.url && (
-                                <IconButton size="small" component="a" href={db.url} target="_blank" rel="noopener noreferrer">
+                                <IconButton size="small" onClick={() => {
+                                  const loginFn = (redirect: string) => isManaged
+                                    ? grafanaInstanceAPI.login(instanceId, redirect)
+                                    : instanceAPI.login(instance!.id, redirect);
+                                  ssoLoginAndRedirect(loginFn, db.url).catch((err) =>
+                                    enqueueSnackbar(extractApiError(err, '打开 Dashboard 失败'), { variant: 'error' }),
+                                  );
+                                }}>
                                   <OpenInNewIcon fontSize="small" />
                                 </IconButton>
                               )}
@@ -848,7 +866,7 @@ export default function GrafanaInstanceDetailPage() {
                     </Grid>
                     <Grid size={{ xs: 12, md: 6 }}>
                       <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>范围</Typography>
-                      <Typography variant="body1">{managedHost?.scope === 'platform' ? '平台共享' : '租户专属'}</Typography>
+                      <Typography variant="body1">{managedHost?.source === 'platform' ? '平台共享' : '工作空间专属'}</Typography>
                     </Grid>
                     <Grid size={{ xs: 12, md: 6 }}>
                       <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>纳管主机名称</Typography>

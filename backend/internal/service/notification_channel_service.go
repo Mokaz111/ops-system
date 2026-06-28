@@ -46,16 +46,16 @@ type UpdateChannelRequest struct {
 // NotificationChannelService 通知渠道业务。
 type NotificationChannelService struct {
 	channelRepo *repository.NotificationChannelRepository
-	tenantRepo  *repository.TenantRepository
+	workspaceRepo  *repository.WorkspaceRepository
 	log         *zap.Logger
 }
 
 func NewNotificationChannelService(
 	channelRepo *repository.NotificationChannelRepository,
-	tenantRepo *repository.TenantRepository,
+	workspaceRepo *repository.WorkspaceRepository,
 	log *zap.Logger,
 ) *NotificationChannelService {
-	return &NotificationChannelService{channelRepo: channelRepo, tenantRepo: tenantRepo, log: log}
+	return &NotificationChannelService{channelRepo: channelRepo, workspaceRepo: workspaceRepo, log: log}
 }
 
 // Create 创建通知渠道。
@@ -67,12 +67,12 @@ func (s *NotificationChannelService) Create(ctx context.Context, req *CreateChan
 		return nil, ErrInvalidChannelType
 	}
 
-	t, err := s.tenantRepo.GetByID(ctx, req.TenantID)
+	t, err := s.workspaceRepo.GetByID(ctx, req.TenantID)
 	if err != nil {
 		return nil, err
 	}
 	if t == nil {
-		return nil, ErrTenantNotFound
+		return nil, ErrWorkspaceNotFound
 	}
 
 	ch := &model.NotificationChannel{

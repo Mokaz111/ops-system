@@ -11,46 +11,6 @@ import (
 	"gorm.io/gorm"
 )
 
-type TenantMemberRepository struct {
-	db *gorm.DB
-}
-
-func NewTenantMemberRepository(db *gorm.DB) *TenantMemberRepository {
-	return &TenantMemberRepository{db: db}
-}
-
-func (r *TenantMemberRepository) Upsert(ctx context.Context, m *model.TenantMember) error {
-	var existing model.TenantMember
-	err := r.db.WithContext(ctx).Where("tenant_id = ? AND user_id = ?", m.TenantID, m.UserID).First(&existing).Error
-	if err == nil {
-		existing.Role = m.Role
-		existing.Status = m.Status
-		return r.db.WithContext(ctx).Save(&existing).Error
-	}
-	if !errors.Is(err, gorm.ErrRecordNotFound) {
-		return err
-	}
-	return r.db.WithContext(ctx).Create(m).Error
-}
-
-func (r *TenantMemberRepository) GetActive(ctx context.Context, tenantID, userID uuid.UUID) (*model.TenantMember, error) {
-	var m model.TenantMember
-	err := r.db.WithContext(ctx).Where("tenant_id = ? AND user_id = ? AND status = ?", tenantID, userID, "active").First(&m).Error
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, nil
-		}
-		return nil, err
-	}
-	return &m, nil
-}
-
-func (r *TenantMemberRepository) ListByUser(ctx context.Context, userID uuid.UUID) ([]model.TenantMember, error) {
-	var rows []model.TenantMember
-	err := r.db.WithContext(ctx).Where("user_id = ? AND status = ?", userID, "active").Order("created_at DESC").Find(&rows).Error
-	return rows, err
-}
-
 type VMRouteRepository struct {
 	db *gorm.DB
 }

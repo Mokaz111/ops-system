@@ -62,7 +62,7 @@ export default function BusinessClusterPage() {
   const isAdmin = user?.role === 'admin' || user?.role === 'tenant_admin';
   const [searchParams] = useSearchParams();
 
-  const tenantFilter = searchParams.get('tenant_id') || '';
+  const tenantFilter = searchParams.get('workspace_id') || '';
   const instanceFilter = searchParams.get('instance_id') || '';
 
   const [clusters, setClusters] = useState<BusinessCluster[]>([]);
@@ -84,7 +84,7 @@ export default function BusinessClusterPage() {
         page: page + 1,
         page_size: pageSize,
         search,
-        tenant_id: tenantFilter || undefined,
+        workspace_id: tenantFilter || undefined,
         instance_id: instanceFilter || undefined,
       });
       setClusters(res.data?.items || []);
@@ -144,7 +144,7 @@ export default function BusinessClusterPage() {
     <Box>
       <PageHeader
         title="业务集群管理"
-        subtitle="管理租户接入的业务 Kubernetes 集群，通过 VMAgent CR 采集监控数据"
+        subtitle="管理工作空间接入的业务 Kubernetes 集群，通过 VMAgent CR 采集监控数据"
         actionLabel={isAdmin ? '接入业务集群' : undefined}
         onAction={isAdmin ? () => {
           setForm({ ...defaultForm, instance_id: instanceFilter });
@@ -154,7 +154,7 @@ export default function BusinessClusterPage() {
 
       {!isAdmin && (
         <Alert severity="info" sx={{ mb: 2 }}>
-          仅租户管理员可接入/移除业务集群。当前仅提供只读视图。
+          仅工作空间管理员可接入/移除业务集群。当前仅提供只读视图。
         </Alert>
       )}
 
@@ -232,7 +232,7 @@ export default function BusinessClusterPage() {
                   <TableCell colSpan={7}>
                     <EmptyState
                       title="暂无业务集群"
-                      description={isAdmin ? '点击右上角按钮接入第一个业务集群' : '当前租户下没有已接入的业务集群'}
+                      description={isAdmin ? '点击右上角按钮接入第一个业务集群' : '当前工作空间下没有已接入的业务集群'}
                     />
                   </TableCell>
                 </TableRow>
