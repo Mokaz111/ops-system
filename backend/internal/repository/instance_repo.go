@@ -17,6 +17,11 @@ func NewInstanceRepository(db *gorm.DB) *InstanceRepository {
 	return &InstanceRepository{db: db}
 }
 
+// Transaction 在数据库事务中执行 fn，fn 内的 DB 操作应使用传入的 tx。
+func (r *InstanceRepository) Transaction(ctx context.Context, fn func(tx *gorm.DB) error) error {
+	return r.db.WithContext(ctx).Transaction(fn)
+}
+
 func (r *InstanceRepository) Create(ctx context.Context, i *model.Instance) error {
 	return r.db.WithContext(ctx).Create(i).Error
 }
@@ -71,7 +76,7 @@ func (r *InstanceRepository) List(ctx context.Context, f InstanceListFilter) ([]
 	return list, total, err
 }
 
-func (r *InstanceRepository) CountByTenantID(ctx context.Context, tenantID uuid.UUID) (int64, error) {
+func (r *InstanceRepository) CountByWorkspaceID(ctx context.Context, tenantID uuid.UUID) (int64, error) {
 	var n int64
 	err := r.db.WithContext(ctx).Model(&model.Instance{}).Where("tenant_id = ?", tenantID).Count(&n).Error
 	return n, err

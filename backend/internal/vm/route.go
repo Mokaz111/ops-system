@@ -26,7 +26,7 @@ func NewRouteBuilder(cfg *config.VMConfig) *RouteBuilder {
 	return &RouteBuilder{baseURL: strings.TrimRight(strings.TrimSpace(base), "/")}
 }
 
-func (b *RouteBuilder) BuildTenantRoutes(t *model.Tenant) RouteSet {
+func (b *RouteBuilder) BuildWorkspaceRoutes(t *model.Workspace) RouteSet {
 	if t == nil {
 		return RouteSet{}
 	}

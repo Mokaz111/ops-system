@@ -52,18 +52,18 @@ func (c *QueryClient) Enabled() bool {
 	return c != nil && c.cfg != nil && strings.TrimSpace(c.cfg.VMAuthBaseURL) != ""
 }
 
-func (c *QueryClient) SelectURL(t *model.Tenant) string {
+func (c *QueryClient) SelectURL(t *model.Workspace) string {
 	if c == nil || t == nil {
 		return ""
 	}
 	if strings.TrimSpace(t.VMSelectURL) != "" {
 		return strings.TrimRight(t.VMSelectURL, "/")
 	}
-	routes := c.routes.BuildTenantRoutes(t)
+	routes := c.routes.BuildWorkspaceRoutes(t)
 	return routes.SelectURL
 }
 
-func (c *QueryClient) Query(ctx context.Context, t *model.Tenant, query string, ts *time.Time) (*QueryResult, error) {
+func (c *QueryClient) Query(ctx context.Context, t *model.Workspace, query string, ts *time.Time) (*QueryResult, error) {
 	v := url.Values{}
 	v.Set("query", query)
 	if ts != nil {
@@ -72,7 +72,7 @@ func (c *QueryClient) Query(ctx context.Context, t *model.Tenant, query string, 
 	return c.get(ctx, t, "/api/v1/query", v)
 }
 
-func (c *QueryClient) QueryRange(ctx context.Context, t *model.Tenant, query string, start, end time.Time, step time.Duration) (*QueryResult, error) {
+func (c *QueryClient) QueryRange(ctx context.Context, t *model.Workspace, query string, start, end time.Time, step time.Duration) (*QueryResult, error) {
 	if step <= 0 {
 		step = time.Minute
 	}
@@ -84,7 +84,7 @@ func (c *QueryClient) QueryRange(ctx context.Context, t *model.Tenant, query str
 	return c.get(ctx, t, "/api/v1/query_range", v)
 }
 
-func (c *QueryClient) Scalar(ctx context.Context, t *model.Tenant, query string) (float64, error) {
+func (c *QueryClient) Scalar(ctx context.Context, t *model.Workspace, query string) (float64, error) {
 	res, err := c.Query(ctx, t, query, nil)
 	if err != nil {
 		return 0, err
@@ -118,7 +118,7 @@ func (c *QueryClient) Scalar(ctx context.Context, t *model.Tenant, query string)
 	return v, nil
 }
 
-func (c *QueryClient) get(ctx context.Context, t *model.Tenant, path string, values url.Values) (*QueryResult, error) {
+func (c *QueryClient) get(ctx context.Context, t *model.Workspace, path string, values url.Values) (*QueryResult, error) {
 	if !c.Enabled() {
 		return nil, fmt.Errorf("victoriametrics query client disabled")
 	}
