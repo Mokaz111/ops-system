@@ -1,6 +1,6 @@
 # Frontend
 
-Ops System 前端控制台，基于 React + TypeScript + MUI，实现租户、实例、用户、告警集成、Grafana 管理与平台扩容页面。
+Ops System SaaS 可观测控制台：工作空间、监控/日志实例、接入中心、平台告警、业务集群采集配置、Grafana 与 Zone 管理。
 
 ## 环境要求
 
@@ -27,45 +27,40 @@ npm run preview
 ## 目录说明
 
 - `src/api`：接口封装（Axios）
-- `src/pages`：页面模块
-- `src/components`：布局与通用组件
-- `src/stores`：Zustand 状态管理
-- `src/types`：共享类型定义
+- `src/pages`：页面模块（含 `Alert/` 子域）
+- `src/components`：布局（Sidebar / WorkspaceSwitcher）与通用组件
+- `src/config/appRoutes.ts`：路由元数据 + **嵌套** `sidebarNav`
+- `src/stores`：`useAuthStore` / `useWorkspaceStore`
+- `src/utils/membership.ts`：工作空间成员角色
+- `src/types`：共享类型
 - `src/router.tsx`：路由定义
+
+## 信息架构（侧栏域）
+
+概览 · 接入中心 · 监控（监控实例 / 指标库 / Grafana）· 日志（查询 / 日志实例）· 链路追踪 · 告警（事件 / 规则 / 静默）· 资源（业务集群 / UModel）· 管理（工作空间 / 用户 / 可用区 / 审计 / 设置）
+
+文案统一：**监控实例 / 日志实例 / 工作空间**。
 
 ## 关键页面
 
-- `Dashboard`
-- `Department` / `Tenant` / `Instance`
-- `Alert`（N9E 集成视图）
-- `Grafana`
-- `PlatformScaling`（平台级扩容 + 变更历史审计）
-
-## 平台扩容页面能力
-
-- 历史列表：时间、操作者、目标、状态、来源 IP、错误信息
-- 筛选：目标、状态、操作者、开始时间、结束时间
-- 查看变更详情：查看每次操作的 `spec_patch`
-- 一键重置筛选
-
-## 系统设置页面能力
-
-- 共享集群初始化（admin）：支持 `vm/victoria-metrics-k8s-stack` 的 dry-run 与确认应用
+- `Dashboard`：概览 + 告警统计
+- `Workspace`：工作空间与成员
+- `Instance` / `InstanceDetail`：监控实例
+- `LogInstance` / `LogQuery`：日志
+- `Alert/{Events,Rules,Channels,Silences}`：平台告警（规则支持 YAML/Zip 导入）
+- `BusinessCluster`：业务集群 + **采集配置**
+- `UModel`：Entity / MetricSet / LogSet
+- `Integrations` / `Metrics` / `Grafana*` / `Zone` / `Audit` / `Settings`
+- `Trace`：占位
 
 ## 环境变量
 
-按项目实际 `.env` 配置为准，通常至少包含：
-
 - `VITE_API_BASE_URL`
 
-## 集群前端改版要点（2026-04）
+## 改版要点（SaaS IA）
 
-- 实例详情升级为路由页：`/instances/:instanceId`，支持直达访问与分享链接。
-- 实例管理页新增“接入数据概览”和类型快速筛选，列表操作统一为详情/监控/伸缩/删除。
-- 告警页支持实例上下文参数（`instance_id`、`instance_name`），便于从实例详情直接联动到 N9E。
-- 路由与侧栏导航统一由 `src/config/appRoutes.ts` 管理，减少菜单与路由双维护问题。
-- 新增可复用组件：
-  - `src/components/common/FilterToolbar.tsx`
-  - `src/components/common/DataTableCard.tsx`
-  - `src/components/common/DetailTabs.tsx`
-
+- 嵌套可折叠侧栏由 `sidebarNav` 单一来源驱动
+- TopBar `WorkspaceSwitcher` + `useWorkspaceStore`
+- 告警一等公民：事件 / 规则 / 静默；渠道为规则内链；不再依赖 N9E
+- 业务集群采集配置对话框（指标 + 日志）
+- 实例详情路由：`/instances/:instanceId`

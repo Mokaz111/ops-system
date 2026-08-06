@@ -100,7 +100,7 @@ func dropLegacyTables(db *gorm.DB) error {
 	return nil
 }
 
-// dropLegacyColumns 删除已废弃列。
+// dropLegacyColumns 删除已废弃列（表不存在时跳过，便于空库首次迁移）。
 func dropLegacyColumns(db *gorm.DB) error {
 	legacy := []struct {
 		table  string
@@ -110,6 +110,9 @@ func dropLegacyColumns(db *gorm.DB) error {
 		{"ops_users", "workspace_id"},
 	}
 	for _, item := range legacy {
+		if !db.Migrator().HasTable(item.table) {
+			continue
+		}
 		if err := db.Exec("ALTER TABLE "+item.table+" DROP COLUMN IF EXISTS "+item.column).Error; err != nil {
 			return fmt.Errorf("drop legacy column %s.%s: %w", item.table, item.column, err)
 		}
