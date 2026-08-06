@@ -17,6 +17,8 @@ type BusinessCluster struct {
 	Kubeconfig      string         `json:"-" gorm:"type:text"`
 	KubeconfigPath  string         `json:"kubeconfig_path" gorm:"type:varchar(500)"`
 	AgentStatus     string         `json:"agent_status" gorm:"type:varchar(20);default:pending"`
+	LogAgentStatus  string         `json:"log_agent_status" gorm:"type:varchar(20);default:pending"`
+	LogInstanceID   *uuid.UUID     `json:"log_instance_id" gorm:"type:uuid;index"`
 	Labels          string         `json:"labels" gorm:"type:jsonb;default:'{}'"`
 	CreatedAt       time.Time      `json:"created_at"`
 	UpdatedAt       time.Time      `json:"updated_at"`

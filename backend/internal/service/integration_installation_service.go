@@ -485,3 +485,129 @@ func (s *IntegrationInstallationService) ListRevisions(ctx context.Context, id u
 	}
 	return s.repo.ListRevisions(ctx, id)
 }
+
+// UpgradeRequest 升级安装请求。
+type UpgradeRequest struct {
+	TemplateVersion string            `json:"template_version" binding:"required"`
+	InstalledParts  []string          `json:"installed_parts"`
+	Values          map[string]string `json:"values"`
+	Force           bool              `json:"force"`
+}
+
+// Upgrade 升级已有安装到新的模板版本。
+func (s *IntegrationInstallationService) Upgrade(ctx context.Context, id uuid.UUID, operator string, req *UpgradeRequest) (*InstallResult, error) {
+	m, err := s.repo.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if m == nil {
+		return nil, ErrIntegrationInstallationNotFound
+	}
+	installReq := &InstallRequest{
+		TemplateID:        m.TemplateID,
+		TemplateVersion:   req.TemplateVersion,
+		InstanceID:        m.InstanceID,
+		TenantID:          m.TenantID,
+		GrafanaInstanceID: m.GrafanaInstanceID,
+		GrafanaOrgID:      m.GrafanaOrgID,
+		InstalledParts:    req.InstalledParts,
+		Values:            req.Values,
+		Force:             req.Force,
+	}
+	return s.Install(ctx, operator, installReq)
+}
+
+// Rollback 回滚到指定 revision（重放该 revision 的 values 并重新 apply）。
+func (s *IntegrationInstallationService) Rollback(ctx context.Context, id, revisionID uuid.UUID, operator string) (*InstallResult, error) {
+	m, err := s.repo.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if m == nil {
+		return nil, ErrIntegrationInstallationNotFound
+	}
+	rev, err := s.repo.GetRevisionByID(ctx, revisionID)
+	if err != nil {
+		return nil, err
+	}
+	if rev == nil || rev.InstallationID != id {
+		return nil, ErrIntegrationInstallationNotFound
+	}
+
+	values := map[string]string{}
+	if strings.TrimSpace(rev.SpecDiff) != "" {
+		if jErr := json.Unmarshal([]byte(rev.SpecDiff), &values); jErr != nil {
+			return nil, jErr
+		}
+	}
+
+	spec, _, _, err := s.loadSpec(ctx, m.TemplateID, rev.Version)
+	if err != nil {
+		return nil, err
+	}
+	installReq := &InstallRequest{
+		TemplateID:        m.TemplateID,
+		TemplateVersion:   rev.Version,
+		InstanceID:        m.InstanceID,
+		TenantID:          m.TenantID,
+		GrafanaInstanceID: m.GrafanaInstanceID,
+		GrafanaOrgID:      m.GrafanaOrgID,
+		Values:            values,
+		Force:             true,
+	}
+	renderCtx, err := s.buildRenderContext(ctx, installReq)
+	if err != nil {
+		return nil, err
+	}
+	rendered, err := s.renderer.Render(integration.RenderInput{
+		Spec:   spec,
+		Values: values,
+		Ctx:    renderCtx,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	applyOpts := integration.ApplyOptions{
+		DefaultNamespace:  renderCtx.Namespace,
+		GrafanaOrgID:      installReq.GrafanaOrgID,
+		GrafanaInstanceID: installReq.GrafanaInstanceID,
+		ClusterID:         s.lookupClusterID(ctx, installReq.InstanceID),
+	}
+	applied, applyErr := s.applier.Apply(ctx, rendered, applyOpts)
+	overallStatus, errorMsg := summarizeApply(s.applier, applied, applyErr)
+
+	valuesJSON := rev.SpecDiff
+	if valuesJSON == "" {
+		valuesJSON = "{}"
+	}
+	appliedJSON := "[]"
+	if b, mErr := json.Marshal(applied); mErr == nil {
+		appliedJSON = string(b)
+	}
+
+	m.TemplateVersion = rev.Version
+	m.InstalledParts = marshalJSONStringArray(collectParts(rendered))
+	m.Variables = valuesJSON
+	m.Status = overallStatus
+	m.InstalledBy = operator
+
+	rollbackRev := &model.IntegrationInstallationRevision{
+		Version:          rev.Version,
+		Action:           "rollback",
+		SpecDiff:         valuesJSON,
+		AppliedResources: appliedJSON,
+		Operator:         operator,
+		Status:           overallStatus,
+		ErrorMessage:     errorMsg,
+	}
+	if err := s.repo.UpdateWithRevision(ctx, m, rollbackRev); err != nil {
+		return nil, err
+	}
+	return &InstallResult{
+		Installation: m,
+		Rendered:     rendered,
+		Applied:      applied,
+		Status:       overallStatus,
+	}, applyErr
+}

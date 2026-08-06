@@ -3,7 +3,9 @@ import type { ApiResponse, PaginatedResponse, PaginationParams } from '../types/
 
 export interface LogInstance {
   id: string;
-  workspace_id: string;
+  tenant_id: string;
+  zone_id?: string;
+  backend_type: string;
   instance_name: string;
   release_name: string;
   namespace: string;
@@ -16,9 +18,20 @@ export interface LogInstance {
   updated_at: string;
 }
 
+export interface LogEntry {
+  time: string;
+  message: string;
+  fields?: Record<string, string>;
+}
+
+export interface LogQueryStats {
+  returned: number;
+  limit: number;
+}
+
 export interface LogQueryResult {
-  note?: string;
-  results: unknown[];
+  entries: LogEntry[];
+  stats: LogQueryStats;
 }
 
 export const logAPI = {
@@ -29,8 +42,10 @@ export const logAPI = {
     api.get<ApiResponse<LogInstance>>(`/log-instances/${id}`),
 
   create: (data: {
-    workspace_id: string;
+    tenant_id: string;
+    zone_id: string;
     instance_name: string;
+    backend_type?: string;
     namespace?: string;
     release_name?: string;
     retention_days?: number;
@@ -43,6 +58,6 @@ export const logAPI = {
   delete: (id: string) =>
     api.delete<ApiResponse<null>>(`/log-instances/${id}`),
 
-  query: (id: string, data: { query: string; start?: string; end?: string; limit?: number }) =>
+  query: (id: string, data: { query?: string; start?: string; end?: string; limit?: number }) =>
     api.post<ApiResponse<LogQueryResult>>(`/log-instances/${id}/query`, data),
 };

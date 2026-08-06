@@ -23,6 +23,7 @@ import {
   TableRow,
   TextField,
   Tooltip,
+  Typography,
 } from '@mui/material';
 import SearchIcon from '@mui/icons-material/Search';
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
@@ -34,9 +35,9 @@ import ConfirmDialog from '../../components/common/ConfirmDialog';
 import EmptyState from '../../components/common/EmptyState';
 import LoadingScreen from '../../components/common/LoadingScreen';
 import { userAPI } from '../../api/user';
-import { workspaceAPI } from '../../api/workspace';
 import { extractApiError } from '../../api';
-import type { Workspace, User } from '../../types/api';
+import { formatMemberships } from '../../utils/membership';
+import type { User } from '../../types/api';
 
 const roleLabels: Record<string, { label: string; color: 'primary' | 'secondary' | 'default' }> = {
   admin: { label: '管理员', color: 'primary' },
@@ -47,15 +48,12 @@ export default function UserPage() {
   const { enqueueSnackbar } = useSnackbar();
   type UserForm = {
     username: string;
-    display_name: string;
     email: string;
     phone: string;
     role: User['role'];
-    workspace_id: string;
     password: string;
   };
   const [users, setUsers] = useState<User[]>([]);
-  const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [loading, setLoading] = useState(true);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(0);
@@ -65,7 +63,7 @@ export default function UserPage() {
   const [deleteDialog, setDeleteDialog] = useState<{ open: boolean; user?: User }>({ open: false });
   const [editingId, setEditingId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const [form, setForm] = useState<UserForm>({ username: '', display_name: '', email: '', phone: '', role: 'user', workspace_id: '', password: '' });
+  const [form, setForm] = useState<UserForm>({ username: '', email: '', phone: '', role: 'user', password: '' });
 
   const fetchUsers = useCallback(async () => {
     setLoading(true);
@@ -82,28 +80,15 @@ export default function UserPage() {
 
   useEffect(() => { fetchUsers(); }, [fetchUsers]);
 
-  useEffect(() => {
-    (async () => {
-      try {
-        const { data: res } = await workspaceAPI.list({ page: 1, page_size: 200 });
-        setWorkspaces(res.data?.items || []);
-      } catch {
-        /* tenant binding is optional on this page */
-      }
-    })();
-  }, []);
-
   const handleSave = async () => {
     setSaving(true);
     try {
       if (editingId) {
         await userAPI.update(editingId, {
           username: form.username,
-          display_name: form.display_name,
           email: form.email,
           phone: form.phone,
           role: form.role,
-          workspace_id: form.workspace_id || null,
         });
         enqueueSnackbar('用户更新成功', { variant: 'success' });
       } else {
@@ -136,7 +121,7 @@ export default function UserPage() {
 
   return (
     <Box>
-      <PageHeader title="用户管理" subtitle="管理平台用户、工作空间成员角色与服务访问边界" actionLabel="新建用户" onAction={() => { setEditingId(null); setForm({ username: '', display_name: '', email: '', phone: '', role: 'user', workspace_id: '', password: '' }); setDialogOpen(true); }} />
+      <PageHeader title="用户管理" subtitle="管理平台用户与工作空间成员关系" actionLabel="新建用户" onAction={() => { setEditingId(null); setForm({ username: '', email: '', phone: '', role: 'user', password: '' }); setDialogOpen(true); }} />
 
       <Card sx={{ mb: 2 }}>
         <Box sx={{ p: 2 }}>
@@ -157,10 +142,9 @@ export default function UserPage() {
             <TableHead>
               <TableRow>
                 <TableCell>用户名</TableCell>
-                <TableCell>显示名</TableCell>
                 <TableCell>邮箱</TableCell>
-                <TableCell>角色</TableCell>
-                <TableCell>绑定工作空间</TableCell>
+                <TableCell>平台角色</TableCell>
+                <TableCell>工作空间成员</TableCell>
                 <TableCell>状态</TableCell>
                 <TableCell>创建时间</TableCell>
                 <TableCell align="right">操作</TableCell>
@@ -168,11 +152,10 @@ export default function UserPage() {
             </TableHead>
             <TableBody>
               {users.length === 0 ? (
-                <TableRow><TableCell colSpan={8}><EmptyState title="暂无用户" /></TableCell></TableRow>
+                <TableRow><TableCell colSpan={7}><EmptyState title="暂无用户" /></TableCell></TableRow>
               ) : users.map((u) => (
                 <TableRow key={u.id}>
                   <TableCell sx={{ fontWeight: 500 }}>{u.username}</TableCell>
-                  <TableCell>{u.display_name || '-'}</TableCell>
                   <TableCell sx={{ color: 'text.secondary' }}>{u.email || '-'}</TableCell>
                   <TableCell>
                     <Chip
@@ -182,14 +165,18 @@ export default function UserPage() {
                       variant="outlined"
                     />
                   </TableCell>
-                  <TableCell>{u.workspace_id ? (workspaces.find((t) => t.id === u.workspace_id)?.workspace_name || u.workspace_id.slice(0, 8)) : '-'}</TableCell>
+                  <TableCell sx={{ fontSize: '0.8125rem', color: 'text.secondary', maxWidth: 240 }}>
+                    <Typography variant="caption" noWrap title={formatMemberships(u)}>
+                      {formatMemberships(u)}
+                    </Typography>
+                  </TableCell>
                   <TableCell><StatusChip status={u.status || 'active'} /></TableCell>
                   <TableCell sx={{ color: 'text.secondary', fontSize: '0.8125rem' }}>{new Date(u.created_at).toLocaleDateString()}</TableCell>
                   <TableCell align="right">
                     <Tooltip title="编辑">
                       <IconButton size="small" onClick={() => {
                         setEditingId(u.id);
-                        setForm({ username: u.username, display_name: u.display_name || '', email: u.email || '', phone: u.phone || '', role: u.role, workspace_id: u.workspace_id || '', password: '' });
+                        setForm({ username: u.username, email: u.email || '', phone: u.phone || '', role: u.role, password: '' });
                         setDialogOpen(true);
                       }}>
                         <EditOutlinedIcon fontSize="small" />
@@ -219,28 +206,21 @@ export default function UserPage() {
         <DialogTitle>{editingId ? '编辑用户' : '新建用户'}</DialogTitle>
         <DialogContent sx={{ pt: '16px !important' }}>
           <TextField fullWidth label="用户名" value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value })} sx={{ mb: 2 }} required disabled={!!editingId} />
-          <TextField fullWidth label="显示名" value={form.display_name} onChange={(e) => setForm({ ...form, display_name: e.target.value })} sx={{ mb: 2 }} />
           <TextField fullWidth label="邮箱" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} sx={{ mb: 2 }} />
           <TextField fullWidth label="手机号" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} sx={{ mb: 2 }} />
           {!editingId && (
             <TextField fullWidth label="密码" type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} sx={{ mb: 2 }} required />
           )}
-          <FormControl fullWidth size="small" sx={{ mb: 2 }}>
-            <InputLabel>角色</InputLabel>
-            <Select value={form.role} label="角色" onChange={(e) => setForm({ ...form, role: e.target.value as User['role'] })}>
+          <FormControl fullWidth size="small">
+            <InputLabel>平台角色</InputLabel>
+            <Select value={form.role} label="平台角色" onChange={(e) => setForm({ ...form, role: e.target.value as User['role'] })}>
               <MenuItem value="admin">管理员</MenuItem>
               <MenuItem value="user">普通用户</MenuItem>
             </Select>
           </FormControl>
-          <FormControl fullWidth size="small">
-            <InputLabel>绑定工作空间（可选）</InputLabel>
-            <Select value={form.workspace_id} label="绑定工作空间（可选）" onChange={(e) => setForm({ ...form, workspace_id: e.target.value })}>
-              <MenuItem value="">平台级用户</MenuItem>
-              {workspaces.map((tenant) => (
-                <MenuItem key={tenant.id} value={tenant.id}>{tenant.workspace_name}</MenuItem>
-              ))}
-            </Select>
-          </FormControl>
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1.5 }}>
+            工作空间成员关系请在工作空间管理页的「成员」标签中配置。
+          </Typography>
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2 }}>
           <Button onClick={() => setDialogOpen(false)}>取消</Button>
@@ -253,7 +233,7 @@ export default function UserPage() {
       <ConfirmDialog
         open={deleteDialog.open}
         title="删除用户"
-        message={`确定要删除用户「${deleteDialog.user?.display_name || deleteDialog.user?.username}」吗？`}
+        message={`确定要删除用户「${deleteDialog.user?.username}」吗？`}
         severity="error"
         confirmLabel="删除"
         onConfirm={handleDelete}

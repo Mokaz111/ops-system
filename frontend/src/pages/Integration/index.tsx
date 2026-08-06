@@ -220,12 +220,7 @@ export default function IntegrationPage() {
     return clusters.find((c) => c.id === targetInstance.cluster_id) || null;
   }, [clusters, targetInstance]);
 
-  const applicableGrafanaHosts = useMemo(() => {
-    if (!targetInstance) return grafanaHosts;
-    return grafanaHosts.filter(
-      (h) => h.source === 'platform' || (h.source === 'tenant' && h.workspace_id === targetInstance.workspace_id),
-    );
-  }, [grafanaHosts, targetInstance]);
+  const applicableGrafanaHosts = grafanaHosts;
 
   const preview = async () => {
     if (!selected || !currentVersion || !targetInstance) {
@@ -238,7 +233,7 @@ export default function IntegrationPage() {
         template_id: selected.id,
         template_version: currentVersion.version,
         instance_id: targetInstance.id,
-        workspace_id: targetInstance.workspace_id,
+        tenant_id: targetInstance.workspace_id,
         grafana_instance_id: grafanaHostId || undefined,
         values,
       });
@@ -263,7 +258,7 @@ export default function IntegrationPage() {
         template_id: selected.id,
         template_version: currentVersion.version,
         instance_id: targetInstance.id,
-        workspace_id: targetInstance.workspace_id,
+        tenant_id: targetInstance.workspace_id,
         grafana_instance_id: grafanaHostId || undefined,
         values,
         force,

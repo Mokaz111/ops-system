@@ -101,3 +101,18 @@ func (r *AlertRuleRepository) CountByWorkspaceID(ctx context.Context, tenantID u
 	err := r.db.WithContext(ctx).Model(&model.AlertRule{}).Where("tenant_id = ?", tenantID).Count(&n).Error
 	return n, err
 }
+
+// GetByVMRuleName 按租户与 VMRule 名称查找告警规则。
+func (r *AlertRuleRepository) GetByVMRuleName(ctx context.Context, tenantID uuid.UUID, vmRuleName string) (*model.AlertRule, error) {
+	var rule model.AlertRule
+	err := r.db.WithContext(ctx).
+		Where("tenant_id = ? AND vm_rule_name = ?", tenantID, vmRuleName).
+		First(&rule).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &rule, nil
+}

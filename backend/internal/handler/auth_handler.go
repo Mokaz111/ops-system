@@ -14,11 +14,12 @@ import (
 type AuthHandler struct {
 	authSvc   *service.AuthService
 	userSvc   *service.UserService
+	memberSvc *service.WorkspaceMemberService
 	jwtSecret string
 }
 
-func NewAuthHandler(authSvc *service.AuthService, userSvc *service.UserService, jwtSecret string) *AuthHandler {
-	return &AuthHandler{authSvc: authSvc, userSvc: userSvc, jwtSecret: jwtSecret}
+func NewAuthHandler(authSvc *service.AuthService, userSvc *service.UserService, memberSvc *service.WorkspaceMemberService, jwtSecret string) *AuthHandler {
+	return &AuthHandler{authSvc: authSvc, userSvc: userSvc, memberSvc: memberSvc, jwtSecret: jwtSecret}
 }
 
 type loginBody struct {
@@ -33,7 +34,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid request body")
 		return
 	}
-	token, u, err := h.authSvc.Login(c.Request.Context(), body.Username, body.Password)
+	token, u, err := h.authSvc.Login(c.Request.Context(), body.Username, body.Password, c.ClientIP(), c.Request.UserAgent())
 	if err != nil {
 		if errors.Is(err, service.ErrInvalidCredentials) {
 			response.Error(c, http.StatusUnauthorized, http.StatusUnauthorized, response.ErrCodeInvalidCredentials, err.Error())
@@ -44,7 +45,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	}
 	response.JSON(c, gin.H{
 		"token": token,
-		"user":  toUserPublic(u),
+		"user":  enrichUserPublic(c, h.memberSvc, u),
 	})
 }
 
@@ -68,5 +69,5 @@ func (h *AuthHandler) Me(c *gin.Context) {
 		response.Error(c, http.StatusInternalServerError, http.StatusInternalServerError, response.ErrCodeInternal, "internal server error")
 		return
 	}
-	response.JSON(c, toUserPublic(u))
+	response.JSON(c, enrichUserPublic(c, h.memberSvc, u))
 }

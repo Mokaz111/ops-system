@@ -5,6 +5,8 @@ import (
 	"errors"
 	"regexp"
 	"strings"
+
+	"ops-system/backend/internal/repository"
 )
 
 var (
@@ -20,13 +22,9 @@ var storageSizePattern = regexp.MustCompile(`^[1-9][0-9]*(Gi|Ti)$`)
 
 type PlatformScaleScope string
 
-const (
-	PlatformScopeSharedMetrics   PlatformScaleScope = "shared_metrics"
-	PlatformScopeDedicatedMetric PlatformScaleScope = "dedicated_metrics"
-)
+const PlatformScopeSharedMetrics PlatformScaleScope = "shared_metrics"
 
 // ScaleVMClusterRequest 平台级 VMCluster 扩容请求。
-// 统一由平台管理员触发，不暴露给租户级用户。
 type ScaleVMClusterRequest struct {
 	TargetID string
 	DryRun   bool
@@ -56,54 +54,73 @@ type VMClusterScaleTarget struct {
 	DisplayName string             `json:"display_name"`
 }
 
-// PlatformScaleService 平台级扩容入口（共享集群/独享集群）。
+// PlatformScaleService 平台级扩容入口（共享池集群）。
 type PlatformScaleService struct {
-	k8sOps  *K8sResourceOperator
-	targets map[string]VMClusterScaleTarget
+	k8sOps        *K8sResourceOperator
+	vmClusterRepo *repository.VMClusterRepository
+	targets       map[string]VMClusterScaleTarget
 }
 
-func NewPlatformScaleService(k8sOps *K8sResourceOperator) *PlatformScaleService {
-	targets := map[string]VMClusterScaleTarget{
-		"shared-metrics-main": {
-			ID:          "shared-metrics-main",
-			Scope:       PlatformScopeSharedMetrics,
-			Namespace:   "monitoring",
-			Name:        "vmcluster-shared",
-			DisplayName: "共享监控主集群",
-		},
-		"dedicated-metrics-pool": {
-			ID:          "dedicated-metrics-pool",
-			Scope:       PlatformScopeDedicatedMetric,
-			Namespace:   "monitoring",
-			Name:        "vmcluster-dedicated",
-			DisplayName: "独享监控资源池集群",
-		},
+func NewPlatformScaleService(k8sOps *K8sResourceOperator, vmClusterRepo *repository.VMClusterRepository) *PlatformScaleService {
+	svc := &PlatformScaleService{
+		k8sOps:        k8sOps,
+		vmClusterRepo: vmClusterRepo,
+		targets:       map[string]VMClusterScaleTarget{},
 	}
-	return &PlatformScaleService{k8sOps: k8sOps, targets: targets}
+	svc.reloadTargets(context.Background())
+	return svc
+}
+
+func (s *PlatformScaleService) reloadTargets(ctx context.Context) {
+	if s == nil {
+		return
+	}
+	if s.vmClusterRepo == nil {
+		s.targets = map[string]VMClusterScaleTarget{}
+		return
+	}
+	clusters, err := s.vmClusterRepo.ListActive(ctx)
+	if err != nil {
+		return
+	}
+	targets := make(map[string]VMClusterScaleTarget, len(clusters))
+	for _, c := range clusters {
+		id := c.ID.String()
+		name := c.ReleaseName
+		if strings.TrimSpace(name) == "" {
+			name = c.Name
+		}
+		targets[id] = VMClusterScaleTarget{
+			ID:          id,
+			Scope:       PlatformScopeSharedMetrics,
+			Namespace:   c.Namespace,
+			Name:        name,
+			DisplayName: c.Name,
+		}
+	}
+	s.targets = targets
 }
 
 func (s *PlatformScaleService) ListVMClusterTargets() []VMClusterScaleTarget {
-	orderedIDs := []string{"shared-metrics-main", "dedicated-metrics-pool"}
-	out := make([]VMClusterScaleTarget, 0, len(orderedIDs))
-	for _, id := range orderedIDs {
-		if t, ok := s.targets[id]; ok {
-			out = append(out, t)
-		}
+	s.reloadTargets(context.Background())
+	out := make([]VMClusterScaleTarget, 0, len(s.targets))
+	for _, t := range s.targets {
+		out = append(out, t)
 	}
 	return out
 }
 
 // ScaleVMCluster 修改 VMCluster CR 的 spec。
-// 统一通过 k8s 资源操作封装，便于后续 logs/tracing 复用。
 func (s *PlatformScaleService) ScaleVMCluster(ctx context.Context, req *ScaleVMClusterRequest) (*ScaleVMClusterPlan, error) {
 	if req.TargetID == "" {
 		return nil, ErrPlatformTargetRequired
 	}
+	s.reloadTargets(ctx)
 	target, ok := s.targets[req.TargetID]
 	if !ok {
 		return nil, ErrPlatformTargetNotFound
 	}
-	if target.Scope != PlatformScopeSharedMetrics && target.Scope != PlatformScopeDedicatedMetric {
+	if target.Scope != PlatformScopeSharedMetrics {
 		return nil, ErrInvalidPlatformScope
 	}
 	if err := validatePlatformScaleRequest(req); err != nil {

@@ -23,7 +23,6 @@ type Workspace struct {
 	VMSelectURL       string         `json:"vm_select_url" gorm:"type:text"`
 	VMInsertURL       string         `json:"vm_insert_url" gorm:"type:text"`
 	Status            string         `json:"status" gorm:"type:varchar(20);default:creating"`
-	N9ETeamID         int64          `json:"n9e_team_id"`
 	GrafanaOrgID      int64          `json:"grafana_org_id"`
 	GrafanaInstanceID *uuid.UUID     `json:"grafana_instance_id" gorm:"type:uuid;index"`
 	CreatedAt         time.Time      `json:"created_at"`

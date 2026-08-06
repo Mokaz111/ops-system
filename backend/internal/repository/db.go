@@ -83,25 +83,64 @@ func dropLegacyUniqueIndexes(db *gorm.DB) error {
 	return nil
 }
 
+// dropLegacyTables 删除已废弃功能遗留的表（开发阶段无向前兼容要求，直接 DROP）。
+func dropLegacyTables(db *gorm.DB) error {
+	legacy := []string{
+		"ops_collector_targets",
+		"ops_recording_rules",
+		"ops_alert_receivers",
+		"ops_scale_events",
+		"ops_platform_scale_audits",
+	}
+	for _, name := range legacy {
+		if err := db.Exec("DROP TABLE IF EXISTS " + name).Error; err != nil {
+			return fmt.Errorf("drop legacy table %s: %w", name, err)
+		}
+	}
+	return nil
+}
+
+// dropLegacyColumns 删除已废弃列。
+func dropLegacyColumns(db *gorm.DB) error {
+	legacy := []struct {
+		table  string
+		column string
+	}{
+		{"ops_workspaces", "n9e_team_id"},
+		{"ops_users", "workspace_id"},
+	}
+	for _, item := range legacy {
+		if err := db.Exec("ALTER TABLE "+item.table+" DROP COLUMN IF EXISTS "+item.column).Error; err != nil {
+			return fmt.Errorf("drop legacy column %s.%s: %w", item.table, item.column, err)
+		}
+	}
+	return nil
+}
+
 // AutoMigrate 自动迁移元数据表。
 func AutoMigrate(db *gorm.DB) error {
 	if err := dropLegacyUniqueIndexes(db); err != nil {
 		return err
 	}
+	if err := dropLegacyTables(db); err != nil {
+		return err
+	}
+	if err := dropLegacyColumns(db); err != nil {
+		return err
+	}
 	return db.AutoMigrate(
 		&model.Workspace{},
+		&model.WorkspaceMember{},
 		&model.User{},
+		&model.APIToken{},
 		&model.VMCluster{},
 		&model.VMRoute{},
 		&model.Datasource{},
-		&model.CollectorTarget{},
-		&model.RecordingRule{},
-		&model.AlertReceiver{},
 		&model.ProvisioningTask{},
 		&model.AuditLog{},
 		&model.Instance{},
-		&model.PlatformScaleAudit{},
 		&model.LogInstance{},
+		&model.LogCluster{},
 		&model.IntegrationTemplate{},
 		&model.IntegrationTemplateVersion{},
 		&model.IntegrationInstallation{},
@@ -110,12 +149,15 @@ func AutoMigrate(db *gorm.DB) error {
 		&model.MetricTemplateMapping{},
 		&model.GrafanaInstance{},
 		&model.Cluster{},
-		&model.ScaleEvent{},
 		&model.AlertRule{},
 		&model.AlertEvent{},
 		&model.NotificationChannel{},
 		&model.Zone{},
 		&model.BusinessCluster{},
+		&model.Entity{},
+		&model.MetricSet{},
+		&model.LogSet{},
+		&model.DataLink{},
 	)
 }
 

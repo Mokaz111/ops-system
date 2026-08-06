@@ -71,6 +71,50 @@ func (h *BusinessClusterHandler) Create(c *gin.Context) {
 	response.JSON(c, m)
 }
 
+// EnableLogs POST /api/v1/business-clusters/:id/enable-logs
+func (h *BusinessClusterHandler) EnableLogs(c *gin.Context) {
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid id")
+		return
+	}
+	var body service.EnableLogsRequest
+	if err := c.ShouldBindJSON(&body); err != nil {
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, response.TranslateBindingError(err))
+		return
+	}
+	tenantID, ok := resolveWorkspaceID(c, h.userSvc)
+	if !ok {
+		return
+	}
+	m, err := h.svc.EnableLogs(c.Request.Context(), tenantID, id, &body)
+	if err != nil {
+		h.handleErr(c, err)
+		return
+	}
+	response.JSON(c, m)
+}
+
+// DisableLogs POST /api/v1/business-clusters/:id/disable-logs
+func (h *BusinessClusterHandler) DisableLogs(c *gin.Context) {
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid id")
+		return
+	}
+	tenantID, ok := resolveWorkspaceID(c, h.userSvc)
+	if !ok {
+		return
+	}
+	force := c.Query("force") == "true"
+	m, err := h.svc.DisableLogs(c.Request.Context(), tenantID, id, force)
+	if err != nil {
+		h.handleErr(c, err)
+		return
+	}
+	response.JSON(c, m)
+}
+
 // Delete DELETE /api/v1/business-clusters/:id (tenant_admin)
 func (h *BusinessClusterHandler) Delete(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
@@ -94,6 +138,14 @@ func (h *BusinessClusterHandler) handleErr(c *gin.Context, err error) {
 		response.Error(c, http.StatusConflict, http.StatusConflict, response.ErrCodeBusinessClusterNameConflict, err.Error())
 	case errors.Is(err, service.ErrInstanceNotFound):
 		response.Error(c, http.StatusNotFound, http.StatusNotFound, response.ErrCodeInstanceNotFound, err.Error())
+	case errors.Is(err, service.ErrVMOperatorRequired):
+		response.Error(c, http.StatusUnprocessableEntity, http.StatusUnprocessableEntity, response.ErrCodeVMOperatorRequired, err.Error())
+	case errors.Is(err, service.ErrInvalidKubeconfig):
+		response.Error(c, http.StatusUnprocessableEntity, http.StatusUnprocessableEntity, response.ErrCodeValidation, err.Error())
+	case errors.Is(err, service.ErrZoneSharedNotReady), errors.Is(err, service.ErrWorkspaceProvisionFailed):
+		response.Error(c, http.StatusUnprocessableEntity, http.StatusUnprocessableEntity, response.ErrCodeZoneSharedNotReady, err.Error())
+	case errors.Is(err, service.ErrZoneLogsNotReady), errors.Is(err, service.ErrLogInstanceNotLinked):
+		response.Error(c, http.StatusUnprocessableEntity, http.StatusUnprocessableEntity, response.ErrCodeZoneLogsNotReady, err.Error())
 	case errors.Is(err, service.ErrInvalidPagination):
 		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, err.Error())
 	default:

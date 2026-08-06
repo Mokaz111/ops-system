@@ -19,7 +19,6 @@ type AlertRule struct {
 	Channels    string         `json:"channels" gorm:"type:jsonb"`        // channel IDs
 	Annotations string         `json:"annotations" gorm:"type:text"`
 	Enabled     bool           `json:"enabled" gorm:"default:true"`
-	N9ERuleID   int64          `json:"n9e_rule_id"`
 	VMRuleName  string         `json:"vm_rule_name" gorm:"type:varchar(255)"`
 	VMNamespace string         `json:"vm_namespace" gorm:"type:varchar(120)"`
 	CreatedAt   time.Time      `json:"created_at"`

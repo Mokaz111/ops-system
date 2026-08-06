@@ -13,8 +13,8 @@ import (
 	"ops-system/backend/internal/idempotency"
 	integrationpkg "ops-system/backend/internal/integration"
 	"ops-system/backend/internal/k8s"
+	"ops-system/backend/internal/logagent"
 	"ops-system/backend/internal/middleware"
-	"ops-system/backend/internal/n9e"
 	"ops-system/backend/internal/notify"
 	"ops-system/backend/internal/repository"
 	"ops-system/backend/internal/service"
@@ -22,6 +22,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
@@ -45,6 +46,7 @@ func NewRouter(cfg *config.Config, log *zap.Logger, db *gorm.DB) *gin.Engine {
 	r.GET("/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"status": "ok"})
 	})
+	r.GET("/metrics", gin.WrapH(promhttp.Handler()))
 
 	api := r.Group("/api/v1")
 	{
@@ -67,7 +69,10 @@ func NewRouter(cfg *config.Config, log *zap.Logger, db *gorm.DB) *gin.Engine {
 
 			workspaceRepo := repository.NewWorkspaceRepository(db)
 			userRepo := repository.NewUserRepository(db)
+			memberRepo := repository.NewWorkspaceMemberRepository(db)
+			apiTokenRepo := repository.NewAPITokenRepository(db)
 			vmRouteRepo := repository.NewVMRouteRepository(db)
+			vmClusterRepo := repository.NewVMClusterRepository(db)
 			datasourceRepo := repository.NewDatasourceRepository(db)
 			provisioningTaskRepo := repository.NewProvisioningTaskRepository(db)
 			auditLogRepo := repository.NewAuditLogRepository(db)
@@ -75,8 +80,8 @@ func NewRouter(cfg *config.Config, log *zap.Logger, db *gorm.DB) *gin.Engine {
 			alertRepo := repository.NewAlertRuleRepository(db)
 			alertEventRepo := repository.NewAlertEventRepository(db)
 			channelRepo := repository.NewNotificationChannelRepository(db)
-			platformAuditRepo := repository.NewPlatformScaleAuditRepository(db)
 			logInstanceRepo := repository.NewLogInstanceRepository(db)
+			logClusterRepo := repository.NewLogClusterRepository(db)
 			integrationTemplateRepo := repository.NewIntegrationTemplateRepository(db)
 			integrationInstallRepo := repository.NewIntegrationInstallationRepository(db)
 			metricRepo := repository.NewMetricRepository(db)
@@ -86,10 +91,16 @@ func NewRouter(cfg *config.Config, log *zap.Logger, db *gorm.DB) *gin.Engine {
 			zoneRepo := repository.NewZoneRepository(db)
 			businessClusterRepo := repository.NewBusinessClusterRepository(db)
 
-			userSvc := service.NewUserService(userRepo)
-			authSvc := service.NewAuthService(userRepo, cfg.JWT.Secret, cfg.JWT.ExpireHours)
-			authH := handler.NewAuthHandler(authSvc, userSvc, cfg.JWT.Secret)
-			userH := handler.NewUserHandler(userSvc, cfg.JWT.Secret)
+			auditSvc := service.NewAuditService(auditLogRepo)
+			memberSvc := service.NewWorkspaceMemberService(memberRepo, workspaceRepo)
+			userSvc := service.NewUserService(userRepo, memberRepo)
+			apiTokenSvc := service.NewAPITokenService(apiTokenRepo, userRepo)
+			authSvc := service.NewAuthService(userRepo, auditSvc, cfg.JWT.Secret, cfg.JWT.ExpireHours)
+			authH := handler.NewAuthHandler(authSvc, userSvc, memberSvc, cfg.JWT.Secret)
+			userH := handler.NewUserHandler(userSvc, memberSvc, cfg.JWT.Secret)
+			memberH := handler.NewWorkspaceMemberHandler(memberSvc, userSvc)
+			apiTokenH := handler.NewAPITokenHandler(apiTokenSvc)
+			auditH := handler.NewAuditHandler(auditSvc)
 
 
 			vmSync := vm.NewSyncService(&cfg.VM, log)
@@ -145,25 +156,25 @@ func NewRouter(cfg *config.Config, log *zap.Logger, db *gorm.DB) *gin.Engine {
 					k8sClient = kc
 				}
 			}
-			vmOperator := vm.NewVMOperatorClient(k8sClient)
+			vmOperator := vm.NewVMOperatorClient(k8sClient, &cfg.VM)
 			tenantProvisioner := service.NewWorkspaceProvisioner(
 				provisioningTaskRepo,
 				vmRouteRepo,
 				datasourceRepo,
+				vmClusterRepo,
 				auditLogRepo,
 				vmRoutes,
 				vmOperator,
+				&cfg.VM,
 				log,
 			)
 			workspaceSvc := service.NewWorkspaceService(workspaceRepo, instanceRepo, vmSync, vmQuery, tenantProvisioner, grafanaResolver, grafanaSvc, orch, log)
 			workspaceH := handler.NewTenantHandler(workspaceSvc, userSvc)
 
-			instanceSvc := service.NewInstanceService(instanceRepo, workspaceRepo, integrationInstallRepo, orch, vmOperator, vmRoutes, vmQuery, log)
-			scaleEventRepo := repository.NewScaleEventRepository(db)
-			scaleSvc := service.NewScaleService(helmClient, k8sClient, instanceRepo, scaleEventRepo, log)
-			instanceH := handler.NewInstanceHandler(instanceSvc, scaleSvc, userSvc, grafanaInstanceSvc)
+			instanceSvc := service.NewInstanceService(instanceRepo, workspaceRepo, zoneRepo, vmClusterRepo, businessClusterRepo, integrationInstallRepo, orch, vmOperator, vmRoutes, vmQuery, log)
+			instanceH := handler.NewInstanceHandler(instanceSvc, userSvc, grafanaInstanceSvc)
 			k8sOps := service.NewK8sResourceOperator(k8sClient, log)
-			platformScaleSvc := service.NewPlatformScaleService(k8sOps)
+			platformScaleSvc := service.NewPlatformScaleService(k8sOps, vmClusterRepo)
 			platformBootstrapSvc := service.NewPlatformBootstrapService(helmClient, k8sClient)
 			var idemStore idempotency.Store
 			redisAddr := fmt.Sprintf("%s:%d", cfg.Redis.Host, cfg.Redis.Port)
@@ -175,18 +186,31 @@ func NewRouter(cfg *config.Config, log *zap.Logger, db *gorm.DB) *gin.Engine {
 					idemStore = redisStore
 				}
 			}
-			platformH := handler.NewPlatformHandler(platformScaleSvc, platformBootstrapSvc, log, idemStore, platformAuditRepo)
+			platformH := handler.NewPlatformHandler(platformScaleSvc, platformBootstrapSvc, log, idemStore, auditSvc)
 
 			// grafanaSvc moved up(grafanaClient, grafanaInstanceRepo, workspaceRepo, log)
 			grafanaH := handler.NewGrafanaHandler(grafanaSvc, log)
-			n9eClient := n9e.NewClient(&cfg.N9E, log)
 			notifySvc := notify.NewNotifyService(log)
-			alertSvc := service.NewAlertService(alertRepo, workspaceRepo, n9eClient, vmOperator, log)
-			alertEventSvc := service.NewAlertEventService(alertEventRepo, alertRepo, channelRepo, n9eClient, notifySvc, log)
+			if cfg.Notification.Email.Enabled {
+				notifySvc.Register(notify.NewEmailSender(
+					cfg.Notification.Email.SMTPHost,
+					cfg.Notification.Email.SMTPPort,
+					cfg.Notification.Email.Username,
+					cfg.Notification.Email.Password,
+					cfg.Notification.Email.From,
+				))
+			}
+			notifySvc.Register(notify.NewWebhookSender())
+			notifySvc.Register(notify.NewSlackSender())
+			notifySvc.Register(notify.NewSMSSender(log))
+
+			alertSvc := service.NewAlertService(alertRepo, workspaceRepo, vmOperator, log)
+			alertEventSvc := service.NewAlertEventService(alertEventRepo, alertRepo, channelRepo, notifySvc, log)
+			webhookH := handler.NewWebhookHandler(alertEventSvc, cfg.Server.WebhookToken)
 			channelSvc := service.NewNotificationChannelService(channelRepo, workspaceRepo, log)
 			alertH := handler.NewAlertHandler(alertSvc, alertEventSvc, channelSvc, userSvc)
 
-			logInstanceSvc := service.NewLogInstanceService(logInstanceRepo)
+			logInstanceSvc := service.NewLogInstanceService(logInstanceRepo, logClusterRepo, zoneRepo, repository.NewLogSetRepository(db), &cfg.Logs)
 			logInstanceH := handler.NewLogInstanceHandler(logInstanceSvc, userSvc)
 
 			renderer := integrationpkg.NewRenderer()
@@ -266,20 +290,31 @@ func NewRouter(cfg *config.Config, log *zap.Logger, db *gorm.DB) *gin.Engine {
 			clusterSvc := service.NewClusterService(clusterRepo)
 			clusterH := handler.NewClusterHandler(clusterSvc)
 
-			zoneSvc := service.NewZoneService(zoneRepo, instanceRepo, grafanaInstanceRepo, clusterRepo, clusterClientCache, log)
-			zoneH := handler.NewZoneHandler(zoneSvc)
+			zoneSvc := service.NewZoneService(zoneRepo, instanceRepo, vmClusterRepo, logClusterRepo, grafanaInstanceRepo, clusterRepo, clusterClientCache, &cfg.VM, &cfg.Logs, &cfg.Helm.Charts, log)
+			zonePreflightSvc := service.NewZonePreflightService(zoneRepo, clusterRepo, clusterClientCache, &cfg.Helm, log)
+			zoneComponentSvc := service.NewZoneComponentService(zoneRepo, vmClusterRepo, logClusterRepo, grafanaInstanceRepo)
+			zoneH := handler.NewZoneHandler(zoneSvc, zonePreflightSvc, zoneComponentSvc)
 
-			businessClusterSvc := service.NewBusinessClusterService(businessClusterRepo, instanceRepo, log)
+			vectorAgent := logagent.NewVectorAgentClient()
+			businessClusterSvc := service.NewBusinessClusterService(businessClusterRepo, instanceRepo, logInstanceRepo, workspaceRepo, zoneRepo, vmClusterRepo, logClusterRepo, vmOperator, vectorAgent, log)
 			businessClusterH := handler.NewBusinessClusterHandler(businessClusterSvc, userSvc)
+
+			entityRepo := repository.NewEntityRepository(db)
+			metricSetRepo := repository.NewMetricSetRepository(db)
+			logSetRepo := repository.NewLogSetRepository(db)
+			dataLinkRepo := repository.NewDataLinkRepository(db)
+			umodelSvc := service.NewUModelService(entityRepo, metricSetRepo, logSetRepo, dataLinkRepo)
+			umodelH := handler.NewUModelHandler(umodelSvc, userSvc)
 
 			api.POST("/auth/login", authH.Login)
 			api.POST("/users/bootstrap", userH.Bootstrap)
+			api.POST("/webhooks/alertmanager", webhookH.Alertmanager)
 
 			// Grafana 反向代理（通过 cookie 识别目标实例，auth proxy 免手动登录）
 			api.Any("/grafana/proxy/*path", grafanaInstanceH.ProxyGrafana)
 
 			protected := api.Group("")
-			protected.Use(middleware.JWTAuth(cfg.JWT.Secret))
+			protected.Use(middleware.JWTAuth(cfg.JWT.Secret, apiTokenSvc))
 			protected.GET("/auth/me", authH.Me)
 
 
@@ -287,6 +322,15 @@ func NewRouter(cfg *config.Config, log *zap.Logger, db *gorm.DB) *gin.Engine {
 			tg.GET("", workspaceH.List)
 			tg.GET("/:id/metrics", workspaceH.Metrics)
 			tg.GET("/:id", workspaceH.Get)
+			tg.GET("/:id/members", memberH.List)
+			tg.POST("/:id/members", memberH.Add)
+			tg.PUT("/:id/members/:userId", memberH.Update)
+			tg.DELETE("/:id/members/:userId", memberH.Remove)
+
+			atg := protected.Group("/api-tokens")
+			atg.GET("", apiTokenH.List)
+			atg.POST("", apiTokenH.Create)
+			atg.DELETE("/:id", apiTokenH.Revoke)
 
 			ug := protected.Group("/users")
 			ug.GET("", userH.List)
@@ -297,7 +341,6 @@ func NewRouter(cfg *config.Config, log *zap.Logger, db *gorm.DB) *gin.Engine {
 		ig.GET("", instanceH.List)
 		ig.GET("/:id", instanceH.Get)
 		ig.GET("/:id/metrics", instanceH.Metrics)
-		ig.GET("/:id/scale-events", instanceH.ListScaleEvents)
 		ig.POST("/:id/login", instanceH.Login)
 
 			gig := protected.Group("/grafana/instances/:instanceId")
@@ -340,6 +383,8 @@ func NewRouter(cfg *config.Config, log *zap.Logger, db *gorm.DB) *gin.Engine {
 			intg.GET("/installations", integrationH.ListInstallations)
 			intg.GET("/installations/:id", integrationH.GetInstallation)
 			intg.GET("/installations/:id/revisions", integrationH.ListInstallationRevisions)
+			intg.POST("/installations/:id/upgrade", integrationH.Upgrade)
+			intg.POST("/installations/:id/rollback", integrationH.Rollback)
 			intg.DELETE("/installations/:id", integrationH.Uninstall)
 
 			// 指标库（查询）
@@ -362,13 +407,31 @@ func NewRouter(cfg *config.Config, log *zap.Logger, db *gorm.DB) *gin.Engine {
 			zg := protected.Group("/zones")
 			zg.GET("", zoneH.List)
 			zg.GET("/:id", zoneH.Get)
+			zg.GET("/:id/preflight", zoneH.Preflight)
+			zg.GET("/:id/components", zoneH.Components)
 
 			bg := protected.Group("/business-clusters")
 			bg.GET("", businessClusterH.List)
 			bg.GET("/:id", businessClusterH.Get)
 
+			umg := protected.Group("/umodel")
+			umg.GET("/entities", umodelH.ListEntities)
+			umg.POST("/entities", umodelH.CreateEntity)
+			umg.DELETE("/entities/:id", umodelH.DeleteEntity)
+			umg.GET("/entities/:id/data-links", umodelH.ListDataLinks)
+			umg.GET("/metric-sets", umodelH.ListMetricSets)
+			umg.POST("/metric-sets", umodelH.CreateMetricSet)
+			umg.DELETE("/metric-sets/:id", umodelH.DeleteMetricSet)
+			umg.GET("/log-sets", umodelH.ListLogSets)
+			umg.POST("/log-sets", umodelH.CreateLogSet)
+			umg.DELETE("/log-sets/:id", umodelH.DeleteLogSet)
+			umg.POST("/data-links", umodelH.CreateDataLink)
+			umg.DELETE("/data-links/:id", umodelH.DeleteDataLink)
+
 			admin := protected.Group("")
 			admin.Use(middleware.RequireRole("admin"))
+
+			admin.GET("/audits", auditH.List)
 
 
 			adminTG := admin.Group("/workspaces")
@@ -384,9 +447,6 @@ func NewRouter(cfg *config.Config, log *zap.Logger, db *gorm.DB) *gin.Engine {
 			adminIG.POST("", instanceH.Create)
 			adminIG.PUT("/:id", instanceH.Update)
 			adminIG.DELETE("/:id", instanceH.Delete)
-			adminIG.POST("/:id/scale", instanceH.Scale)
-			adminIG.POST("/:id/rebuild", instanceH.Rebuild)
-			adminIG.POST("/:id/upgrade", instanceH.Upgrade)
 
 			adminGI := admin.Group("/grafana/instances/:instanceId")
 			adminGI.POST("/orgs", grafanaH.CreateOrg)
@@ -406,6 +466,7 @@ func NewRouter(cfg *config.Config, log *zap.Logger, db *gorm.DB) *gin.Engine {
 
 			adminAG := admin.Group("/alerts")
 			adminAG.POST("/rules", alertH.CreateRule)
+			adminAG.POST("/rules/import", alertH.ImportRules)
 			adminAG.PUT("/rules/:id", alertH.UpdateRule)
 			adminAG.DELETE("/rules/:id", alertH.DeleteRule)
 			adminAG.POST("/channels", alertH.CreateChannel)
@@ -456,10 +517,13 @@ func NewRouter(cfg *config.Config, log *zap.Logger, db *gorm.DB) *gin.Engine {
 			adminZG.PUT("/:id", zoneH.Update)
 			adminZG.DELETE("/:id", zoneH.Delete)
 			adminZG.POST("/:id/init-shared", zoneH.InitShared)
+			adminZG.POST("/:id/init-logs", zoneH.InitLogs)
 			adminZG.POST("/:id/init-grafana", zoneH.InitGrafana)
 
 			adminBG := admin.Group("/business-clusters")
 			adminBG.POST("", businessClusterH.Create)
+			adminBG.POST("/:id/enable-logs", businessClusterH.EnableLogs)
+			adminBG.POST("/:id/disable-logs", businessClusterH.DisableLogs)
 			adminBG.DELETE("/:id", businessClusterH.Delete)
 		}
 	}

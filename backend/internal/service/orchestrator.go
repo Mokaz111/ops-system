@@ -57,29 +57,17 @@ func ReleaseName(t *model.Workspace) string {
 }
 
 func (s *OrchestratorService) chartRef(tt string) string {
-	switch tt {
-	case "shared":
+	if tt == "shared" {
 		return strings.TrimSpace(s.cfg.Helm.Charts.Shared)
-	case "dedicated_single":
-		return strings.TrimSpace(s.cfg.Helm.Charts.DedicatedSingle)
-	case "dedicated_cluster":
-		return strings.TrimSpace(s.cfg.Helm.Charts.DedicatedCluster)
-	default:
-		return ""
 	}
+	return ""
 }
 
 func (s *OrchestratorService) valuesFilesForTemplate(tt string) []string {
-	switch tt {
-	case "shared":
-		return []string{"vm-shared.yaml", "vl.yaml", "n9e-edge.yaml"}
-	case "dedicated_single":
-		return []string{"vm-single.yaml", "vl.yaml", "grafana.yaml", "n9e-edge.yaml"}
-	case "dedicated_cluster":
-		return []string{"vm-cluster.yaml", "vl.yaml", "grafana.yaml", "n9e-edge.yaml"}
-	default:
-		return nil
+	if tt == "shared" {
+		return []string{"vm-shared.yaml", "vl.yaml"}
 	}
+	return nil
 }
 
 func (s *OrchestratorService) mergeEmbeddedValues(t *model.Workspace, ns string) (map[string]interface{}, error) {
@@ -90,12 +78,6 @@ func (s *OrchestratorService) mergeEmbeddedValues(t *model.Workspace, ns string)
 			return nil, fmt.Errorf("load values %s: %w", f, err)
 		}
 		merged = helm.MergeValues(merged, m)
-	}
-	// 校验 dedicated 模板 Grafana 凭据：envsubst 后 admin_password 不得为空或仍是字面量占位符。
-	if t.TemplateType == "dedicated_single" || t.TemplateType == "dedicated_cluster" {
-		if err := validateGrafanaAdminPassword(merged); err != nil {
-			return nil, err
-		}
 	}
 	overlay := map[string]interface{}{
 		"tenant": map[string]interface{}{
@@ -109,28 +91,6 @@ func (s *OrchestratorService) mergeEmbeddedValues(t *model.Workspace, ns string)
 		},
 	}
 	return helm.MergeValues(merged, overlay), nil
-}
-
-// validateGrafanaAdminPassword 校验合并后的 values 中 Grafana admin_password 已被环境变量替换：
-// 既不能为空，也不能仍是字面量占位符 ${GRAFANA_ADMIN_PASSWORD}。
-func validateGrafanaAdminPassword(merged map[string]interface{}) error {
-	g, ok := merged["grafana"].(map[string]interface{})
-	if !ok {
-		return nil
-	}
-	ini, ok := g["grafana.ini"].(map[string]interface{})
-	if !ok {
-		return nil
-	}
-	sec, ok := ini["security"].(map[string]interface{})
-	if !ok {
-		return nil
-	}
-	pw, _ := sec["admin_password"].(string)
-	if strings.TrimSpace(pw) == "" || pw == "${GRAFANA_ADMIN_PASSWORD}" {
-		return fmt.Errorf("grafana admin_password not configured: set GRAFANA_ADMIN_PASSWORD env before deploying dedicated grafana")
-	}
-	return nil
 }
 
 // DeployWorkspace 创建命名空间、配额、可选 NetworkPolicy，并按模板执行 Helm install/upgrade。

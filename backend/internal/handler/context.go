@@ -14,8 +14,6 @@ import (
 )
 
 // setGrafanaProxyCookie 下发 Grafana 反向代理定位 cookie。
-// Secure 属性按 X-Forwarded-Proto 动态设置（https 时为 true），
-// HttpOnly=true、SameSite=Lax，防止明文 HTTP 下被截获冒充登录。
 func setGrafanaProxyCookie(c *gin.Context, instanceID uuid.UUID) {
 	secure := c.GetHeader("X-Forwarded-Proto") == "https"
 	c.SetSameSite(http.SameSiteLaxMode)
@@ -25,7 +23,6 @@ func setGrafanaProxyCookie(c *gin.Context, instanceID uuid.UUID) {
 const grafanaProxyPrefix = "/api/v1/grafana/proxy"
 
 // buildGrafanaProxyURL 根据可选的 redirect 子路径拼接完整代理 URL。
-// redirect 仅允许相对路径（以 / 开头），防止 open redirect。
 func buildGrafanaProxyURL(redirect string) string {
 	if redirect == "" || redirect[0] != '/' {
 		return grafanaProxyPrefix + "/"
@@ -86,60 +83,65 @@ func currentUser(c *gin.Context, userSvc *service.UserService) (*model.User, boo
 	return u, true
 }
 
-// resolveWorkspaceScope 解析列表/查询接口的租户作用域：
-//   - admin：尊重 ?tenant_id=；未传则 nil（代表"全租户"）。
-//   - 普通用户：必须有自己的 tenant_id；若 ?tenant_id= 与自身不符则 403。
-//
-// 返回值 (scope, ok)；ok=false 时已写入错误响应，上层直接 return。
-func resolveWorkspaceScope(c *gin.Context, userSvc *service.UserService) (*uuid.UUID, bool) {
-	raw := c.Query("workspace_id")
+func userHasWorkspaceAccess(c *gin.Context, userSvc *service.UserService, userID, workspaceID uuid.UUID, action string) bool {
 	if isAdmin(c) {
-		if raw == "" {
-			return nil, true
-		}
-		id, err := uuid.Parse(raw)
-		if err != nil {
-			response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid workspace_id")
-			return nil, false
-		}
-		return &id, true
+		return true
+	}
+	allowed, err := userSvc.CanAccessWorkspace(c.Request.Context(), userID, workspaceID, action)
+	return err == nil && allowed
+}
+
+func parseWorkspaceIDQuery(c *gin.Context) (*uuid.UUID, bool) {
+	raw := c.Query("workspace_id")
+	if raw == "" {
+		return nil, true
+	}
+	id, err := uuid.Parse(raw)
+	if err != nil {
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid workspace_id")
+		return nil, false
+	}
+	return &id, true
+}
+
+// resolveWorkspaceScope 解析列表/查询接口的租户作用域。
+func resolveWorkspaceScope(c *gin.Context, userSvc *service.UserService) (*uuid.UUID, bool) {
+	queryID, ok := parseWorkspaceIDQuery(c)
+	if !ok {
+		return nil, false
+	}
+	if isAdmin(c) {
+		return queryID, true
 	}
 	u, ok := currentUser(c, userSvc)
 	if !ok {
 		return nil, false
 	}
-	if u.WorkspaceID == nil {
-		if raw == "" {
-			response.Error(c, http.StatusForbidden, http.StatusForbidden, response.ErrCodeForbidden, "forbidden")
-			return nil, false
-		}
-		id, err := uuid.Parse(raw)
+	if queryID == nil {
+		ids, err := userSvc.ListUserWorkspaces(c.Request.Context(), u.ID)
 		if err != nil {
-			response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid workspace_id")
+			response.Error(c, http.StatusInternalServerError, http.StatusInternalServerError, response.ErrCodeInternal, "internal server error")
 			return nil, false
 		}
-		allowed, err := userSvc.CanAccessWorkspace(c.Request.Context(), u.ID, id, "read")
-		if err != nil || !allowed {
+		if len(ids) == 0 {
 			response.Error(c, http.StatusForbidden, http.StatusForbidden, response.ErrCodeForbidden, "forbidden")
 			return nil, false
 		}
-		return &id, true
-	}
-	if raw != "" {
-		id, err := uuid.Parse(raw)
-		if err != nil {
-			response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid workspace_id")
-			return nil, false
+		if len(ids) == 1 {
+			id := ids[0]
+			return &id, true
 		}
-		if id != *u.WorkspaceID {
-			response.Error(c, http.StatusForbidden, http.StatusForbidden, response.ErrCodeForbidden, "forbidden")
-			return nil, false
-		}
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "workspace_id required")
+		return nil, false
 	}
-	return u.WorkspaceID, true
+	if !userHasWorkspaceAccess(c, userSvc, u.ID, *queryID, "read") {
+		response.Error(c, http.StatusForbidden, http.StatusForbidden, response.ErrCodeForbidden, "forbidden")
+		return nil, false
+	}
+	return queryID, true
 }
 
-// assertWorkspaceAccess 非 admin 用户必须命中 ownerTenant，否则写 403 并返回 false。
+// assertWorkspaceAccess 非 admin 用户必须是工作空间成员。
 func assertWorkspaceAccess(c *gin.Context, userSvc *service.UserService, ownerTenant uuid.UUID) bool {
 	if isAdmin(c) {
 		return true
@@ -148,12 +150,9 @@ func assertWorkspaceAccess(c *gin.Context, userSvc *service.UserService, ownerTe
 	if !ok {
 		return false
 	}
-	if u.WorkspaceID == nil || *u.WorkspaceID != ownerTenant {
-		allowed, err := userSvc.CanAccessWorkspace(c.Request.Context(), u.ID, ownerTenant, "read")
-		if err != nil || !allowed {
-			response.Error(c, http.StatusForbidden, http.StatusForbidden, response.ErrCodeForbidden, "forbidden")
-			return false
-		}
+	if !userHasWorkspaceAccess(c, userSvc, u.ID, ownerTenant, "read") {
+		response.Error(c, http.StatusForbidden, http.StatusForbidden, response.ErrCodeForbidden, "forbidden")
+		return false
 	}
 	return true
 }
@@ -163,9 +162,25 @@ func resolveWorkspaceID(c *gin.Context, userSvc *service.UserService) (uuid.UUID
 	if !ok {
 		return uuid.Nil, false
 	}
-	if u.WorkspaceID == nil {
-		response.Error(c, http.StatusForbidden, http.StatusForbidden, response.ErrCodeForbidden, "user has no tenant")
+	if queryID, ok := parseWorkspaceIDQuery(c); ok && queryID != nil {
+		if !userHasWorkspaceAccess(c, userSvc, u.ID, *queryID, "read") {
+			response.Error(c, http.StatusForbidden, http.StatusForbidden, response.ErrCodeForbidden, "forbidden")
+			return uuid.Nil, false
+		}
+		return *queryID, true
+	}
+	ids, err := userSvc.ListUserWorkspaces(c.Request.Context(), u.ID)
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, http.StatusInternalServerError, response.ErrCodeInternal, "internal server error")
 		return uuid.Nil, false
 	}
-	return *u.WorkspaceID, true
+	if len(ids) == 0 {
+		response.Error(c, http.StatusForbidden, http.StatusForbidden, response.ErrCodeForbidden, "user has no workspace membership")
+		return uuid.Nil, false
+	}
+	if len(ids) > 1 {
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "workspace_id required")
+		return uuid.Nil, false
+	}
+	return ids[0], true
 }

@@ -1,5 +1,5 @@
 import api from './index';
-import type { ApiResponse, PaginatedResponse, PaginationParams } from '../types/api';
+import type { ApiResponse, PaginatedResponse, PaginationParams, PreflightCheck, ZoneComponent } from '../types/api';
 
 export interface Zone {
   id: string;
@@ -18,8 +18,6 @@ export interface Zone {
 export interface ZoneStats {
   zone_id: string;
   total_instances: number;
-  shared_instances: number;
-  dedicated_instances: number;
 }
 
 export interface CreateZoneRequest {
@@ -58,5 +56,17 @@ export const zoneAPI = {
     api.delete<ApiResponse<null>>(`/zones/${id}`),
 
   initShared: (id: string, body?: { dry_run?: boolean; namespace?: string; release_name?: string; values?: Record<string, unknown> }) =>
-    api.post<ApiResponse<any>>(`/zones/${id}/init-shared`, body || {}),
+    api.post<ApiResponse<Record<string, unknown>>>(`/zones/${id}/init-shared`, body || {}),
+
+  initLogs: (id: string, body?: { dry_run?: boolean; namespace?: string; release_name?: string; values?: Record<string, unknown> }) =>
+    api.post<ApiResponse<Record<string, unknown>>>(`/zones/${id}/init-logs`, body || {}),
+
+  initGrafana: (id: string) =>
+    api.post<ApiResponse<Record<string, unknown>>>(`/zones/${id}/init-grafana`),
+
+  preflight: (id: string) =>
+    api.get<ApiResponse<{ checks: PreflightCheck[] }>>(`/zones/${id}/preflight`),
+
+  getComponents: (id: string) =>
+    api.get<ApiResponse<{ components: ZoneComponent[] }>>(`/zones/${id}/components`),
 };

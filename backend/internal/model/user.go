@@ -10,14 +10,13 @@ import (
 // User 平台用户（纯 SaaS 模型）。
 //
 // username 只在活跃行内唯一。role 仅支持 admin / user 两种值。
-// workspace_id 关联所属 Workspace（admin 可为 NULL）。
+// 工作空间成员关系见 ops_workspace_members。
 type User struct {
 	ID           uuid.UUID      `json:"id" gorm:"type:uuid;primaryKey"`
 	Username     string         `json:"username" gorm:"type:varchar(255);not null;uniqueIndex:uk_user_username_active,where:deleted_at IS NULL"`
 	PasswordHash string         `json:"-" gorm:"type:varchar(255);not null"`
 	Email        string         `json:"email" gorm:"type:varchar(255)"`
 	Phone        string         `json:"phone" gorm:"type:varchar(50)"`
-	WorkspaceID  *uuid.UUID     `json:"workspace_id" gorm:"type:uuid;index"`
 	Role         string         `json:"role" gorm:"type:varchar(20);default:user"` // admin / user
 	Status       string         `json:"status" gorm:"type:varchar(20);default:active"`
 	CreatedAt    time.Time      `json:"created_at"`

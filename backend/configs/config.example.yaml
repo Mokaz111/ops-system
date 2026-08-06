@@ -48,9 +48,10 @@ helm:
       url: https://grafana.github.io/helm-charts/
   charts:
     shared: ""
-    dedicated_single: ""
-    dedicated_cluster: ""
     vl: ""
+    vl_cluster: "vm/victoria-logs-cluster"
+    kafka: "bitnami/kafka"
+    vector: "vector/vector"
     grafana: ""
     n9e_edge: ""
 
@@ -76,6 +77,13 @@ vm:
   vmauth_base_url: "${OPS_VM_VMAUTH_BASE_URL}"
   sync_enabled: false
   vmauth_webhook_url: "${OPS_VM_VMAUTH_WEBHOOK_URL}"
+  http_timeout_seconds: 15
+
+logs:
+  pool_namespace: "logging"
+  pool_release: "vl-shared-stack"
+  kafka_brokers: ""              # 非空则跳过 Kafka Helm，直接使用外部 brokers
+  kafka_topic_prefix: "ops-logs"
   http_timeout_seconds: 15
 
 n9e:

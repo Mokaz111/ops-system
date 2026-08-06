@@ -108,8 +108,6 @@ func (h *LogInstanceHandler) Delete(c *gin.Context) {
 }
 
 // Query POST /api/v1/log-instances/:id/query
-// M1 占位：返回空结果；M4 接入 VictoriaLogs LogsQL。
-// 即便是占位也先把 tenant 校验补上，防止真实实现时遗漏。
 func (h *LogInstanceHandler) Query(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
@@ -124,10 +122,20 @@ func (h *LogInstanceHandler) Query(c *gin.Context) {
 	if !assertWorkspaceAccess(c, h.userSvc, m.TenantID) {
 		return
 	}
-	response.JSON(c, gin.H{
-		"note":    "LogsQL query endpoint placeholder; to be implemented in M4",
-		"results": []any{},
-	})
+	// body 全部字段可选：空 body 等价于默认查询（近 15 分钟由 service 兜底）。
+	var body service.LogQueryRequest
+	if c.Request.ContentLength > 0 {
+		if err := c.ShouldBindJSON(&body); err != nil {
+			response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, response.TranslateBindingError(err))
+			return
+		}
+	}
+	result, err := h.svc.Query(c.Request.Context(), id, &body)
+	if err != nil {
+		h.handleErr(c, err)
+		return
+	}
+	response.JSON(c, result)
 }
 
 func (h *LogInstanceHandler) handleErr(c *gin.Context, err error) {
@@ -135,8 +143,11 @@ func (h *LogInstanceHandler) handleErr(c *gin.Context, err error) {
 	case errors.Is(err, service.ErrLogInstanceNotFound):
 		response.Error(c, http.StatusNotFound, http.StatusNotFound, response.ErrCodeLogInstanceNotFound, err.Error())
 	case errors.Is(err, service.ErrLogInstanceName),
+		errors.Is(err, service.ErrLogZoneRequired),
 		errors.Is(err, service.ErrInvalidPagination):
 		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, err.Error())
+	case errors.Is(err, service.ErrZoneLogsNotReady), errors.Is(err, service.ErrZoneNotFound):
+		response.Error(c, http.StatusUnprocessableEntity, http.StatusUnprocessableEntity, response.ErrCodeZoneLogsNotReady, err.Error())
 	default:
 		response.Error(c, http.StatusInternalServerError, http.StatusInternalServerError, response.ErrCodeInternal, "internal server error")
 	}

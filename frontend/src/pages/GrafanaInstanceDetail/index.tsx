@@ -27,8 +27,6 @@ import {
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
-import ReplayIcon from '@mui/icons-material/Replay';
-import SystemUpdateAltIcon from '@mui/icons-material/SystemUpdateAlt';
 import LoginOutlinedIcon from '@mui/icons-material/LoginOutlined';
 import DeleteOutlinedIcon from '@mui/icons-material/DeleteOutlined';
 import PersonAddOutlinedIcon from '@mui/icons-material/PersonAddOutlined';
@@ -110,10 +108,9 @@ export default function GrafanaInstanceDetailPage() {
   const [importJson, setImportJson] = useState('');
   const [deleteDbDialog, setDeleteDbDialog] = useState<{ open: boolean; db?: GrafanaDashboard }>({ open: false });
 
-  // ---- Edit / Rebuild / Upgrade ----
+  // ---- Edit ----
   const [editOpen, setEditOpen] = useState(false);
   const [editForm, setEditForm] = useState({ instance_name: '', grafana_instance_id: '', cpu: '', memory: '', storage: '', retention: '' });
-  const [rebuildDialog, setRebuildDialog] = useState(false);
   const [saving, setSaving] = useState(false);
 
   // ---- Fetch instance or managed host ----
@@ -296,27 +293,6 @@ export default function GrafanaInstanceDetailPage() {
     }
   };
 
-  const handleRebuild = async () => {
-    if (!instance) return;
-    try {
-      await instanceAPI.rebuild(instance.id);
-      enqueueSnackbar('重建请求已提交', { variant: 'success' });
-      setRebuildDialog(false);
-    } catch (err) {
-      enqueueSnackbar(extractApiError(err, '重建失败'), { variant: 'error' });
-    }
-  };
-
-  const handleUpgrade = async () => {
-    if (!instance) return;
-    try {
-      await instanceAPI.upgrade(instance.id);
-      enqueueSnackbar('升级请求已提交', { variant: 'success' });
-    } catch (err) {
-      enqueueSnackbar(extractApiError(err, '升级失败'), { variant: 'error' });
-    }
-  };
-
   // ---- Datasource handlers ----
   const handleCreateDs = async () => {
     if (!selectedOrgId) return;
@@ -493,24 +469,6 @@ export default function GrafanaInstanceDetailPage() {
                         }}
                       >
                         编辑
-                      </Button>
-                      <Button
-                        size="small"
-                        color="warning"
-                        startIcon={<ReplayIcon />}
-                        onClick={() => setRebuildDialog(true)}
-                        disabled={instance!.status !== 'running' && instance!.status !== 'failed'}
-                      >
-                        重建
-                      </Button>
-                      <Button
-                        size="small"
-                        color="primary"
-                        startIcon={<SystemUpdateAltIcon />}
-                        onClick={handleUpgrade}
-                        disabled={instance!.status !== 'running'}
-                      >
-                        升级
                       </Button>
                     </Box>
                   )}
@@ -990,17 +948,6 @@ export default function GrafanaInstanceDetailPage() {
           <Button variant="contained" onClick={handleEdit} disabled={saving}>{saving ? '保存中...' : '保存'}</Button>
         </DialogActions>
       </Dialog>
-
-      {/* ===== Rebuild confirm ===== */}
-      <ConfirmDialog
-        open={rebuildDialog}
-        title="重建 Grafana 实例"
-        message={`确定要重建 Grafana 实例「${instance?.instance_name}」吗？将重新部署 Helm Release。`}
-        severity="warning"
-        confirmLabel="重建"
-        onConfirm={handleRebuild}
-        onCancel={() => setRebuildDialog(false)}
-      />
 
       {/* ===== Create Datasource ===== */}
       <Dialog open={dsOpen} onClose={() => setDsOpen(false)} maxWidth="sm" fullWidth>

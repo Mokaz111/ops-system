@@ -2,7 +2,12 @@ import { useCallback, useEffect, useState } from 'react';
 import {
   Alert,
   Box,
+  Button,
   Chip,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
   Divider,
   Drawer,
   Grid,
@@ -19,10 +24,15 @@ import {
   Typography,
 } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
+import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
+import SyncIcon from '@mui/icons-material/Sync';
 import PageHeader from '../../components/common/PageHeader';
 import EmptyState from '../../components/common/EmptyState';
 import LoadingScreen from '../../components/common/LoadingScreen';
 import { metricAPI, type Metric, type MetricTemplateMapping } from '../../api/metric';
+import { extractApiError } from '../../api';
+import { useAuthStore } from '../../stores/useAuthStore';
+import { useSnackbar } from 'notistack';
 
 interface PanelRef {
   dashboard_uid: string;
@@ -43,29 +53,35 @@ function parsePanels(raw: string): PanelRef[] {
 }
 
 export default function MetricPage() {
+  const { enqueueSnackbar } = useSnackbar();
+  const { user } = useAuthStore();
+  const isAdmin = user?.role === 'admin';
   const [items, setItems] = useState<Metric[]>([]);
   const [loading, setLoading] = useState(true);
   const [component, setComponent] = useState('');
   const [keyword, setKeyword] = useState('');
+  const [reparseTemplateId, setReparseTemplateId] = useState('');
+  const [reparsing, setReparsing] = useState(false);
 
   const [selected, setSelected] = useState<Metric | null>(null);
   const [related, setRelated] = useState<MetricTemplateMapping[]>([]);
+  const [editOpen, setEditOpen] = useState(false);
+  const [editForm, setEditForm] = useState({ description_cn: '', description_en: '', unit: '', tags: '' });
+  const [saving, setSaving] = useState(false);
+
+  const fetchList = useCallback(async () => {
+    setLoading(true);
+    try {
+      const { data: res } = await metricAPI.list({ page: 1, page_size: 100, component, keyword });
+      setItems(res.data?.items || []);
+    } finally {
+      setLoading(false);
+    }
+  }, [component, keyword]);
 
   useEffect(() => {
-    let alive = true;
-    (async () => {
-      try {
-        const { data: res } = await metricAPI.list({ page: 1, page_size: 100, component, keyword });
-        if (!alive) return;
-        setItems(res.data?.items || []);
-      } finally {
-        if (alive) setLoading(false);
-      }
-    })();
-    return () => {
-      alive = false;
-    };
-  }, [component, keyword]);
+    fetchList();
+  }, [fetchList]);
 
   const openDetail = useCallback(async (m: Metric) => {
     setSelected(m);
@@ -78,13 +94,58 @@ export default function MetricPage() {
     }
   }, []);
 
+  const openEdit = (m: Metric) => {
+    setSelected(m);
+    setEditForm({
+      description_cn: m.description_cn || '',
+      description_en: m.description_en || '',
+      unit: m.unit || '',
+      tags: m.tags || '',
+    });
+    setEditOpen(true);
+  };
+
+  const handleSaveEdit = async () => {
+    if (!selected) return;
+    setSaving(true);
+    try {
+      await metricAPI.update(selected.id, editForm);
+      enqueueSnackbar('指标已更新', { variant: 'success' });
+      setEditOpen(false);
+      fetchList();
+      const updated = { ...selected, ...editForm };
+      setSelected(updated);
+    } catch (err) {
+      enqueueSnackbar(extractApiError(err, '更新失败'), { variant: 'error' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleReparse = async () => {
+    if (!reparseTemplateId.trim()) {
+      enqueueSnackbar('请输入模版 ID', { variant: 'warning' });
+      return;
+    }
+    setReparsing(true);
+    try {
+      await metricAPI.reparse(reparseTemplateId.trim());
+      enqueueSnackbar('指标重解析已触发', { variant: 'success' });
+      fetchList();
+    } catch (err) {
+      enqueueSnackbar(extractApiError(err, '重解析失败'), { variant: 'error' });
+    } finally {
+      setReparsing(false);
+    }
+  };
+
   if (loading) return <LoadingScreen />;
 
   return (
     <Box>
       <PageHeader title="指标库" subtitle="统一管理指标含义、单位、标签与来源模版" />
 
-      <Stack direction="row" spacing={2} sx={{ mb: 2 }}>
+      <Stack direction="row" spacing={2} sx={{ mb: 2, flexWrap: 'wrap' }}>
         <TextField
           size="small"
           placeholder="按组件筛选（node / mysql / redis ...）"
@@ -99,6 +160,20 @@ export default function MetricPage() {
           onChange={(e) => setKeyword(e.target.value)}
           sx={{ minWidth: 260 }}
         />
+        {isAdmin && (
+          <>
+            <TextField
+              size="small"
+              placeholder="模版 ID（重解析）"
+              value={reparseTemplateId}
+              onChange={(e) => setReparseTemplateId(e.target.value)}
+              sx={{ minWidth: 280 }}
+            />
+            <Button startIcon={<SyncIcon />} variant="outlined" onClick={handleReparse} disabled={reparsing}>
+              {reparsing ? '解析中...' : '重解析模版指标'}
+            </Button>
+          </>
+        )}
       </Stack>
 
       {items.length === 0 ? (
@@ -117,6 +192,7 @@ export default function MetricPage() {
                 <TableCell>单位</TableCell>
                 <TableCell>描述</TableCell>
                 <TableCell>来源</TableCell>
+                {isAdmin && <TableCell align="right">操作</TableCell>}
               </TableRow>
             </TableHead>
             <TableBody>
@@ -140,6 +216,13 @@ export default function MetricPage() {
                       <Chip size="small" color="primary" label={m.source_template_version || '模版'} />
                     )}
                   </TableCell>
+                  {isAdmin && (
+                    <TableCell align="right" onClick={(e) => e.stopPropagation()}>
+                      <IconButton size="small" onClick={() => openEdit(m)}>
+                        <EditOutlinedIcon fontSize="small" />
+                      </IconButton>
+                    </TableCell>
+                  )}
                 </TableRow>
               ))}
             </TableBody>
@@ -149,7 +232,7 @@ export default function MetricPage() {
 
       <Drawer
         anchor="right"
-        open={!!selected}
+        open={!!selected && !editOpen}
         onClose={() => setSelected(null)}
         PaperProps={{ sx: { width: { xs: '100%', md: 640 } } }}
       >
@@ -166,6 +249,11 @@ export default function MetricPage() {
                   {selected.component && <Chip size="small" label={selected.component} color="primary" />}
                 </Stack>
               </Box>
+              {isAdmin && (
+                <IconButton onClick={() => openEdit(selected)} sx={{ mr: 1 }}>
+                  <EditOutlinedIcon />
+                </IconButton>
+              )}
               <IconButton onClick={() => setSelected(null)}>
                 <CloseIcon />
               </IconButton>
@@ -241,6 +329,22 @@ export default function MetricPage() {
           </Box>
         )}
       </Drawer>
+
+      <Dialog open={editOpen} onClose={() => setEditOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>编辑指标 — {selected?.name}</DialogTitle>
+        <DialogContent sx={{ pt: '16px !important' }}>
+          <TextField fullWidth label="中文描述" value={editForm.description_cn} onChange={(e) => setEditForm({ ...editForm, description_cn: e.target.value })} sx={{ mb: 2 }} multiline minRows={2} />
+          <TextField fullWidth label="英文描述" value={editForm.description_en} onChange={(e) => setEditForm({ ...editForm, description_en: e.target.value })} sx={{ mb: 2 }} multiline minRows={2} />
+          <TextField fullWidth label="单位" value={editForm.unit} onChange={(e) => setEditForm({ ...editForm, unit: e.target.value })} sx={{ mb: 2 }} />
+          <TextField fullWidth label="标签 (JSON)" value={editForm.tags} onChange={(e) => setEditForm({ ...editForm, tags: e.target.value })} multiline minRows={2} />
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button onClick={() => setEditOpen(false)}>取消</Button>
+          <Button variant="contained" onClick={handleSaveEdit} disabled={saving}>
+            {saving ? '保存中...' : '保存'}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 }

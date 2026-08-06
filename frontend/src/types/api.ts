@@ -28,17 +28,84 @@ export interface LoginResponse {
   user: User;
 }
 
+export interface UserMembership {
+  workspace_id: string;
+  workspace_name: string;
+  role: 'admin' | 'member' | 'viewer' | string;
+}
+
 export interface User {
   id: string;
   username: string;
-  display_name?: string;
   email?: string;
   phone?: string;
   role: 'admin' | 'user' | string;
-  workspace_id?: string | null;
+  memberships: UserMembership[];
   status: string;
   created_at: string;
   updated_at: string;
+}
+
+export interface APIToken {
+  id: string;
+  user_id: string;
+  name: string;
+  token_prefix: string;
+  scope: 'read' | 'read_write' | string;
+  expires_at?: string | null;
+  last_used_at?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateAPITokenRequest {
+  name: string;
+  scope?: 'read' | 'read_write';
+  expires_at?: string | null;
+}
+
+export interface CreateAPITokenResponse extends APIToken {
+  token: string;
+}
+
+export interface WorkspaceMember {
+  id: string;
+  workspace_id: string;
+  user_id: string;
+  role: 'admin' | 'member' | 'viewer' | string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AuditLog {
+  id: string;
+  tenant_id?: string | null;
+  actor_id?: string | null;
+  actor_type: string;
+  action: string;
+  resource: string;
+  resource_id: string;
+  details: string;
+  ip: string;
+  user_agent: string;
+  status: string;
+  created_at: string;
+}
+
+// 对应后端 service.PreflightCheck：{name, status: ok|warn|fail, message}
+export interface PreflightCheck {
+  name: string;
+  status: 'ok' | 'warn' | 'fail' | string;
+  message: string;
+}
+
+// 对应后端 service.ZoneComponentStatus。
+export interface ZoneComponent {
+  component: string;
+  status: string;
+  details?: string;
+  namespace?: string;
+  release?: string;
 }
 
 export interface Workspace {
@@ -47,15 +114,14 @@ export interface Workspace {
   slug?: string;
   vmuser_id: string;
   vmuser_key: string;
-  template_type: 'shared' | 'dedicated_single' | 'dedicated_cluster';
+  template_type: 'shared';
   quota_config: string;
-  isolation_level?: 'shared' | 'namespace' | 'dedicated' | string;
+  isolation_level?: 'shared' | string;
   vm_namespace?: string;
   vm_select_url?: string;
   vm_insert_url?: string;
   insert_url?: string;
   status: 'creating' | 'active' | 'degraded' | 'suspended' | 'deleting' | 'failed' | string;
-  n9e_team_id: number;
   grafana_org_id: number;
   grafana_instance_id?: string | null;
   created_at: string;
@@ -70,11 +136,11 @@ export interface Instance {
   zone_id?: string | null;
   instance_name: string;
   instance_type: 'metrics' | 'logs' | 'alert';
-  template_type: 'shared' | 'dedicated_single' | 'dedicated_cluster';
+  template_type: 'shared';
   release_name: string;
   namespace: string;
   spec: string;
-  status: 'creating' | 'running' | 'stopped' | 'error' | 'failed' | 'scaling' | 'deleting';
+  status: 'creating' | 'running' | 'stopped' | 'error' | 'failed' | 'deleting';
   grafana_instance_id?: string | null;
   url: string;
   created_at: string;
@@ -105,14 +171,6 @@ export interface CreateInstanceRequest {
   template_type: string;
   spec: string;
   grafana_instance_id?: string;
-}
-
-export interface ScaleInstanceRequest {
-  scale_type: 'horizontal' | 'vertical' | 'storage';
-  cpu?: string;
-  memory?: string;
-  storage?: string;
-  replicas?: number;
 }
 
 export interface GrafanaOrg {
@@ -180,7 +238,7 @@ export interface InstanceMetrics {
 
 export interface AlertRule {
   id: string;
-  workspace_id: string;
+  tenant_id: string;
   rule_name: string;
   rule_type: 'metrics' | 'logs' | string;
   query: string;
@@ -189,7 +247,6 @@ export interface AlertRule {
   channels: string;
   annotations: string;
   enabled: boolean;
-  n9e_rule_id?: number;
   vm_rule_name?: string;
   vm_namespace?: string;
   created_at: string;
@@ -197,7 +254,7 @@ export interface AlertRule {
 }
 
 export interface CreateAlertRuleRequest {
-  workspace_id: string;
+  tenant_id: string;
   rule_name: string;
   rule_type: string;
   query: string;
@@ -208,9 +265,28 @@ export interface CreateAlertRuleRequest {
   enabled: boolean;
 }
 
+export interface NotificationChannel {
+  id: string;
+  tenant_id: string;
+  channel_name: string;
+  channel_type: 'dingtalk' | 'email' | 'slack' | 'sms' | 'webhook' | string;
+  config: string;
+  enabled: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateNotificationChannelRequest {
+  tenant_id: string;
+  channel_name: string;
+  channel_type: string;
+  config?: string;
+  enabled?: boolean;
+}
+
 export interface AlertEvent {
   id: string;
-  workspace_id: string;
+  tenant_id: string;
   rule_id: string;
   rule_name: string;
   level: string;
@@ -224,7 +300,7 @@ export interface AlertEvent {
   created_at: string;
 }
 
-export type PlatformScaleScope = 'shared_metrics' | 'dedicated_metrics';
+export type PlatformScaleScope = 'shared_metrics';
 
 export interface PlatformScaleVMClusterRequest {
   target_id: string;
@@ -253,18 +329,44 @@ export interface PlatformScaleTarget {
   display_name: string;
 }
 
-export interface PlatformScaleAuditItem {
-  id: string;
-  user_id: string;
-  username: string;
-  role: string;
-  client_ip: string;
-  target_id: string;
-  dry_run: boolean;
-  status: 'success' | 'failed' | 'replayed';
-  spec_patch: string;
-  error_message: string;
-  created_at: string;
+// ── 告警统计（GET /alerts/stats/*）──
+
+export interface AlertSummary {
+  firing: number;
+  acknowledged: number;
+  resolved: number;
+  total: number;
+}
+
+export interface AlertTrendPoint {
+  bucket: string;
+  count: number;
+}
+
+export interface AlertLevelStat {
+  level: string;
+  count: number;
+}
+
+export interface AlertRuleStat {
+  rule_id: string;
+  rule_name: string;
+  count: number;
+}
+
+export interface ImportRuleError {
+  file: string;
+  group: string;
+  alert: string;
+  reason: string;
+}
+
+export interface ImportRulesResult {
+  total: number;
+  created: number;
+  skipped_recording: number;
+  skipped_duplicate: number;
+  errors: ImportRuleError[];
 }
 
 export interface PlatformInitSharedClusterRequest {

@@ -17,7 +17,9 @@ import LogoutIcon from '@mui/icons-material/Logout';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../stores/useAuthStore';
+import { useWorkspaceStore } from '../../stores/useWorkspaceStore';
 import { DRAWER_WIDTH } from './Sidebar';
+import WorkspaceSwitcher from './WorkspaceSwitcher';
 
 interface TopBarProps {
   sidebarOpen: boolean;
@@ -29,13 +31,16 @@ export default function TopBar({ sidebarOpen, onToggleSidebar }: TopBarProps) {
   const { user, logout } = useAuthStore();
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
 
+  const resetWorkspace = useWorkspaceStore((s) => s.reset);
+
   const handleLogout = () => {
     setAnchorEl(null);
+    resetWorkspace();
     logout();
     navigate('/login');
   };
 
-  const initials = user?.display_name?.charAt(0) || user?.username?.charAt(0) || 'U';
+  const initials = user?.username?.charAt(0)?.toUpperCase() || 'U';
 
   return (
     <AppBar
@@ -53,7 +58,9 @@ export default function TopBar({ sidebarOpen, onToggleSidebar }: TopBarProps) {
 
         <Box sx={{ flex: 1 }} />
 
-        <Tooltip title={user?.display_name || user?.username || ''}>
+        <WorkspaceSwitcher />
+
+        <Tooltip title={user?.username || ''}>
           <IconButton onClick={(e) => setAnchorEl(e.currentTarget)} sx={{ p: 0.5 }}>
             <Avatar sx={{ width: 32, height: 32, bgcolor: 'primary.main', fontSize: '0.875rem' }}>
               {initials}
@@ -70,7 +77,7 @@ export default function TopBar({ sidebarOpen, onToggleSidebar }: TopBarProps) {
           PaperProps={{ sx: { minWidth: 200, mt: 1 } }}
         >
           <Box sx={{ px: 2, py: 1.5 }}>
-            <Typography variant="subtitle2">{user?.display_name || user?.username}</Typography>
+            <Typography variant="subtitle2">{user?.username}</Typography>
             <Typography variant="caption" color="text.secondary">{user?.email}</Typography>
           </Box>
           <Divider />

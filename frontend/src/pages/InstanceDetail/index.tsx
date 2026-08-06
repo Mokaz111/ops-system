@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useCallback } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import {
   Accordion,
@@ -17,6 +17,7 @@ import {
   Grid,
   LinearProgress,
   Link as MuiLink,
+  MenuItem,
   Stack,
   Table,
   TableBody,
@@ -29,13 +30,14 @@ import {
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
-import ReplayIcon from '@mui/icons-material/Replay';
-import SystemUpdateAltIcon from '@mui/icons-material/SystemUpdateAlt';
 import DeleteOutlinedIcon from '@mui/icons-material/DeleteOutlined';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExtensionOutlinedIcon from '@mui/icons-material/ExtensionOutlined';
 import NotificationsActiveOutlinedIcon from '@mui/icons-material/NotificationsActiveOutlined';
 import SettingsEthernetOutlinedIcon from '@mui/icons-material/SettingsEthernetOutlined';
+import UpgradeIcon from '@mui/icons-material/Upgrade';
+import UndoIcon from '@mui/icons-material/Undo';
+import UninstallIcon from '@mui/icons-material/DeleteForever';
 import { useSnackbar } from 'notistack';
 import PageHeader from '../../components/common/PageHeader';
 import StatusChip from '../../components/common/StatusChip';
@@ -43,7 +45,7 @@ import LoadingScreen from '../../components/common/LoadingScreen';
 import EmptyState from '../../components/common/EmptyState';
 import ConfirmDialog from '../../components/common/ConfirmDialog';
 import DetailTabs from '../../components/common/DetailTabs';
-import { instanceAPI, type ScaleEvent } from '../../api/instance';
+import { instanceAPI } from '../../api/instance';
 import {
   integrationAPI,
   latestAppliedRefs,
@@ -56,7 +58,7 @@ import { businessClusterAPI, type BusinessCluster } from '../../api/businessClus
 import { platformAPI } from '../../api/platform';
 import { extractApiError } from '../../api';
 import { isAbortError, makeAbortController } from '../../api/client';
-import type { Instance, InstanceMetrics } from '../../types/api';
+import type { Instance, InstanceMetrics, PlatformScaleTarget } from '../../types/api';
 import { useAuthStore } from '../../stores/useAuthStore';
 import { parseSpec } from '../../utils/instance';
 
@@ -85,83 +87,6 @@ function ResourceBar({ label, used, total, unit }: { label: string; used: number
       </Box>
       <LinearProgress variant="determinate" value={pct} color={color} sx={{ height: 7, borderRadius: 4 }} />
     </Box>
-  );
-}
-
-function ScaleEventList({ events, loading }: { events: ScaleEvent[]; loading: boolean }) {
-  if (loading) {
-    return (
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-        <CircularProgress size={16} />
-        <Typography variant="caption">加载伸缩事件...</Typography>
-      </Box>
-    );
-  }
-  if (events.length === 0) {
-    return <EmptyState title="暂无伸缩事件" description="通过 /api/v1/instances/:id/scale 触发后会在此处展示。" />;
-  }
-  const methodChip = (m: string) => {
-    const colorMap: Record<string, 'primary' | 'secondary' | 'default' | 'error'> = {
-      cr_patch: 'primary',
-      helm_upgrade: 'secondary',
-      k8s_native: 'default',
-      rejected: 'error',
-    };
-    return <Chip size="small" label={m} color={colorMap[m] || 'default'} variant="outlined" />;
-  };
-  return (
-    <Table size="small">
-      <TableHead>
-        <TableRow>
-          <TableCell>时间</TableCell>
-          <TableCell>类型</TableCell>
-          <TableCell>生效路径</TableCell>
-          <TableCell>参数</TableCell>
-          <TableCell>状态</TableCell>
-          <TableCell>操作人</TableCell>
-        </TableRow>
-      </TableHead>
-      <TableBody>
-        {events.map((e) => {
-          const params: string[] = [];
-          if (e.replicas != null) params.push(`replicas=${e.replicas}`);
-          if (e.cpu) params.push(`cpu=${e.cpu}`);
-          if (e.memory) params.push(`memory=${e.memory}`);
-          if (e.storage) params.push(`storage=${e.storage}`);
-          return (
-            <TableRow key={e.id}>
-              <TableCell>
-                <Typography variant="caption">{new Date(e.created_at).toLocaleString()}</Typography>
-              </TableCell>
-              <TableCell>
-                <Chip size="small" label={e.scale_type} />
-              </TableCell>
-              <TableCell>{methodChip(e.method)}</TableCell>
-              <TableCell>
-                <Typography variant="caption" sx={{ fontFamily: 'monospace' }}>
-                  {params.join(' · ') || '-'}
-                </Typography>
-              </TableCell>
-              <TableCell>
-                <Chip
-                  size="small"
-                  label={e.status}
-                  color={e.status === 'success' ? 'success' : 'error'}
-                />
-                {e.error_message && (
-                  <Typography variant="caption" color="error" sx={{ display: 'block', maxWidth: 260, wordBreak: 'break-all' }}>
-                    {e.error_message}
-                  </Typography>
-                )}
-              </TableCell>
-              <TableCell>
-                <Typography variant="caption">{e.operator || '-'}</Typography>
-              </TableCell>
-            </TableRow>
-          );
-        })}
-      </TableBody>
-    </Table>
   );
 }
 
@@ -285,13 +210,18 @@ function AppliedRefsTable({ refs, grafanaHosts }: { refs: AppliedRef[]; grafanaH
 function InstallationCard({
   installation,
   grafanaHosts,
+  onRefresh,
 }: {
   installation: IntegrationInstallation;
   grafanaHosts: GrafanaInstance[];
+  onRefresh?: () => void;
 }) {
+  const { enqueueSnackbar } = useSnackbar();
   const [expanded, setExpanded] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [actionLoading, setActionLoading] = useState(false);
   const [revisions, setRevisions] = useState<IntegrationInstallationRevision[] | null>(null);
+  const [uninstallOpen, setUninstallOpen] = useState(false);
 
   const handleChange = async (_: unknown, isOpen: boolean) => {
     setExpanded(isOpen);
@@ -312,7 +242,73 @@ function InstallationCard({
 
   const refs = revisions ? latestAppliedRefs(revisions) : [];
 
+  const handleUninstall = async () => {
+    setActionLoading(true);
+    try {
+      await integrationAPI.uninstall(installation.id);
+      enqueueSnackbar('模版已卸载', { variant: 'success' });
+      setUninstallOpen(false);
+      onRefresh?.();
+    } catch (err) {
+      enqueueSnackbar(extractApiError(err, '卸载失败'), { variant: 'error' });
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  // 后端 upgrade 的 template_version 为必填：升级到模版的最新版本。
+  const handleUpgrade = async () => {
+    setActionLoading(true);
+    try {
+      const { data: tplRes } = await integrationAPI.getTemplate(installation.template_id);
+      const latest = tplRes.data?.latest_version;
+      if (!latest) {
+        enqueueSnackbar('无法获取模版最新版本', { variant: 'warning' });
+        return;
+      }
+      if (latest === installation.template_version) {
+        enqueueSnackbar(`已是最新版本 ${latest}`, { variant: 'info' });
+        return;
+      }
+      await integrationAPI.upgrade(installation.id, { template_version: latest });
+      enqueueSnackbar(`已升级到 ${latest}`, { variant: 'success' });
+      onRefresh?.();
+    } catch (err) {
+      enqueueSnackbar(extractApiError(err, '升级失败'), { variant: 'error' });
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  // 后端 rollback 需要 revision_id（query）：回滚到上一次 install/upgrade 的 revision。
+  const handleRollback = async () => {
+    setActionLoading(true);
+    try {
+      let revs = revisions;
+      if (!revs) {
+        const { data: res } = await integrationAPI.listInstallationRevisions(installation.id);
+        revs = res.data || [];
+        setRevisions(revs);
+      }
+      const installLike = revs.filter((r) => r.action === 'install' || r.action === 'upgrade' || r.action === 'reinstall');
+      // revisions 按 created_at DESC：第 0 条是当前，回滚目标是上一条。
+      const target = installLike[1];
+      if (!target) {
+        enqueueSnackbar('没有可回滚的历史版本', { variant: 'warning' });
+        return;
+      }
+      await integrationAPI.rollback(installation.id, target.id);
+      enqueueSnackbar(`已回滚到 ${target.version}`, { variant: 'success' });
+      onRefresh?.();
+    } catch (err) {
+      enqueueSnackbar(extractApiError(err, '回滚失败'), { variant: 'error' });
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
   return (
+    <>
     <Accordion
       expanded={expanded}
       onChange={handleChange}
@@ -328,6 +324,16 @@ function InstallationCard({
           <Typography variant="caption" color="text.secondary">
             部件：{installation.installed_parts || '-'} · 安装人：{installation.installed_by || '-'}
           </Typography>
+          <Box sx={{ flex: 1 }} />
+          <Button size="small" startIcon={<UpgradeIcon />} disabled={actionLoading} onClick={(e) => { e.stopPropagation(); handleUpgrade(); }}>
+            升级
+          </Button>
+          <Button size="small" startIcon={<UndoIcon />} disabled={actionLoading} onClick={(e) => { e.stopPropagation(); handleRollback(); }}>
+            回滚
+          </Button>
+          <Button size="small" color="error" startIcon={<UninstallIcon />} disabled={actionLoading} onClick={(e) => { e.stopPropagation(); setUninstallOpen(true); }}>
+            卸载
+          </Button>
         </Stack>
       </AccordionSummary>
       <AccordionDetails>
@@ -355,6 +361,17 @@ function InstallationCard({
         )}
       </AccordionDetails>
     </Accordion>
+    <ConfirmDialog
+      open={uninstallOpen}
+      title="卸载接入模版"
+      message={`确定要卸载模版 ${installation.template_id.slice(0, 8)} (${installation.template_version}) 吗？已下发的 K8s / Grafana 资源将被回收。`}
+      severity="error"
+      confirmLabel="卸载"
+      loading={actionLoading}
+      onConfirm={handleUninstall}
+      onCancel={() => setUninstallOpen(false)}
+    />
+    </>
   );
 }
 
@@ -362,10 +379,12 @@ function InstallationList({
   installations,
   grafanaHosts,
   filterPart,
+  onRefresh,
 }: {
   installations: IntegrationInstallation[];
   grafanaHosts: GrafanaInstance[];
   filterPart?: string;
+  onRefresh?: () => void;
 }) {
   const filtered = filterPart
     ? installations.filter((i) => (i.installed_parts || '').includes(filterPart))
@@ -376,7 +395,7 @@ function InstallationList({
   return (
     <Stack spacing={1.5}>
       {filtered.map((i) => (
-        <InstallationCard key={i.id} installation={i} grafanaHosts={grafanaHosts} />
+        <InstallationCard key={i.id} installation={i} grafanaHosts={grafanaHosts} onRefresh={onRefresh} />
       ))}
     </Stack>
   );
@@ -418,14 +437,11 @@ export default function InstanceDetailPage() {
   const [activeTab, setActiveTab] = useState('base');
   const [installations, setInstallations] = useState<IntegrationInstallation[]>([]);
   const [grafanaHosts, setGrafanaHosts] = useState<GrafanaInstance[]>([]);
-  const [scaleEvents, setScaleEvents] = useState<ScaleEvent[]>([]);
-  const [scaleEventsLoading, setScaleEventsLoading] = useState(false);
   const [businessClusters, setBusinessClusters] = useState<BusinessCluster[]>([]);
   const [bcLoading, setBcLoading] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [editForm, setEditForm] = useState({ instance_name: '', cpu: '', memory: '', storage: '', retention: '' });
   const [saving, setSaving] = useState(false);
-  const [rebuildOpen, setRebuildOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
 
   // Platform scaling (admin only)
@@ -437,10 +453,27 @@ export default function InstanceDetailPage() {
     vmstorage_replicas: 2,
     storage_size: '200Gi',
   });
+  const [scaleTargets, setScaleTargets] = useState<PlatformScaleTarget[]>([]);
+  const [scaleTargetId, setScaleTargetId] = useState('');
   const [scalePreview, setScalePreview] = useState<string | null>(null);
   const [scaling, setScaling] = useState(false);
 
-  // 详情页一次性拉 4 个独立资源，统一通过同一个 AbortController 兜起：
+  // 扩缩容目标必须来自 targets 接口（VMCluster CR 标识），不能用实例/集群 ID。
+  useEffect(() => {
+    if (!isAdmin || instance?.instance_type !== 'metrics' || instance?.template_type !== 'shared') return;
+    (async () => {
+      try {
+        const { data: res } = await platformAPI.listVMClusterTargets();
+        const targets = res.data || [];
+        setScaleTargets(targets);
+        if (targets.length > 0) setScaleTargetId((prev) => prev || targets[0].id);
+      } catch {
+        setScaleTargets([]);
+      }
+    })();
+  }, [isAdmin, instance?.instance_type, instance?.template_type]);
+
+  // 详情页一次性拉多个独立资源，统一通过同一个 AbortController 兜起：
   //   - 切换实例 / 卸载组件时立即取消在飞请求；
   //   - 单个失败用 extractApiError 给可读文案，不再吞错只显示通用提示。
   useEffect(() => {
@@ -449,7 +482,6 @@ export default function InstanceDetailPage() {
     let alive = true;
     setLoading(true);
     setMetricsLoading(true);
-    setScaleEventsLoading(true);
 
     (async () => {
       try {
@@ -474,19 +506,6 @@ export default function InstanceDetailPage() {
         enqueueSnackbar(extractApiError(err, '获取实例监控数据失败'), { variant: 'warning' });
       } finally {
         if (alive) setMetricsLoading(false);
-      }
-    })();
-
-    (async () => {
-      try {
-        const { data: res } = await instanceAPI.scaleEvents(instanceId, { page: 1, page_size: 50 }, { signal: ctl.signal });
-        if (alive) setScaleEvents(res.data?.items || []);
-      } catch (err) {
-        if (isAbortError(err) || !alive) return;
-        // 伸缩历史为辅助信息，失败时静默置空（StatusChip 会显示"暂无伸缩事件"）。
-        setScaleEvents([]);
-      } finally {
-        if (alive) setScaleEventsLoading(false);
       }
     })();
 
@@ -567,6 +586,16 @@ export default function InstanceDetailPage() {
     }
   };
 
+  const fetchInstallations = useCallback(async () => {
+    if (!instanceId) return;
+    try {
+      const { data: res } = await integrationAPI.listInstallations({ page: 1, page_size: 50, instance_id: instanceId });
+      setInstallations(res.data?.items || []);
+    } catch {
+      setInstallations([]);
+    }
+  }, [instanceId]);
+
   if (loading) return <LoadingScreen />;
   if (!instance) {
     return (
@@ -585,8 +614,7 @@ export default function InstanceDetailPage() {
   const handleEdit = async () => {
     setSaving(true);
     try {
-      // 保留原 spec 中编辑表单未覆盖的字段（replicas / 独享集群 vmstorage/vmselect/vminsert 结构），
-      // 避免编辑保存破坏 dedicated_cluster 的 spec 结构。
+      // 保留原 spec 中编辑表单未覆盖的字段（如 replicas）。
       const newSpec = JSON.stringify({
         ...spec,
         cpu: parseInt(editForm.cpu, 10) || spec.cpu,
@@ -603,20 +631,6 @@ export default function InstanceDetailPage() {
       await fetchInstance();
     } catch (err) {
       enqueueSnackbar(extractApiError(err, '更新失败'), { variant: 'error' });
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleRebuild = async () => {
-    setSaving(true);
-    try {
-      await instanceAPI.rebuild(instance.id);
-      enqueueSnackbar('重建请求已提交', { variant: 'success' });
-      setRebuildOpen(false);
-      await fetchInstance();
-    } catch (err) {
-      enqueueSnackbar(extractApiError(err, '重建失败'), { variant: 'error' });
     } finally {
       setSaving(false);
     }
@@ -639,7 +653,7 @@ export default function InstanceDetailPage() {
     <Box>
       <PageHeader
         title={instance.instance_name}
-        subtitle="实例详情、监控与告警联动"
+        subtitle="监控实例详情、接入与告警联动"
         extra={(
           <Button startIcon={<ArrowBackIcon />} variant="outlined" onClick={() => navigate(listPath)}>
             返回列表
@@ -751,37 +765,11 @@ export default function InstanceDetailPage() {
                     </Button>
                     <Button
                       variant="outlined"
-                      color="warning"
-                      startIcon={<ReplayIcon />}
-                      onClick={() => setRebuildOpen(true)}
-                      disabled={instance.status !== 'running'}
-                    >
-                      重建实例
-                    </Button>
-                    <Button
-                      variant="outlined"
-                      color="primary"
-                      startIcon={<SystemUpdateAltIcon />}
-                      onClick={async () => {
-                        try {
-                          await instanceAPI.upgrade(instance.id);
-                          enqueueSnackbar('升级请求已提交', { variant: 'success' });
-                          await fetchInstance();
-                        } catch (err) {
-                          enqueueSnackbar(extractApiError(err, '升级失败'), { variant: 'error' });
-                        }
-                      }}
-                      disabled={instance.status !== 'running'}
-                    >
-                      升级实例
-                    </Button>
-                    <Button
-                      variant="outlined"
                       color="error"
                       startIcon={<DeleteOutlinedIcon />}
                       onClick={() => setDeleteOpen(true)}
                     >
-                      删除实例
+                      删除监控实例
                     </Button>
                   </Box>
                 </Card>
@@ -822,7 +810,7 @@ export default function InstanceDetailPage() {
                 </Button>
                 <Box sx={{ mt: 3 }}>
                   <Typography variant="subtitle2" sx={{ mb: 1 }}>本实例已安装的采集模版</Typography>
-                  <InstallationList installations={installations} grafanaHosts={grafanaHosts} filterPart="collector" />
+                  <InstallationList installations={installations} grafanaHosts={grafanaHosts} filterPart="collector" onRefresh={fetchInstallations} />
                 </Box>
               </Card>
             ),
@@ -836,7 +824,7 @@ export default function InstanceDetailPage() {
                 <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
                   通过接入中心安装模版时勾选 Dashboard 部件，会在此处展示。
                 </Typography>
-                <InstallationList installations={installations} grafanaHosts={grafanaHosts} filterPart="dashboard" />
+                <InstallationList installations={installations} grafanaHosts={grafanaHosts} filterPart="dashboard" onRefresh={fetchInstallations} />
               </Card>
             ),
           },
@@ -847,32 +835,18 @@ export default function InstanceDetailPage() {
               <Card sx={{ p: 2.5 }}>
                 <Typography variant="subtitle2" sx={{ mb: 1 }}>本实例已下发的告警模版</Typography>
                 <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                  M2 起，VMRule 会以 K8s CR 形式下发；N9E 规则为占位，未执行。
+                  VMRule 以 K8s CR 形式下发，由 vmalert 计算并触发通知。
                 </Typography>
-                <InstallationList installations={installations} grafanaHosts={grafanaHosts} filterPart="vmrule" />
+                <InstallationList installations={installations} grafanaHosts={grafanaHosts} filterPart="vmrule" onRefresh={fetchInstallations} />
                 <Box sx={{ mt: 2, display: 'flex', gap: 1, flexWrap: 'wrap' }}>
                   <Button
                     variant="outlined"
                     startIcon={<NotificationsActiveOutlinedIcon />}
-                    onClick={() => navigate(`/alerts?instance_id=${instance.id}&instance_name=${encodeURIComponent(instance.instance_name)}`)}
+                    onClick={() => navigate(`/alerts/rules?instance_id=${instance.id}&instance_name=${encodeURIComponent(instance.instance_name)}`)}
                   >
-                    打开 N9E 告警引擎（占位）
+                    打开告警引擎
                   </Button>
                 </Box>
-              </Card>
-            ),
-          },
-          {
-            key: 'scale',
-            label: '伸缩历史',
-            content: (
-              <Card sx={{ p: 2.5 }}>
-                <Typography variant="subtitle2" sx={{ mb: 1 }}>实例伸缩事件（最近 50 条）</Typography>
-                <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                  每次水平 / 垂直 / 存储伸缩都会记录生效路径（CR 直 patch / helm upgrade / k8s 原生），
-                  方便审计与诊断。
-                </Typography>
-                <ScaleEventList events={scaleEvents} loading={scaleEventsLoading} />
               </Card>
             ),
           },
@@ -969,6 +943,25 @@ export default function InstanceDetailPage() {
                 <Alert severity="warning" sx={{ mb: 2 }}>
                   请先执行 dry-run 预览变更内容，确认无误后再应用。
                 </Alert>
+                {scaleTargets.length === 0 ? (
+                  <Alert severity="info" sx={{ mb: 2 }}>未发现可扩缩容的共享 VMCluster 目标（需要 K8s Operator 已配置）。</Alert>
+                ) : (
+                  <TextField
+                    select
+                    fullWidth
+                    size="small"
+                    label="扩缩容目标 (VMCluster)"
+                    value={scaleTargetId}
+                    onChange={(e) => { setScaleTargetId(e.target.value); setScalePreview(null); }}
+                    sx={{ mb: 2 }}
+                  >
+                    {scaleTargets.map((t) => (
+                      <MenuItem key={t.id} value={t.id}>
+                        {t.display_name || t.name}（{t.namespace}/{t.name}）
+                      </MenuItem>
+                    ))}
+                  </TextField>
+                )}
                 <Grid container spacing={2} sx={{ mb: 2 }}>
                   <Grid size={{ xs: 12, md: 3 }}>
                     <TextField
@@ -1014,12 +1007,12 @@ export default function InstanceDetailPage() {
                   <Button
                     variant="contained"
                     startIcon={<SettingsEthernetOutlinedIcon />}
-                    disabled={scaling}
+                    disabled={scaling || !scaleTargetId}
                     onClick={async () => {
                       setScaling(true);
                       try {
                         const { data: res } = await platformAPI.scaleVMCluster({
-                          target_id: instance.cluster_id || instance.id,
+                          target_id: scaleTargetId,
                           vmselect_replicas: scaleForm.vmselect_replicas,
                           vminsert_replicas: scaleForm.vminsert_replicas,
                           vmstorage_replicas: scaleForm.vmstorage_replicas,
@@ -1040,18 +1033,19 @@ export default function InstanceDetailPage() {
                   <Button
                     variant="outlined"
                     color="warning"
-                    disabled={scaling || !scalePreview}
+                    disabled={scaling || !scalePreview || !scaleTargetId}
                     onClick={async () => {
                       setScaling(true);
                       try {
+                        // 非 dry-run 后端强制要求 Idempotency-Key，防止重复提交。
                         await platformAPI.scaleVMCluster({
-                          target_id: instance.cluster_id || instance.id,
+                          target_id: scaleTargetId,
                           vmselect_replicas: scaleForm.vmselect_replicas,
                           vminsert_replicas: scaleForm.vminsert_replicas,
                           vmstorage_replicas: scaleForm.vmstorage_replicas,
                           storage_size: scaleForm.storage_size,
                           dry_run: false,
-                        });
+                        }, { idempotencyKey: crypto.randomUUID() });
                         enqueueSnackbar('扩容已提交', { variant: 'success' });
                         setScalePreview(null);
                       } catch (err) {
@@ -1123,20 +1117,9 @@ export default function InstanceDetailPage() {
       </Dialog>
 
       <ConfirmDialog
-        open={rebuildOpen}
-        title="重建实例"
-        message={`确定要重建实例「${instance.instance_name}」吗？将先回收该实例资源再重新部署，期间服务不可用。`}
-        severity="warning"
-        confirmLabel="重建"
-        loading={saving}
-        onConfirm={handleRebuild}
-        onCancel={() => setRebuildOpen(false)}
-      />
-
-      <ConfirmDialog
         open={deleteOpen}
-        title="删除实例"
-        message={`确定要删除实例「${instance.instance_name}」吗？关联的 Helm Release 与 CR 资源也将被回收，此操作不可撤销。`}
+        title="删除监控实例"
+        message={`确定要删除监控实例「${instance.instance_name}」吗？关联的 Helm Release 与 CR 资源也将被回收，此操作不可撤销。`}
         severity="error"
         confirmLabel="删除"
         loading={saving}
