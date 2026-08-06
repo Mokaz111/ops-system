@@ -10,11 +10,15 @@ import {
   DialogContent,
   DialogTitle,
   FormControl,
+  FormControlLabel,
   IconButton,
   InputAdornment,
   InputLabel,
   MenuItem,
   Select,
+  Switch,
+  Tab,
+  Tabs,
   Table,
   TableBody,
   TableCell,
@@ -28,6 +32,7 @@ import {
 } from '@mui/material';
 import SearchIcon from '@mui/icons-material/Search';
 import DeleteOutlinedIcon from '@mui/icons-material/DeleteOutlined';
+import TuneOutlinedIcon from '@mui/icons-material/TuneOutlined';
 import { useSnackbar } from 'notistack';
 import PageHeader from '../../components/common/PageHeader';
 import ConfirmDialog from '../../components/common/ConfirmDialog';
@@ -35,11 +40,29 @@ import EmptyState from '../../components/common/EmptyState';
 import LoadingScreen from '../../components/common/LoadingScreen';
 import FilterToolbar from '../../components/common/FilterToolbar';
 import DataTableCard from '../../components/common/DataTableCard';
-import { businessClusterAPI, type BusinessCluster, type CreateBusinessClusterRequest } from '../../api/businessCluster';
+import {
+  businessClusterAPI,
+  type BusinessCluster,
+  type CollectConfigView,
+  type CreateBusinessClusterRequest,
+  type LogsCollectConfig,
+  type MetricsCollectConfig,
+} from '../../api/businessCluster';
 import { logAPI, type LogInstance } from '../../api/logs';
 import { extractApiError } from '../../api';
 import { useAuthStore } from '../../stores/useAuthStore';
 import { isPlatformAdmin } from '../../utils/membership';
+
+function listToLines(items?: string[]): string {
+  return (items || []).join('\n');
+}
+
+function linesToList(text: string): string[] {
+  return text
+    .split(/[\n,]/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
 
 const agentStatusLabels: Record<string, { label: string; color: 'success' | 'warning' | 'error' | 'default' }> = {
   pending: { label: '待部署', color: 'default' },
@@ -90,6 +113,17 @@ export default function BusinessClusterPage() {
   const [selectedLogInstance, setSelectedLogInstance] = useState('');
   const [form, setForm] = useState<CreateBusinessClusterRequest>(defaultForm);
   const [saving, setSaving] = useState(false);
+
+  const [collectDialog, setCollectDialog] = useState<{ open: boolean; cluster?: BusinessCluster }>({ open: false });
+  const [collectTab, setCollectTab] = useState(0);
+  const [collectLoading, setCollectLoading] = useState(false);
+  const [metricsCfg, setMetricsCfg] = useState<MetricsCollectConfig>({});
+  const [logsCfg, setLogsCfg] = useState<LogsCollectConfig>({});
+  const [metricsNSInclude, setMetricsNSInclude] = useState('');
+  const [metricsNSExclude, setMetricsNSExclude] = useState('');
+  const [logsNSInclude, setLogsNSInclude] = useState('');
+  const [logsNSExclude, setLogsNSExclude] = useState('');
+  const [logsExcludePaths, setLogsExcludePaths] = useState('');
 
   const fetch = useCallback(async () => {
     setLoading(true);
@@ -176,6 +210,55 @@ export default function BusinessClusterPage() {
     }
   };
 
+  const openCollectDialog = async (cluster: BusinessCluster) => {
+    setCollectDialog({ open: true, cluster });
+    setCollectTab(0);
+    setCollectLoading(true);
+    try {
+      const { data: res } = await businessClusterAPI.getCollectConfig(cluster.id);
+      const view: CollectConfigView = res.data;
+      setMetricsCfg(view.metrics || {});
+      setLogsCfg(view.logs || {});
+      setMetricsNSInclude(listToLines(view.metrics?.namespace_include));
+      setMetricsNSExclude(listToLines(view.metrics?.namespace_exclude));
+      setLogsNSInclude(listToLines(view.logs?.namespace_include));
+      setLogsNSExclude(listToLines(view.logs?.namespace_exclude));
+      setLogsExcludePaths(listToLines(view.logs?.exclude_paths));
+    } catch (err) {
+      enqueueSnackbar(extractApiError(err, '获取采集配置失败'), { variant: 'error' });
+      setCollectDialog({ open: false });
+    } finally {
+      setCollectLoading(false);
+    }
+  };
+
+  const handleSaveCollectConfig = async () => {
+    if (!collectDialog.cluster) return;
+    setSaving(true);
+    try {
+      await businessClusterAPI.updateCollectConfig(collectDialog.cluster.id, {
+        metrics: {
+          ...metricsCfg,
+          namespace_include: linesToList(metricsNSInclude),
+          namespace_exclude: linesToList(metricsNSExclude),
+        },
+        logs: {
+          ...logsCfg,
+          namespace_include: linesToList(logsNSInclude),
+          namespace_exclude: linesToList(logsNSExclude),
+          exclude_paths: linesToList(logsExcludePaths),
+        },
+      });
+      enqueueSnackbar('采集配置已保存；已运行的 Agent 将按新配置重新下发', { variant: 'success' });
+      setCollectDialog({ open: false });
+      fetch();
+    } catch (err) {
+      enqueueSnackbar(extractApiError(err, '保存采集配置失败'), { variant: 'error' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const parseLabels = (labelsJson: string): Record<string, string> => {
     try { return JSON.parse(labelsJson || '{}'); } catch { return {}; }
   };
@@ -196,7 +279,7 @@ export default function BusinessClusterPage() {
 
       {!isAdmin && (
         <Alert severity="info" sx={{ mb: 2 }}>
-          仅工作空间管理员可接入/移除业务集群。当前仅提供只读视图。
+          仅平台管理员可接入业务集群、修改采集配置。当前仅提供只读视图。
         </Alert>
       )}
 
@@ -322,12 +405,36 @@ export default function BusinessClusterPage() {
                         {new Date(c.created_at).toLocaleDateString()}
                       </TableCell>
                       <TableCell align="right">
+                        <Tooltip title="采集配置">
+                          <IconButton size="small" onClick={() => openCollectDialog(c)} sx={{ mr: 0.5 }}>
+                            <TuneOutlinedIcon fontSize="small" />
+                          </IconButton>
+                        </Tooltip>
                         {isAdmin && (
                           <>
                             {c.log_agent_status !== 'active' && (
                               <Tooltip title="启用日志采集">
                                 <Button size="small" onClick={() => openLogsDialog(c)} sx={{ mr: 1 }}>
                                   日志
+                                </Button>
+                              </Tooltip>
+                            )}
+                            {c.log_agent_status === 'active' && (
+                              <Tooltip title="关闭日志采集">
+                                <Button
+                                  size="small"
+                                  onClick={async () => {
+                                    try {
+                                      await businessClusterAPI.disableLogs(c.id);
+                                      enqueueSnackbar('日志采集已关闭', { variant: 'success' });
+                                      fetch();
+                                    } catch (err) {
+                                      enqueueSnackbar(extractApiError(err, '关闭日志采集失败'), { variant: 'error' });
+                                    }
+                                  }}
+                                  sx={{ mr: 1 }}
+                                >
+                                  关日志
                                 </Button>
                               </Tooltip>
                             )}
@@ -465,6 +572,104 @@ export default function BusinessClusterPage() {
           >
             {saving ? '部署中...' : '启用'}
           </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* 采集配置 */}
+      <Dialog open={collectDialog.open} onClose={() => !saving && setCollectDialog({ open: false })} maxWidth="sm" fullWidth>
+        <DialogTitle>
+          采集配置 — {collectDialog.cluster?.display_name || collectDialog.cluster?.name}
+        </DialogTitle>
+        <DialogContent sx={{ pt: '8px !important' }}>
+          {collectLoading ? (
+            <Typography variant="body2" color="text.secondary" sx={{ py: 4, textAlign: 'center' }}>加载中...</Typography>
+          ) : (
+            <>
+              <Alert severity="info" sx={{ mb: 2 }}>
+                指标走 VMAgent，日志走 Vector。保存后会对已启用的 Agent 重新下发配置。
+              </Alert>
+              <Tabs value={collectTab} onChange={(_, v) => setCollectTab(v)} sx={{ mb: 2 }}>
+                <Tab label="指标采集" />
+                <Tab label="日志采集" />
+              </Tabs>
+
+              {collectTab === 0 && (
+                <Box>
+                  <FormControlLabel
+                    control={
+                      <Switch
+                        checked={metricsCfg.select_all_by_default !== false}
+                        onChange={(e) => setMetricsCfg({ ...metricsCfg, select_all_by_default: e.target.checked })}
+                        disabled={!isAdmin}
+                      />
+                    }
+                    label="自动发现全部 scrape 对象（selectAllByDefault）"
+                    sx={{ mb: 1.5, display: 'flex' }}
+                  />
+                  <TextField
+                    fullWidth size="small" label="抓取间隔" value={metricsCfg.scrape_interval || ''}
+                    onChange={(e) => setMetricsCfg({ ...metricsCfg, scrape_interval: e.target.value })}
+                    helperText="例如 30s / 1m" sx={{ mb: 2 }} disabled={!isAdmin}
+                  />
+                  <TextField
+                    fullWidth size="small" label="抓取超时" value={metricsCfg.scrape_timeout || ''}
+                    onChange={(e) => setMetricsCfg({ ...metricsCfg, scrape_timeout: e.target.value })}
+                    helperText="例如 10s" sx={{ mb: 2 }} disabled={!isAdmin}
+                  />
+                  <TextField
+                    fullWidth size="small" multiline minRows={2}
+                    label="命名空间白名单（每行一个，空=不限）"
+                    value={metricsNSInclude}
+                    onChange={(e) => setMetricsNSInclude(e.target.value)}
+                    sx={{ mb: 2 }} disabled={!isAdmin}
+                  />
+                  <TextField
+                    fullWidth size="small" multiline minRows={2}
+                    label="命名空间黑名单（丢弃这些 namespace 标签）"
+                    value={metricsNSExclude}
+                    onChange={(e) => setMetricsNSExclude(e.target.value)}
+                    disabled={!isAdmin}
+                  />
+                </Box>
+              )}
+
+              {collectTab === 1 && (
+                <Box>
+                  <TextField
+                    fullWidth size="small" multiline minRows={2}
+                    label="命名空间白名单（每行一个，空=不限）"
+                    value={logsNSInclude}
+                    onChange={(e) => setLogsNSInclude(e.target.value)}
+                    sx={{ mb: 2 }} disabled={!isAdmin}
+                  />
+                  <TextField
+                    fullWidth size="small" multiline minRows={2}
+                    label="命名空间黑名单"
+                    value={logsNSExclude}
+                    onChange={(e) => setLogsNSExclude(e.target.value)}
+                    helperText="默认排除 kube-system"
+                    sx={{ mb: 2 }} disabled={!isAdmin}
+                  />
+                  <TextField
+                    fullWidth size="small" multiline minRows={2}
+                    label="排除路径 glob（每行一个）"
+                    value={logsExcludePaths}
+                    onChange={(e) => setLogsExcludePaths(e.target.value)}
+                    helperText='例如 **/tmp/**'
+                    disabled={!isAdmin}
+                  />
+                </Box>
+              )}
+            </>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button onClick={() => setCollectDialog({ open: false })} disabled={saving}>关闭</Button>
+          {isAdmin && (
+            <Button variant="contained" onClick={handleSaveCollectConfig} disabled={saving || collectLoading}>
+              {saving ? '保存中...' : '保存并下发'}
+            </Button>
+          )}
         </DialogActions>
       </Dialog>
 

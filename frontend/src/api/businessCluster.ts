@@ -13,6 +13,8 @@ export interface BusinessCluster {
   log_agent_status: string;
   log_instance_id?: string;
   labels: string;
+  metrics_collect_config?: string;
+  logs_collect_config?: string;
   created_at: string;
   updated_at: string;
 }
@@ -24,6 +26,27 @@ export interface CreateBusinessClusterRequest {
   kubeconfig?: string;
   kubeconfig_path?: string;
   labels?: Record<string, string>;
+  metrics_collect_config?: MetricsCollectConfig;
+  logs_collect_config?: LogsCollectConfig;
+}
+
+export interface MetricsCollectConfig {
+  select_all_by_default?: boolean;
+  scrape_interval?: string;
+  scrape_timeout?: string;
+  namespace_include?: string[];
+  namespace_exclude?: string[];
+}
+
+export interface LogsCollectConfig {
+  namespace_include?: string[];
+  namespace_exclude?: string[];
+  exclude_paths?: string[];
+}
+
+export interface CollectConfigView {
+  metrics: MetricsCollectConfig;
+  logs: LogsCollectConfig;
 }
 
 export const businessClusterAPI = {
@@ -49,4 +72,10 @@ export const businessClusterAPI = {
     api.post<ApiResponse<BusinessCluster>>(`/business-clusters/${id}/disable-logs`, undefined, {
       params: { force: force ? 'true' : undefined },
     }),
+
+  getCollectConfig: (id: string) =>
+    api.get<ApiResponse<CollectConfigView>>(`/business-clusters/${id}/collect-config`),
+
+  updateCollectConfig: (id: string, data: { metrics?: MetricsCollectConfig; logs?: LogsCollectConfig }) =>
+    api.put<ApiResponse<CollectConfigView>>(`/business-clusters/${id}/collect-config`, data),
 };

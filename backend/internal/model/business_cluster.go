@@ -20,9 +20,13 @@ type BusinessCluster struct {
 	LogAgentStatus  string         `json:"log_agent_status" gorm:"type:varchar(20);default:pending"`
 	LogInstanceID   *uuid.UUID     `json:"log_instance_id" gorm:"type:uuid;index"`
 	Labels          string         `json:"labels" gorm:"type:jsonb;default:'{}'"`
-	CreatedAt       time.Time      `json:"created_at"`
-	UpdatedAt       time.Time      `json:"updated_at"`
-	DeletedAt       gorm.DeletedAt `json:"-" gorm:"index"`
+	// MetricsCollectConfig VMAgent 采集配置 JSON（见 MetricsCollectConfig）。
+	MetricsCollectConfig string `json:"metrics_collect_config" gorm:"type:jsonb;default:'{}'"`
+	// LogsCollectConfig Vector 采集配置 JSON（见 LogsCollectConfig）。
+	LogsCollectConfig string `json:"logs_collect_config" gorm:"type:jsonb;default:'{}'"`
+	CreatedAt         time.Time      `json:"created_at"`
+	UpdatedAt         time.Time      `json:"updated_at"`
+	DeletedAt         gorm.DeletedAt `json:"-" gorm:"index"`
 }
 
 func (BusinessCluster) TableName() string { return "ops_business_clusters" }

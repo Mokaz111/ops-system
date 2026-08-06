@@ -119,6 +119,8 @@ CREATE TABLE IF NOT EXISTS ops_business_clusters (
     log_agent_status VARCHAR(20) DEFAULT 'pending',
     log_instance_id UUID,
     labels JSONB DEFAULT '{}',
+    metrics_collect_config JSONB DEFAULT '{}',
+    logs_collect_config JSONB DEFAULT '{}',
     created_at TIMESTAMPTZ,
     updated_at TIMESTAMPTZ,
     deleted_at TIMESTAMPTZ
