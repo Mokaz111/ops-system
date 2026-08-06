@@ -27,6 +27,8 @@ import DownloadIcon from '@mui/icons-material/Download';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import FilterAltIcon from '@mui/icons-material/FilterAlt';
+import { useSearchParams } from 'react-router-dom';
+import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip as ChartTooltip, XAxis, YAxis } from 'recharts';
 import PageHeader from '../../components/common/PageHeader';
 import { logAPI, type LogEntry, type LogInstance } from '../../api/logs';
 import { extractApiError } from '../../api';
@@ -158,6 +160,8 @@ function LogRow({ entry, onFieldFilter }: { entry: LogEntry; onFieldFilter: (k: 
 }
 
 export default function LogQueryPage() {
+  const [searchParams] = useSearchParams();
+  const presetInstanceId = searchParams.get('instance_id');
   const [instances, setInstances] = useState<LogInstance[]>([]);
   const [instanceId, setInstanceId] = useState('');
   const [query, setQuery] = useState('');
@@ -181,7 +185,10 @@ export default function LogQueryPage() {
         if (!alive) return;
         const items = res.data?.items || [];
         setInstances(items);
-        if (items.length > 0) setInstanceId(items[0].id);
+        // 支持从「日志实例」页带 instance_id 跳转直达。
+        const preset = presetInstanceId && items.some((i) => i.id === presetInstanceId) ? presetInstanceId : '';
+        if (preset) setInstanceId(preset);
+        else if (items.length > 0) setInstanceId(items[0].id);
       } catch {
         /* 列表加载失败时保持空态 */
       }
@@ -189,7 +196,7 @@ export default function LogQueryPage() {
     return () => {
       alive = false;
     };
-  }, []);
+  }, [presetInstanceId]);
 
   // 组合最终 LogsQL：级别快捷过滤 AND 用户输入。
   const effectiveQuery = useMemo(() => {
@@ -257,6 +264,37 @@ export default function LogQueryPage() {
     });
   };
 
+  // 日志量直方图：把已返回的日志按时间分桶、按级别堆叠。
+  // 注意这是基于当前结果集（受 limit 截断）的分布，不是服务端全量统计。
+  const histogram = useMemo(() => {
+    if (entries.length === 0) return [];
+    const times = entries.map((e) => new Date(e.time).getTime()).filter((t) => !Number.isNaN(t));
+    if (times.length === 0) return [];
+    const min = Math.min(...times);
+    const max = Math.max(...times);
+    const bucketCount = 30;
+    const span = Math.max(max - min, 1);
+    const bucketMs = span / bucketCount;
+    const buckets = Array.from({ length: bucketCount }, (_, i) => ({
+      time: new Date(min + i * bucketMs).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+      error: 0,
+      warn: 0,
+      info: 0,
+      other: 0,
+    }));
+    for (const entry of entries) {
+      const t = new Date(entry.time).getTime();
+      if (Number.isNaN(t)) continue;
+      const idx = Math.min(Math.floor((t - min) / bucketMs), bucketCount - 1);
+      const level = levelOf(entry);
+      if (level === 'error') buckets[idx].error += 1;
+      else if (level === 'warn') buckets[idx].warn += 1;
+      else if (level === 'info') buckets[idx].info += 1;
+      else buckets[idx].other += 1;
+    }
+    return buckets;
+  }, [entries]);
+
   const exportJSON = () => {
     const blob = new Blob([JSON.stringify(entries, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -282,7 +320,7 @@ export default function LogQueryPage() {
               onChange={(e) => setInstanceId(e.target.value)}
               sx={{ minWidth: 220 }}
             >
-              <MenuItem value="">选择日志工作空间</MenuItem>
+              <MenuItem value="">选择日志实例</MenuItem>
               {instances.map((i) => (
                 <MenuItem key={i.id} value={i.id}>
                   {i.instance_name}
@@ -355,6 +393,28 @@ export default function LogQueryPage() {
         </CardContent>
       </Card>
 
+      {histogram.length > 0 && (
+        <Card sx={{ mb: 2 }}>
+          <CardContent sx={{ pb: '12px !important' }}>
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
+              日志量分布（当前结果集，按级别堆叠）
+            </Typography>
+            <ResponsiveContainer width="100%" height={120}>
+              <BarChart data={histogram} margin={{ top: 4, right: 8, bottom: 0, left: -24 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                <XAxis dataKey="time" tick={{ fontSize: 10 }} interval="preserveStartEnd" />
+                <YAxis allowDecimals={false} tick={{ fontSize: 10 }} />
+                <ChartTooltip />
+                <Bar dataKey="error" stackId="l" fill={levelColors.error} name="ERROR" />
+                <Bar dataKey="warn" stackId="l" fill={levelColors.warn} name="WARN" />
+                <Bar dataKey="info" stackId="l" fill={levelColors.info} name="INFO" />
+                <Bar dataKey="other" stackId="l" fill={levelColors.debug} name="其他" />
+              </BarChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+      )}
+
       <Card>
         <CardContent>
           {error && (
@@ -405,8 +465,8 @@ export default function LogQueryPage() {
                 {queried
                   ? '该时间范围内无匹配日志，可扩大时间范围或调整过滤条件。'
                   : instances.length === 0
-                    ? '暂无日志工作空间：请先在「日志工作空间」页创建，并确认业务集群已启用日志采集。'
-                    : '选择日志工作空间后点击查询。级别 Chip 可快捷过滤，展开日志行可点字段追加过滤。'}
+                    ? '暂无日志实例：请先在「日志实例」页创建，并确认业务集群已启用日志采集。'
+                    : '选择日志实例后点击查询。级别 Chip 可快捷过滤，展开日志行可点字段追加过滤。'}
               </Alert>
             )
           )}

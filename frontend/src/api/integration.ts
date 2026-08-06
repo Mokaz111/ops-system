@@ -36,7 +36,7 @@ export interface IntegrationInstallation {
   template_id: string;
   template_version: string;
   instance_id: string;
-  workspace_id: string;
+  tenant_id: string;
   grafana_instance_id: string | null;
   grafana_org_id: number;
   installed_parts: string;
@@ -104,7 +104,7 @@ export interface InstallRequest {
   template_id: string;
   template_version: string;
   instance_id: string;
-  workspace_id: string;
+  tenant_id: string;
   grafana_instance_id?: string;
   grafana_org_id?: number;
   installed_parts?: string[];
@@ -208,11 +208,13 @@ export const integrationAPI = {
   uninstall: (id: string) =>
     api.delete<ApiResponse<null>>(`/integrations/installations/${id}`),
 
-  upgrade: (id: string, data?: { template_version?: string; values?: Record<string, string>; force?: boolean }) =>
-    api.post<ApiResponse<InstallResponse>>(`/integrations/installations/${id}/upgrade`, data || {}),
+  // 后端 template_version 为必填。
+  upgrade: (id: string, data: { template_version: string; installed_parts?: string[]; values?: Record<string, string>; force?: boolean }) =>
+    api.post<ApiResponse<InstallResponse>>(`/integrations/installations/${id}/upgrade`, data),
 
-  rollback: (id: string, data?: { revision_id?: string }) =>
-    api.post<ApiResponse<InstallResponse>>(`/integrations/installations/${id}/rollback`, data || {}),
+  // 后端从 query 读取 revision_id（必填）。
+  rollback: (id: string, revisionId: string) =>
+    api.post<ApiResponse<InstallResponse>>(`/integrations/installations/${id}/rollback`, null, { params: { revision_id: revisionId } }),
 };
 
 /**

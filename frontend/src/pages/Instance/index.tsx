@@ -3,7 +3,6 @@ import { useNavigate } from 'react-router-dom';
 import {
   Box,
   Card,
-  Chip,
   FormControl,
   Grid,
   IconButton,
@@ -17,9 +16,7 @@ import {
   TableContainer,
   TableHead,
   TablePagination,
-  Tab,
   TableRow,
-  Tabs,
   TextField,
   Tooltip,
   Typography,
@@ -44,11 +41,6 @@ import { grafanaInstanceAPI, type GrafanaInstance } from '../../api/grafanaInsta
 import { extractApiError } from '../../api';
 import type { Instance } from '../../types/api';
 import { parseSpec } from '../../utils/instance';
-const typeLabels: Record<string, { label: string; color: 'primary' | 'secondary' | 'success' | 'warning' }> = {
-  metrics: { label: 'Metrics', color: 'primary' },
-  logs: { label: 'Logs', color: 'secondary' },
-  alert: { label: 'Alert', color: 'warning' },
-};
 
 const statusFilterItems = [
   { key: '', label: '全部状态' },
@@ -70,7 +62,6 @@ export default function InstancePage() {
   const [pageSize, setPageSize] = useState(10);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
-  const [typeFilter, setTypeFilter] = useState('');
 
   const [deleteDialog, setDeleteDialog] = useState<{ open: boolean; instance?: Instance }>({ open: false });
   const [saving, setSaving] = useState(false);
@@ -82,11 +73,12 @@ export default function InstancePage() {
   const fetchInstances = useCallback(async () => {
     setLoading(true);
     try {
+      // 本页只承载 metrics 数据面；日志实例在「日志 → 日志实例」独立管理。
       const { data: res } = await instanceAPI.list({
         page: page + 1,
         page_size: pageSize,
         search,
-        instance_type: typeFilter || undefined,
+        instance_type: 'metrics',
         status: statusFilter || undefined,
       });
       setInstances(res.data?.items || []);
@@ -96,7 +88,7 @@ export default function InstancePage() {
     } finally {
       setLoading(false);
     }
-  }, [page, pageSize, search, statusFilter, typeFilter, enqueueSnackbar]);
+  }, [page, pageSize, search, statusFilter, enqueueSnackbar]);
 
   useEffect(() => {
     fetchInstances();
@@ -183,28 +175,15 @@ export default function InstancePage() {
   return (
     <Box>
       <PageHeader
-        title="指标空间"
-        subtitle="管理 Metric Workspace，绑定 Zone 共享 VM 池"
-        actionLabel={isAdmin ? '创建指标空间' : undefined}
+        title="监控实例"
+        subtitle="VictoriaMetrics 指标数据面：绑定 Zone 共享 VM 集群"
+        actionLabel={isAdmin ? '创建监控实例' : undefined}
         onAction={isAdmin ? () => navigate('/instances/create') : undefined}
       />
 
-      <Tabs
-        value={typeFilter}
-        onChange={(_, v) => {
-          setTypeFilter(v);
-          setPage(0);
-        }}
-        sx={{ mb: 2 }}
-      >
-        <Tab value="" label="全部" />
-        <Tab value="metrics" label="Metrics" />
-        <Tab value="logs" label="Logs" />
-      </Tabs>
-
       <Card sx={{ mb: 2 }}>
         <Box sx={{ p: 2 }}>
-          <Typography variant="subtitle2" sx={{ mb: 1.5 }}>实例概览（当前页）</Typography>
+          <Typography variant="subtitle2" sx={{ mb: 1.5 }}>监控实例概览（当前页）</Typography>
           <Grid container spacing={1.5}>
             <Grid size={{ xs: 6, md: 3 }}>
               <Card variant="outlined" sx={{ p: 1.5 }}>
@@ -236,7 +215,7 @@ export default function InstancePage() {
 
       <FilterToolbar>
         <TextField
-          placeholder="搜索实例名称..."
+          placeholder="搜索监控实例名称..."
           size="small"
           value={search}
           onChange={(e) => {
@@ -290,8 +269,7 @@ export default function InstancePage() {
           <Table size="small">
             <TableHead>
               <TableRow>
-                <TableCell>实例名称</TableCell>
-                <TableCell>类型</TableCell>
+                <TableCell>监控实例名称</TableCell>
                 <TableCell>模板</TableCell>
                 <TableCell>规格</TableCell>
                 <TableCell>命名空间</TableCell>
@@ -306,25 +284,16 @@ export default function InstancePage() {
             <TableBody>
               {instances.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={11}>
-                    <EmptyState title="暂无实例" description="点击右上角按钮创建第一个实例" />
+                  <TableCell colSpan={10}>
+                    <EmptyState title="暂无监控实例" description="点击右上角按钮创建第一个监控实例" />
                   </TableCell>
                 </TableRow>
               ) : (
                 instances.map((inst) => {
                   const spec = parseSpec(inst.spec);
-                  const typeMeta = typeLabels[inst.instance_type];
                   return (
                     <TableRow key={inst.id}>
                       <TableCell sx={{ fontWeight: 500 }}>{inst.instance_name}</TableCell>
-                      <TableCell>
-                        <Chip
-                          label={typeMeta?.label || inst.instance_type}
-                          size="small"
-                          color={typeMeta?.color || 'default'}
-                          variant="outlined"
-                        />
-                      </TableCell>
                       <TableCell sx={{ fontSize: '0.8125rem' }}>{inst.template_type}</TableCell>
                       <TableCell sx={{ fontFamily: 'monospace', fontSize: '0.8125rem' }}>
                         {spec.cpu}C / {spec.memory}G / {spec.storage}Gi
@@ -381,8 +350,8 @@ export default function InstancePage() {
 
       <ConfirmDialog
         open={deleteDialog.open}
-        title="删除实例"
-        message={`确定要删除实例「${deleteDialog.instance?.instance_name}」吗？关联的 Helm Release 也将被卸载。`}
+        title="删除监控实例"
+        message={`确定要删除监控实例「${deleteDialog.instance?.instance_name}」吗？关联的 Helm Release 也将被卸载。`}
         severity="error"
         confirmLabel="删除"
         loading={saving}

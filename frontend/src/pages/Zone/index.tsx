@@ -32,6 +32,9 @@ import DeleteOutlinedIcon from '@mui/icons-material/DeleteOutlined';
 import CloudUploadOutlinedIcon from '@mui/icons-material/CloudUploadOutlined';
 import AddCircleOutlineIcon from '@mui/icons-material/AddCircleOutline';
 import VisibilityOutlinedIcon from '@mui/icons-material/VisibilityOutlined';
+import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined';
+import InsightsOutlinedIcon from '@mui/icons-material/InsightsOutlined';
+import HubOutlinedIcon from '@mui/icons-material/HubOutlined';
 import { useSnackbar } from 'notistack';
 import PageHeader from '../../components/common/PageHeader';
 import StatusChip from '../../components/common/StatusChip';
@@ -89,13 +92,16 @@ export default function ZonePage() {
   const [form, setForm] = useState<FormState>(defaultForm);
   const [saving, setSaving] = useState(false);
 
-  // InitShared 配置弹窗
-  const [initDialog, setInitDialog] = useState<{ open: boolean; zone?: Zone }>({ open: false });
+  // 初始化弹窗：mode 区分共享 VM 栈 / 日志管道（同一套 dry-run → 预检 → 应用流程）
+  const [initDialog, setInitDialog] = useState<{ open: boolean; zone?: Zone; mode: 'shared' | 'logs' }>({ open: false, mode: 'shared' });
   const [initForm, setInitForm] = useState({ namespace: '', release_name: 'vm-shared-stack', helm_values: defaultHelmValues });
   const [initLoading, setInitLoading] = useState(false);
   const [initPlan, setInitPlan] = useState<object | null>(null);
   const [initConfirmOpen, setInitConfirmOpen] = useState(false);
-  const [preflightResult, setPreflightResult] = useState<PreflightCheck | null>(null);
+  const [preflightChecks, setPreflightChecks] = useState<PreflightCheck[] | null>(null);
+  const [grafanaConfirm, setGrafanaConfirm] = useState<{ open: boolean; zone?: Zone }>({ open: false });
+  const [grafanaLoading, setGrafanaLoading] = useState(false);
+  const preflightPassed = !!preflightChecks && preflightChecks.every((c) => c.status !== 'fail');
 
   const [componentsDialog, setComponentsDialog] = useState<{ open: boolean; zone?: Zone }>({ open: false });
   const [components, setComponents] = useState<ZoneComponent[]>([]);
@@ -138,11 +144,15 @@ export default function ZonePage() {
     setDialogOpen(true);
   };
 
-  const openInitDialog = (z: Zone) => {
-    setInitDialog({ open: true, zone: z });
-    setInitForm({ namespace: `monitoring-${z.slug}`, release_name: 'vm-shared-stack', helm_values: defaultHelmValues });
+  const openInitDialog = (z: Zone, mode: 'shared' | 'logs') => {
+    setInitDialog({ open: true, zone: z, mode });
+    setInitForm({
+      namespace: mode === 'logs' ? `logging-${z.slug}` : `monitoring-${z.slug}`,
+      release_name: mode === 'logs' ? 'vlogs-stack' : 'vm-shared-stack',
+      helm_values: mode === 'logs' ? '{}' : defaultHelmValues,
+    });
     setInitPlan(null);
-    setPreflightResult(null);
+    setPreflightChecks(null);
   };
 
   const openComponentsDialog = async (z: Zone) => {
@@ -150,7 +160,7 @@ export default function ZonePage() {
     setComponentsLoading(true);
     try {
       const { data: res } = await zoneAPI.getComponents(z.id);
-      setComponents(res.data || []);
+      setComponents(res.data?.components || []);
     } catch (err) {
       enqueueSnackbar(extractApiError(err, '获取组件状态失败'), { variant: 'error' });
       setComponents([]);
@@ -163,39 +173,35 @@ export default function ZonePage() {
     if (!initDialog.zone) return;
     setInitLoading(true);
     try {
-      let values: Record<string, unknown> | undefined;
-      try { values = JSON.parse(initForm.helm_values); } catch { enqueueSnackbar('Helm Values JSON 格式错误', { variant: 'warning' }); setInitLoading(false); return; }
-      const { data: res } = await zoneAPI.preflight(initDialog.zone.id, {
-        dry_run: true,
-        namespace: initForm.namespace,
-        release_name: initForm.release_name,
-        values,
-      });
-      setPreflightResult(res.data);
-      if (res.data?.ok) {
+      const { data: res } = await zoneAPI.preflight(initDialog.zone.id);
+      const checks = res.data?.checks || [];
+      setPreflightChecks(checks);
+      const failed = checks.filter((c) => c.status === 'fail');
+      if (failed.length === 0) {
         enqueueSnackbar('预检通过', { variant: 'success' });
       } else {
-        enqueueSnackbar(`预检发现 ${res.data?.issues?.length || 0} 项问题`, { variant: 'warning' });
+        enqueueSnackbar(`预检发现 ${failed.length} 项失败`, { variant: 'warning' });
       }
     } catch (err) {
       enqueueSnackbar(extractApiError(err, '预检失败'), { variant: 'error' });
     } finally { setInitLoading(false); }
   };
 
+  const submitInit = async (dryRun: boolean) => {
+    if (!initDialog.zone) return false;
+    let values: Record<string, unknown> | undefined;
+    try { values = JSON.parse(initForm.helm_values); } catch { enqueueSnackbar('Helm Values JSON 格式错误', { variant: 'warning' }); return false; }
+    const body = { dry_run: dryRun, namespace: initForm.namespace, release_name: initForm.release_name, values };
+    const call = initDialog.mode === 'logs' ? zoneAPI.initLogs : zoneAPI.initShared;
+    const { data: res } = await call(initDialog.zone.id, body);
+    if (dryRun) setInitPlan(res.data || res);
+    return true;
+  };
+
   const handleInitDryRun = async () => {
-    if (!initDialog.zone) return;
     setInitLoading(true);
     try {
-      let values: Record<string, unknown> | undefined;
-      try { values = JSON.parse(initForm.helm_values); } catch { enqueueSnackbar('Helm Values JSON 格式错误', { variant: 'warning' }); setInitLoading(false); return; }
-      const { data: res } = await zoneAPI.initShared(initDialog.zone.id, {
-        dry_run: true,
-        namespace: initForm.namespace,
-        release_name: initForm.release_name,
-        values,
-      } as any);
-      setInitPlan(res.data || res);
-      enqueueSnackbar('Dry-run 成功，已生成部署计划', { variant: 'success' });
+      if (await submitInit(true)) enqueueSnackbar('Dry-run 成功，已生成部署计划', { variant: 'success' });
     } catch (err) {
       enqueueSnackbar(extractApiError(err, 'Dry-run 失败'), { variant: 'error' });
     } finally { setInitLoading(false); }
@@ -203,27 +209,33 @@ export default function ZonePage() {
 
   const handleInitApply = async () => {
     if (!initDialog.zone) return;
-    if (!preflightResult?.ok) {
+    if (!preflightPassed) {
       enqueueSnackbar('请先执行预检并确保通过后再初始化', { variant: 'warning' });
       return;
     }
     setInitLoading(true);
     try {
-      let values: Record<string, unknown> | undefined;
-      try { values = JSON.parse(initForm.helm_values); } catch { enqueueSnackbar('Helm Values JSON 格式错误', { variant: 'warning' }); setInitLoading(false); return; }
-      await zoneAPI.initShared(initDialog.zone.id, {
-        dry_run: false,
-        namespace: initForm.namespace,
-        release_name: initForm.release_name,
-        values,
-      } as any);
-      enqueueSnackbar(`共享 VM 集群初始化已提交（${initDialog.zone.display_name}）`, { variant: 'success' });
-      setInitConfirmOpen(false);
-      setInitDialog({ open: false });
-      fetch();
+      if (await submitInit(false)) {
+        enqueueSnackbar(`${initDialog.mode === 'logs' ? '日志管道' : '共享 VM 集群'}初始化已提交（${initDialog.zone.display_name}）`, { variant: 'success' });
+        setInitConfirmOpen(false);
+        setInitDialog({ open: false, mode: 'shared' });
+        fetch();
+      }
     } catch (err) {
       enqueueSnackbar(extractApiError(err, '初始化提交失败'), { variant: 'error' });
     } finally { setInitLoading(false); }
+  };
+
+  const handleInitGrafana = async () => {
+    if (!grafanaConfirm.zone) return;
+    setGrafanaLoading(true);
+    try {
+      await zoneAPI.initGrafana(grafanaConfirm.zone.id);
+      enqueueSnackbar(`Zone Grafana 初始化已提交（${grafanaConfirm.zone.display_name}）`, { variant: 'success' });
+      setGrafanaConfirm({ open: false });
+    } catch (err) {
+      enqueueSnackbar(extractApiError(err, 'Grafana 初始化失败'), { variant: 'error' });
+    } finally { setGrafanaLoading(false); }
   };
 
   const handleSave = async () => {
@@ -283,6 +295,10 @@ export default function ZonePage() {
             <MenuItem value="degraded">degraded</MenuItem><MenuItem value="offline">offline</MenuItem><MenuItem value="failed">failed</MenuItem>
           </Select>
         </FormControl>
+        <Box sx={{ flex: 1 }} />
+        <Button startIcon={<HubOutlinedIcon />} onClick={() => navigate('/clusters')}>
+          可观测集群
+        </Button>
       </FilterToolbar>
 
       <DataTableCard pagination={total > 0 ? (
@@ -309,14 +325,20 @@ export default function ZonePage() {
                   <TableCell><StatusChip status={z.status || 'active'} /></TableCell>
                   <TableCell align="right">
                     {isAdmin && (<>
-                      <Tooltip title="在此可用区创建实例">
+                      <Tooltip title="在此可用区创建监控实例">
                         <IconButton size="small" onClick={() => navigate(`/instances/create?zone_id=${z.id}`)} color="primary"><AddCircleOutlineIcon fontSize="small" /></IconButton>
                       </Tooltip>
                       <Tooltip title="组件状态">
                         <IconButton size="small" onClick={() => openComponentsDialog(z)}><VisibilityOutlinedIcon fontSize="small" /></IconButton>
                       </Tooltip>
                       <Tooltip title="初始化共享 VM 集群">
-                        <IconButton size="small" onClick={() => openInitDialog(z)}><CloudUploadOutlinedIcon fontSize="small" /></IconButton>
+                        <IconButton size="small" onClick={() => openInitDialog(z, 'shared')}><CloudUploadOutlinedIcon fontSize="small" /></IconButton>
+                      </Tooltip>
+                      <Tooltip title="初始化日志管道 (VictoriaLogs + Kafka + Vector)">
+                        <IconButton size="small" onClick={() => openInitDialog(z, 'logs')}><DescriptionOutlinedIcon fontSize="small" /></IconButton>
+                      </Tooltip>
+                      <Tooltip title="初始化 Zone Grafana">
+                        <IconButton size="small" onClick={() => setGrafanaConfirm({ open: true, zone: z })}><InsightsOutlinedIcon fontSize="small" /></IconButton>
                       </Tooltip>
                       <Tooltip title="编辑">
                         <IconButton size="small" onClick={() => openEdit(z)}><EditOutlinedIcon fontSize="small" /></IconButton>
@@ -362,12 +384,14 @@ export default function ZonePage() {
         </DialogActions>
       </Dialog>
 
-      {/* InitShared 配置弹窗 */}
-      <Dialog open={initDialog.open} onClose={() => setInitDialog({ open: false })} maxWidth="md" fullWidth>
-        <DialogTitle>初始化共享 VM 集群 — {initDialog.zone?.display_name}</DialogTitle>
+      {/* Init 配置弹窗（共享 VM / 日志管道） */}
+      <Dialog open={initDialog.open} onClose={() => setInitDialog({ open: false, mode: 'shared' })} maxWidth="md" fullWidth>
+        <DialogTitle>{initDialog.mode === 'logs' ? '初始化日志管道' : '初始化共享 VM 集群'} — {initDialog.zone?.display_name}</DialogTitle>
         <DialogContent sx={{ pt: '16px !important' }}>
           <Alert severity="info" sx={{ mb: 2 }}>
-            将使用 Helm Chart <code>vm/victoria-metrics-k8s-stack</code> 在可用区集群中部署共享 VM 监控栈（含 vminsert / vmselect / vmstorage / vmauth / grafana）。
+            {initDialog.mode === 'logs'
+              ? '将在可用区集群中部署日志数据面（VictoriaLogs + Kafka + Vector Aggregator），供日志实例接入。'
+              : <>将使用 Helm Chart <code>vm/victoria-metrics-k8s-stack</code> 在可用区集群中部署共享 VM 监控栈（含 vminsert / vmselect / vmstorage / vmauth / grafana）。</>}
           </Alert>
           <Grid container spacing={2} sx={{ mb: 2 }}>
             <Grid size={{ xs: 12, md: 6 }}>
@@ -386,12 +410,12 @@ export default function ZonePage() {
             sx={{ fontFamily: 'monospace', '& textarea': { fontSize: '0.8125rem', fontFamily: 'monospace' } }}
             helperText="自定义 Helm values 覆盖默认配置。留空或保持默认值则使用预设。"
           />
-          {preflightResult && (
-            <Alert severity={preflightResult.ok ? 'success' : 'warning'} sx={{ mt: 2 }}>
-              {preflightResult.ok ? '预检通过，可以执行初始化' : `预检发现 ${preflightResult.issues?.length || 0} 项问题`}
-              {!preflightResult.ok && preflightResult.issues?.map((issue, i) => (
-                <Typography key={i} variant="caption" sx={{ display: 'block' }}>
-                  · [{issue.component}] {issue.reason}{issue.message ? `: ${issue.message}` : ''}
+          {preflightChecks && (
+            <Alert severity={preflightPassed ? 'success' : 'warning'} sx={{ mt: 2 }}>
+              {preflightPassed ? '预检通过，可以执行初始化' : `预检发现 ${preflightChecks.filter((c) => c.status === 'fail').length} 项失败`}
+              {preflightChecks.map((check, i) => (
+                <Typography key={i} variant="caption" sx={{ display: 'block', color: check.status === 'fail' ? 'error.main' : check.status === 'warn' ? 'warning.main' : 'text.secondary' }}>
+                  · [{check.status}] {check.name}{check.message ? `: ${check.message}` : ''}
                 </Typography>
               ))}
             </Alert>
@@ -403,16 +427,20 @@ export default function ZonePage() {
           )}
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2 }}>
-          <Button onClick={() => setInitDialog({ open: false })}>取消</Button>
+          <Button onClick={() => setInitDialog({ open: false, mode: 'shared' })}>取消</Button>
           <Button variant="outlined" onClick={runPreflight} disabled={initLoading}>预检</Button>
           <Button variant="outlined" onClick={handleInitDryRun} disabled={initLoading}>{initLoading ? '执行中...' : 'Dry-run 预览'}</Button>
-          <Button variant="contained" onClick={() => setInitConfirmOpen(true)} disabled={initLoading || !preflightResult?.ok}>应用初始化</Button>
+          <Button variant="contained" onClick={() => setInitConfirmOpen(true)} disabled={initLoading || !preflightPassed}>应用初始化</Button>
         </DialogActions>
       </Dialog>
 
-      <ConfirmDialog open={initConfirmOpen} title="确认初始化共享 VM 集群"
+      <ConfirmDialog open={initConfirmOpen} title={initDialog.mode === 'logs' ? '确认初始化日志管道' : '确认初始化共享 VM 集群'}
         message={`将在可用区「${initDialog.zone?.display_name}」的集群中执行 Helm install/upgrade。请确认已执行 dry-run 并核对预览内容。`}
         confirmLabel="确认初始化" severity="warning" loading={initLoading} onConfirm={handleInitApply} onCancel={() => setInitConfirmOpen(false)} />
+
+      <ConfirmDialog open={grafanaConfirm.open} title="初始化 Zone Grafana"
+        message={`将在可用区「${grafanaConfirm.zone?.display_name}」的集群中部署 Zone 级 Grafana 并预配数据源。`}
+        confirmLabel="确认初始化" severity="warning" loading={grafanaLoading} onConfirm={handleInitGrafana} onCancel={() => setGrafanaConfirm({ open: false })} />
 
       <ConfirmDialog open={deleteDialog.open} title="删除可用区"
         message={`确定要删除可用区「${deleteDialog.zone?.display_name}」吗？不可逆，且要求无活跃实例。`}
@@ -431,20 +459,20 @@ export default function ZonePage() {
                 <TableHead>
                   <TableRow>
                     <TableCell>组件</TableCell>
-                    <TableCell>类型</TableCell>
                     <TableCell>状态</TableCell>
-                    <TableCell>版本</TableCell>
+                    <TableCell>命名空间</TableCell>
+                    <TableCell>Release</TableCell>
                     <TableCell>说明</TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
                   {components.map((c, idx) => (
                     <TableRow key={idx}>
-                      <TableCell sx={{ fontWeight: 500 }}>{c.name}</TableCell>
-                      <TableCell>{c.component}</TableCell>
+                      <TableCell sx={{ fontWeight: 500 }}>{c.component}</TableCell>
                       <TableCell><StatusChip status={c.status} /></TableCell>
-                      <TableCell>{c.version || '-'}</TableCell>
-                      <TableCell sx={{ color: 'text.secondary', fontSize: '0.8125rem' }}>{c.message || '-'}</TableCell>
+                      <TableCell sx={{ fontFamily: 'monospace', fontSize: '0.8125rem' }}>{c.namespace || '-'}</TableCell>
+                      <TableCell sx={{ fontFamily: 'monospace', fontSize: '0.8125rem' }}>{c.release || '-'}</TableCell>
+                      <TableCell sx={{ color: 'text.secondary', fontSize: '0.8125rem' }}>{c.details || '-'}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>

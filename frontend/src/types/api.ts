@@ -37,7 +37,6 @@ export interface UserMembership {
 export interface User {
   id: string;
   username: string;
-  display_name?: string;
   email?: string;
   phone?: string;
   role: 'admin' | 'user' | string;
@@ -73,8 +72,6 @@ export interface WorkspaceMember {
   id: string;
   workspace_id: string;
   user_id: string;
-  username?: string;
-  display_name?: string;
   role: 'admin' | 'member' | 'viewer' | string;
   created_at: string;
   updated_at: string;
@@ -95,22 +92,20 @@ export interface AuditLog {
   created_at: string;
 }
 
+// 对应后端 service.PreflightCheck：{name, status: ok|warn|fail, message}
 export interface PreflightCheck {
-  ok: boolean;
-  issues: Array<{
-    component: string;
-    reason: string;
-    message?: string;
-  }>;
+  name: string;
+  status: 'ok' | 'warn' | 'fail' | string;
+  message: string;
 }
 
+// 对应后端 service.ZoneComponentStatus。
 export interface ZoneComponent {
-  name: string;
   component: string;
   status: string;
-  version?: string;
-  message?: string;
-  ready?: boolean;
+  details?: string;
+  namespace?: string;
+  release?: string;
 }
 
 export interface Workspace {
@@ -243,7 +238,7 @@ export interface InstanceMetrics {
 
 export interface AlertRule {
   id: string;
-  workspace_id: string;
+  tenant_id: string;
   rule_name: string;
   rule_type: 'metrics' | 'logs' | string;
   query: string;
@@ -259,7 +254,7 @@ export interface AlertRule {
 }
 
 export interface CreateAlertRuleRequest {
-  workspace_id: string;
+  tenant_id: string;
   rule_name: string;
   rule_type: string;
   query: string;
@@ -272,8 +267,7 @@ export interface CreateAlertRuleRequest {
 
 export interface NotificationChannel {
   id: string;
-  workspace_id?: string;
-  tenant_id?: string;
+  tenant_id: string;
   channel_name: string;
   channel_type: 'dingtalk' | 'email' | 'slack' | 'sms' | 'webhook' | string;
   config: string;
@@ -283,7 +277,7 @@ export interface NotificationChannel {
 }
 
 export interface CreateNotificationChannelRequest {
-  workspace_id: string;
+  tenant_id: string;
   channel_name: string;
   channel_type: string;
   config?: string;
@@ -292,7 +286,7 @@ export interface CreateNotificationChannelRequest {
 
 export interface AlertEvent {
   id: string;
-  workspace_id: string;
+  tenant_id: string;
   rule_id: string;
   rule_name: string;
   level: string;
@@ -335,18 +329,44 @@ export interface PlatformScaleTarget {
   display_name: string;
 }
 
-export interface PlatformScaleAuditItem {
-  id: string;
-  user_id: string;
-  username: string;
-  role: string;
-  client_ip: string;
-  target_id: string;
-  dry_run: boolean;
-  status: 'success' | 'failed' | 'replayed';
-  spec_patch: string;
-  error_message: string;
-  created_at: string;
+// ── 告警统计（GET /alerts/stats/*）──
+
+export interface AlertSummary {
+  firing: number;
+  acknowledged: number;
+  resolved: number;
+  total: number;
+}
+
+export interface AlertTrendPoint {
+  bucket: string;
+  count: number;
+}
+
+export interface AlertLevelStat {
+  level: string;
+  count: number;
+}
+
+export interface AlertRuleStat {
+  rule_id: string;
+  rule_name: string;
+  count: number;
+}
+
+export interface ImportRuleError {
+  file: string;
+  group: string;
+  alert: string;
+  reason: string;
+}
+
+export interface ImportRulesResult {
+  total: number;
+  created: number;
+  skipped_recording: number;
+  skipped_duplicate: number;
+  errors: ImportRuleError[];
 }
 
 export interface PlatformInitSharedClusterRequest {

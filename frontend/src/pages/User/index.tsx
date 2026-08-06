@@ -48,7 +48,6 @@ export default function UserPage() {
   const { enqueueSnackbar } = useSnackbar();
   type UserForm = {
     username: string;
-    display_name: string;
     email: string;
     phone: string;
     role: User['role'];
@@ -64,7 +63,7 @@ export default function UserPage() {
   const [deleteDialog, setDeleteDialog] = useState<{ open: boolean; user?: User }>({ open: false });
   const [editingId, setEditingId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const [form, setForm] = useState<UserForm>({ username: '', display_name: '', email: '', phone: '', role: 'user', password: '' });
+  const [form, setForm] = useState<UserForm>({ username: '', email: '', phone: '', role: 'user', password: '' });
 
   const fetchUsers = useCallback(async () => {
     setLoading(true);
@@ -87,7 +86,6 @@ export default function UserPage() {
       if (editingId) {
         await userAPI.update(editingId, {
           username: form.username,
-          display_name: form.display_name,
           email: form.email,
           phone: form.phone,
           role: form.role,
@@ -123,7 +121,7 @@ export default function UserPage() {
 
   return (
     <Box>
-      <PageHeader title="用户管理" subtitle="管理平台用户与工作空间成员关系" actionLabel="新建用户" onAction={() => { setEditingId(null); setForm({ username: '', display_name: '', email: '', phone: '', role: 'user', password: '' }); setDialogOpen(true); }} />
+      <PageHeader title="用户管理" subtitle="管理平台用户与工作空间成员关系" actionLabel="新建用户" onAction={() => { setEditingId(null); setForm({ username: '', email: '', phone: '', role: 'user', password: '' }); setDialogOpen(true); }} />
 
       <Card sx={{ mb: 2 }}>
         <Box sx={{ p: 2 }}>
@@ -144,7 +142,6 @@ export default function UserPage() {
             <TableHead>
               <TableRow>
                 <TableCell>用户名</TableCell>
-                <TableCell>显示名</TableCell>
                 <TableCell>邮箱</TableCell>
                 <TableCell>平台角色</TableCell>
                 <TableCell>工作空间成员</TableCell>
@@ -155,11 +152,10 @@ export default function UserPage() {
             </TableHead>
             <TableBody>
               {users.length === 0 ? (
-                <TableRow><TableCell colSpan={8}><EmptyState title="暂无用户" /></TableCell></TableRow>
+                <TableRow><TableCell colSpan={7}><EmptyState title="暂无用户" /></TableCell></TableRow>
               ) : users.map((u) => (
                 <TableRow key={u.id}>
                   <TableCell sx={{ fontWeight: 500 }}>{u.username}</TableCell>
-                  <TableCell>{u.display_name || '-'}</TableCell>
                   <TableCell sx={{ color: 'text.secondary' }}>{u.email || '-'}</TableCell>
                   <TableCell>
                     <Chip
@@ -180,7 +176,7 @@ export default function UserPage() {
                     <Tooltip title="编辑">
                       <IconButton size="small" onClick={() => {
                         setEditingId(u.id);
-                        setForm({ username: u.username, display_name: u.display_name || '', email: u.email || '', phone: u.phone || '', role: u.role, password: '' });
+                        setForm({ username: u.username, email: u.email || '', phone: u.phone || '', role: u.role, password: '' });
                         setDialogOpen(true);
                       }}>
                         <EditOutlinedIcon fontSize="small" />
@@ -210,7 +206,6 @@ export default function UserPage() {
         <DialogTitle>{editingId ? '编辑用户' : '新建用户'}</DialogTitle>
         <DialogContent sx={{ pt: '16px !important' }}>
           <TextField fullWidth label="用户名" value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value })} sx={{ mb: 2 }} required disabled={!!editingId} />
-          <TextField fullWidth label="显示名" value={form.display_name} onChange={(e) => setForm({ ...form, display_name: e.target.value })} sx={{ mb: 2 }} />
           <TextField fullWidth label="邮箱" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} sx={{ mb: 2 }} />
           <TextField fullWidth label="手机号" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} sx={{ mb: 2 }} />
           {!editingId && (
@@ -238,7 +233,7 @@ export default function UserPage() {
       <ConfirmDialog
         open={deleteDialog.open}
         title="删除用户"
-        message={`确定要删除用户「${deleteDialog.user?.display_name || deleteDialog.user?.username}」吗？`}
+        message={`确定要删除用户「${deleteDialog.user?.username}」吗？`}
         severity="error"
         confirmLabel="删除"
         onConfirm={handleDelete}

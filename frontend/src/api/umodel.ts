@@ -24,6 +24,17 @@ export interface MetricSet {
   created_at: string;
 }
 
+export interface LogSet {
+  id: string;
+  tenant_id: string;
+  name: string;
+  display_name: string;
+  component: string;
+  description: string;
+  status: string;
+  created_at: string;
+}
+
 export interface DataLink {
   id: string;
   entity_id: string;
@@ -51,9 +62,21 @@ export const umodelAPI = {
   deleteMetricSet: (id: string, workspaceId?: string) =>
     api.delete<ApiResponse<{ deleted: boolean }>>(`/umodel/metric-sets/${id}`, { params: workspaceId ? { workspace_id: workspaceId } : undefined }),
 
+  listLogSets: (params?: PaginationParams & { component?: string; keyword?: string; workspace_id?: string }, config?: AxiosRequestConfig) =>
+    api.get<ApiResponse<PaginatedResponse<LogSet>>>('/umodel/log-sets', { ...config, params }),
+
+  createLogSet: (data: { name: string; display_name?: string; component?: string; description?: string }, workspaceId?: string) =>
+    api.post<ApiResponse<LogSet>>('/umodel/log-sets', data, { params: workspaceId ? { workspace_id: workspaceId } : undefined }),
+
+  deleteLogSet: (id: string, workspaceId?: string) =>
+    api.delete<ApiResponse<{ deleted: boolean }>>(`/umodel/log-sets/${id}`, { params: workspaceId ? { workspace_id: workspaceId } : undefined }),
+
   listDataLinks: (entityId: string, workspaceId?: string) =>
     api.get<ApiResponse<{ items: DataLink[] }>>(`/umodel/entities/${entityId}/data-links`, { params: workspaceId ? { workspace_id: workspaceId } : undefined }),
 
   createDataLink: (data: { entity_id: string; target_type: string; target_id: string; relation_type?: string }, workspaceId?: string) =>
     api.post<ApiResponse<DataLink>>('/umodel/data-links', data, { params: workspaceId ? { workspace_id: workspaceId } : undefined }),
+
+  deleteDataLink: (id: string, workspaceId?: string) =>
+    api.delete<ApiResponse<{ deleted: boolean }>>(`/umodel/data-links/${id}`, { params: workspaceId ? { workspace_id: workspaceId } : undefined }),
 };

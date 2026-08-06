@@ -31,7 +31,7 @@ export default function InstanceCreatePage() {
 
   useEffect(() => {
     if (user && user.role !== 'admin') {
-      enqueueSnackbar('仅管理员可创建指标空间', { variant: 'warning' });
+      enqueueSnackbar('仅管理员可创建监控实例', { variant: 'warning' });
       navigate('/instances', { replace: true });
     }
   }, [user, navigate, enqueueSnackbar]);
@@ -74,7 +74,7 @@ export default function InstanceCreatePage() {
   const validate = useCallback((): boolean => {
     const e: Record<string, string> = {};
     if (!selectedWorkspace) e.tenant = '请选择工作空间';
-    if (!form.instance_name.trim()) e.instance_name = '请输入指标空间名称';
+    if (!form.instance_name.trim()) e.instance_name = '请输入监控实例名称';
     if (!form.zone_id) e.zone_id = '请选择可用区（需已 InitShared）';
     setErrors(e);
     return Object.keys(e).length === 0;
@@ -93,7 +93,7 @@ export default function InstanceCreatePage() {
         spec: JSON.stringify({ mode: 'shared', retention: form.retention }),
         grafana_instance_id: form.grafana_instance_id || undefined,
       });
-      enqueueSnackbar(`指标空间「${form.instance_name}」创建成功`, { variant: 'success' });
+      enqueueSnackbar(`监控实例「${form.instance_name}」创建成功`, { variant: 'success' });
       navigate('/instances');
     } catch (err) {
       enqueueSnackbar(extractApiError(err, '创建失败'), { variant: 'error' });
@@ -107,9 +107,9 @@ export default function InstanceCreatePage() {
       <Box sx={{ mb: 3, display: 'flex', alignItems: 'center', gap: 2 }}>
         <Button startIcon={<ArrowBackIcon />} onClick={() => navigate('/instances')}>返回</Button>
         <Box>
-          <Typography variant="h5" sx={{ fontWeight: 600 }}>创建指标空间</Typography>
+          <Typography variant="h5" sx={{ fontWeight: 600 }}>创建监控实例</Typography>
           <Typography variant="body2" color="text.secondary">
-            在 Zone 共享 VM 池上绑定 Metric Workspace；VMUser 由工作空间开通时创建
+            在 Zone 共享 VM 集群上创建监控实例；VMUser 由工作空间开通时创建
           </Typography>
         </Box>
       </Box>
@@ -132,7 +132,7 @@ export default function InstanceCreatePage() {
                   )}
                 />
                 <TextField
-                  fullWidth label="指标空间名称" value={form.instance_name}
+                  fullWidth label="监控实例名称" value={form.instance_name}
                   onChange={(e) => setForm({ ...form, instance_name: e.target.value })}
                   sx={{ mb: 2.5 }} required error={!!errors.instance_name}
                   helperText={errors.instance_name || '如 payment-api-metrics'}

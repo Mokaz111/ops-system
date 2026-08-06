@@ -39,7 +39,7 @@ import { businessClusterAPI, type BusinessCluster, type CreateBusinessClusterReq
 import { logAPI, type LogInstance } from '../../api/logs';
 import { extractApiError } from '../../api';
 import { useAuthStore } from '../../stores/useAuthStore';
-import { isWorkspaceAdmin, isPlatformAdmin } from '../../utils/membership';
+import { isPlatformAdmin } from '../../utils/membership';
 
 const agentStatusLabels: Record<string, { label: string; color: 'success' | 'warning' | 'error' | 'default' }> = {
   pending: { label: '待部署', color: 'default' },
@@ -69,7 +69,8 @@ const defaultForm: CreateBusinessClusterRequest = {
 export default function BusinessClusterPage() {
   const { enqueueSnackbar } = useSnackbar();
   const { user } = useAuthStore();
-  const isAdmin = isPlatformAdmin(user) || isWorkspaceAdmin(user);
+  // 业务集群的写接口（接入/启停日志/删除）在后端为平台管理员专属。
+  const isAdmin = isPlatformAdmin(user);
   const [searchParams] = useSearchParams();
 
   const tenantFilter = searchParams.get('workspace_id') || '';
@@ -436,10 +437,10 @@ export default function BusinessClusterPage() {
             将在业务集群部署 Vector Agent，日志写入 Zone Kafka（不直连存储）。
           </Typography>
           <FormControl fullWidth size="small">
-            <InputLabel>日志工作空间</InputLabel>
+            <InputLabel>日志实例</InputLabel>
             <Select
               value={selectedLogInstance}
-              label="日志工作空间"
+              label="日志实例"
               onChange={(e) => setSelectedLogInstance(e.target.value)}
             >
               {logInstances.map((li) => (
@@ -451,7 +452,7 @@ export default function BusinessClusterPage() {
           </FormControl>
           {logInstances.length === 0 && (
             <Alert severity="warning" sx={{ mt: 2 }}>
-              请先创建日志工作空间并完成 Zone init-logs。
+              请先创建日志实例并完成 Zone init-logs。
             </Alert>
           )}
         </DialogContent>

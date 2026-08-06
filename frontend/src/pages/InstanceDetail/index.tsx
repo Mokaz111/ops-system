@@ -17,6 +17,7 @@ import {
   Grid,
   LinearProgress,
   Link as MuiLink,
+  MenuItem,
   Stack,
   Table,
   TableBody,
@@ -57,7 +58,7 @@ import { businessClusterAPI, type BusinessCluster } from '../../api/businessClus
 import { platformAPI } from '../../api/platform';
 import { extractApiError } from '../../api';
 import { isAbortError, makeAbortController } from '../../api/client';
-import type { Instance, InstanceMetrics } from '../../types/api';
+import type { Instance, InstanceMetrics, PlatformScaleTarget } from '../../types/api';
 import { useAuthStore } from '../../stores/useAuthStore';
 import { parseSpec } from '../../utils/instance';
 
@@ -255,11 +256,22 @@ function InstallationCard({
     }
   };
 
+  // 后端 upgrade 的 template_version 为必填：升级到模版的最新版本。
   const handleUpgrade = async () => {
     setActionLoading(true);
     try {
-      await integrationAPI.upgrade(installation.id);
-      enqueueSnackbar('升级已提交', { variant: 'success' });
+      const { data: tplRes } = await integrationAPI.getTemplate(installation.template_id);
+      const latest = tplRes.data?.latest_version;
+      if (!latest) {
+        enqueueSnackbar('无法获取模版最新版本', { variant: 'warning' });
+        return;
+      }
+      if (latest === installation.template_version) {
+        enqueueSnackbar(`已是最新版本 ${latest}`, { variant: 'info' });
+        return;
+      }
+      await integrationAPI.upgrade(installation.id, { template_version: latest });
+      enqueueSnackbar(`已升级到 ${latest}`, { variant: 'success' });
       onRefresh?.();
     } catch (err) {
       enqueueSnackbar(extractApiError(err, '升级失败'), { variant: 'error' });
@@ -268,11 +280,25 @@ function InstallationCard({
     }
   };
 
+  // 后端 rollback 需要 revision_id（query）：回滚到上一次 install/upgrade 的 revision。
   const handleRollback = async () => {
     setActionLoading(true);
     try {
-      await integrationAPI.rollback(installation.id);
-      enqueueSnackbar('回滚已提交', { variant: 'success' });
+      let revs = revisions;
+      if (!revs) {
+        const { data: res } = await integrationAPI.listInstallationRevisions(installation.id);
+        revs = res.data || [];
+        setRevisions(revs);
+      }
+      const installLike = revs.filter((r) => r.action === 'install' || r.action === 'upgrade' || r.action === 'reinstall');
+      // revisions 按 created_at DESC：第 0 条是当前，回滚目标是上一条。
+      const target = installLike[1];
+      if (!target) {
+        enqueueSnackbar('没有可回滚的历史版本', { variant: 'warning' });
+        return;
+      }
+      await integrationAPI.rollback(installation.id, target.id);
+      enqueueSnackbar(`已回滚到 ${target.version}`, { variant: 'success' });
       onRefresh?.();
     } catch (err) {
       enqueueSnackbar(extractApiError(err, '回滚失败'), { variant: 'error' });
@@ -427,8 +453,25 @@ export default function InstanceDetailPage() {
     vmstorage_replicas: 2,
     storage_size: '200Gi',
   });
+  const [scaleTargets, setScaleTargets] = useState<PlatformScaleTarget[]>([]);
+  const [scaleTargetId, setScaleTargetId] = useState('');
   const [scalePreview, setScalePreview] = useState<string | null>(null);
   const [scaling, setScaling] = useState(false);
+
+  // 扩缩容目标必须来自 targets 接口（VMCluster CR 标识），不能用实例/集群 ID。
+  useEffect(() => {
+    if (!isAdmin || instance?.instance_type !== 'metrics' || instance?.template_type !== 'shared') return;
+    (async () => {
+      try {
+        const { data: res } = await platformAPI.listVMClusterTargets();
+        const targets = res.data || [];
+        setScaleTargets(targets);
+        if (targets.length > 0) setScaleTargetId((prev) => prev || targets[0].id);
+      } catch {
+        setScaleTargets([]);
+      }
+    })();
+  }, [isAdmin, instance?.instance_type, instance?.template_type]);
 
   // 详情页一次性拉多个独立资源，统一通过同一个 AbortController 兜起：
   //   - 切换实例 / 卸载组件时立即取消在飞请求；
@@ -610,7 +653,7 @@ export default function InstanceDetailPage() {
     <Box>
       <PageHeader
         title={instance.instance_name}
-        subtitle="实例详情、监控与告警联动"
+        subtitle="监控实例详情、接入与告警联动"
         extra={(
           <Button startIcon={<ArrowBackIcon />} variant="outlined" onClick={() => navigate(listPath)}>
             返回列表
@@ -726,7 +769,7 @@ export default function InstanceDetailPage() {
                       startIcon={<DeleteOutlinedIcon />}
                       onClick={() => setDeleteOpen(true)}
                     >
-                      删除实例
+                      删除监控实例
                     </Button>
                   </Box>
                 </Card>
@@ -799,7 +842,7 @@ export default function InstanceDetailPage() {
                   <Button
                     variant="outlined"
                     startIcon={<NotificationsActiveOutlinedIcon />}
-                    onClick={() => navigate(`/alerts?instance_id=${instance.id}&instance_name=${encodeURIComponent(instance.instance_name)}`)}
+                    onClick={() => navigate(`/alerts/rules?instance_id=${instance.id}&instance_name=${encodeURIComponent(instance.instance_name)}`)}
                   >
                     打开告警引擎
                   </Button>
@@ -900,6 +943,25 @@ export default function InstanceDetailPage() {
                 <Alert severity="warning" sx={{ mb: 2 }}>
                   请先执行 dry-run 预览变更内容，确认无误后再应用。
                 </Alert>
+                {scaleTargets.length === 0 ? (
+                  <Alert severity="info" sx={{ mb: 2 }}>未发现可扩缩容的共享 VMCluster 目标（需要 K8s Operator 已配置）。</Alert>
+                ) : (
+                  <TextField
+                    select
+                    fullWidth
+                    size="small"
+                    label="扩缩容目标 (VMCluster)"
+                    value={scaleTargetId}
+                    onChange={(e) => { setScaleTargetId(e.target.value); setScalePreview(null); }}
+                    sx={{ mb: 2 }}
+                  >
+                    {scaleTargets.map((t) => (
+                      <MenuItem key={t.id} value={t.id}>
+                        {t.display_name || t.name}（{t.namespace}/{t.name}）
+                      </MenuItem>
+                    ))}
+                  </TextField>
+                )}
                 <Grid container spacing={2} sx={{ mb: 2 }}>
                   <Grid size={{ xs: 12, md: 3 }}>
                     <TextField
@@ -945,12 +1007,12 @@ export default function InstanceDetailPage() {
                   <Button
                     variant="contained"
                     startIcon={<SettingsEthernetOutlinedIcon />}
-                    disabled={scaling}
+                    disabled={scaling || !scaleTargetId}
                     onClick={async () => {
                       setScaling(true);
                       try {
                         const { data: res } = await platformAPI.scaleVMCluster({
-                          target_id: instance.cluster_id || instance.id,
+                          target_id: scaleTargetId,
                           vmselect_replicas: scaleForm.vmselect_replicas,
                           vminsert_replicas: scaleForm.vminsert_replicas,
                           vmstorage_replicas: scaleForm.vmstorage_replicas,
@@ -971,18 +1033,19 @@ export default function InstanceDetailPage() {
                   <Button
                     variant="outlined"
                     color="warning"
-                    disabled={scaling || !scalePreview}
+                    disabled={scaling || !scalePreview || !scaleTargetId}
                     onClick={async () => {
                       setScaling(true);
                       try {
+                        // 非 dry-run 后端强制要求 Idempotency-Key，防止重复提交。
                         await platformAPI.scaleVMCluster({
-                          target_id: instance.cluster_id || instance.id,
+                          target_id: scaleTargetId,
                           vmselect_replicas: scaleForm.vmselect_replicas,
                           vminsert_replicas: scaleForm.vminsert_replicas,
                           vmstorage_replicas: scaleForm.vmstorage_replicas,
                           storage_size: scaleForm.storage_size,
                           dry_run: false,
-                        });
+                        }, { idempotencyKey: crypto.randomUUID() });
                         enqueueSnackbar('扩容已提交', { variant: 'success' });
                         setScalePreview(null);
                       } catch (err) {
@@ -1055,8 +1118,8 @@ export default function InstanceDetailPage() {
 
       <ConfirmDialog
         open={deleteOpen}
-        title="删除实例"
-        message={`确定要删除实例「${instance.instance_name}」吗？关联的 Helm Release 与 CR 资源也将被回收，此操作不可撤销。`}
+        title="删除监控实例"
+        message={`确定要删除监控实例「${instance.instance_name}」吗？关联的 Helm Release 与 CR 资源也将被回收，此操作不可撤销。`}
         severity="error"
         confirmLabel="删除"
         loading={saving}

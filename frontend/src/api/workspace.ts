@@ -34,11 +34,12 @@ export const workspaceAPI = {
   addMember: (workspaceId: string, data: { user_id: string; role: string }) =>
     api.post<ApiResponse<WorkspaceMember>>(`/workspaces/${workspaceId}/members`, data),
 
-  updateMember: (workspaceId: string, memberId: string, data: { role: string }) =>
-    api.put<ApiResponse<WorkspaceMember>>(`/workspaces/${workspaceId}/members/${memberId}`, data),
+  // 注意：路径参数是成员的 user_id（后端路由为 /members/:userId），不是 membership 记录主键。
+  updateMember: (workspaceId: string, userId: string, data: { role: string }) =>
+    api.put<ApiResponse<WorkspaceMember>>(`/workspaces/${workspaceId}/members/${userId}`, data),
 
-  removeMember: (workspaceId: string, memberId: string) =>
-    api.delete<ApiResponse<null>>(`/workspaces/${workspaceId}/members/${memberId}`),
+  removeMember: (workspaceId: string, userId: string) =>
+    api.delete<ApiResponse<null>>(`/workspaces/${workspaceId}/members/${userId}`),
 };
 
 function normalizeListParams(params?: PaginationParams) {

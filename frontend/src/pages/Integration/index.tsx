@@ -233,7 +233,7 @@ export default function IntegrationPage() {
         template_id: selected.id,
         template_version: currentVersion.version,
         instance_id: targetInstance.id,
-        workspace_id: targetInstance.workspace_id,
+        tenant_id: targetInstance.workspace_id,
         grafana_instance_id: grafanaHostId || undefined,
         values,
       });
@@ -258,7 +258,7 @@ export default function IntegrationPage() {
         template_id: selected.id,
         template_version: currentVersion.version,
         instance_id: targetInstance.id,
-        workspace_id: targetInstance.workspace_id,
+        tenant_id: targetInstance.workspace_id,
         grafana_instance_id: grafanaHostId || undefined,
         values,
         force,

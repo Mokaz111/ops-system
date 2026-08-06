@@ -466,6 +466,7 @@ func NewRouter(cfg *config.Config, log *zap.Logger, db *gorm.DB) *gin.Engine {
 
 			adminAG := admin.Group("/alerts")
 			adminAG.POST("/rules", alertH.CreateRule)
+			adminAG.POST("/rules/import", alertH.ImportRules)
 			adminAG.PUT("/rules/:id", alertH.UpdateRule)
 			adminAG.DELETE("/rules/:id", alertH.DeleteRule)
 			adminAG.POST("/channels", alertH.CreateChannel)

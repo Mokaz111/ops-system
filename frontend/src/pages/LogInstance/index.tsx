@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Alert,
   Box,
@@ -21,6 +22,7 @@ import {
   TableRow,
   TextField,
 } from '@mui/material';
+import ManageSearchOutlinedIcon from '@mui/icons-material/ManageSearchOutlined';
 import { useSnackbar } from 'notistack';
 import PageHeader from '../../components/common/PageHeader';
 import EmptyState from '../../components/common/EmptyState';
@@ -32,13 +34,15 @@ import { workspaceAPI } from '../../api/workspace';
 import type { Workspace } from '../../types/api';
 import { extractApiError } from '../../api';
 import { useAuthStore } from '../../stores/useAuthStore';
-import { isPlatformAdmin, isWorkspaceAdmin, getPrimaryWorkspaceId } from '../../utils/membership';
+import { isPlatformAdmin, getPrimaryWorkspaceId } from '../../utils/membership';
 
 export default function LogInstancePage() {
   const { enqueueSnackbar } = useSnackbar();
+  const navigate = useNavigate();
   const { user } = useAuthStore();
   const isPlatformAdminUser = isPlatformAdmin(user);
-  const isAdmin = isPlatformAdminUser || isWorkspaceAdmin(user);
+  // 日志实例的写接口在后端为平台管理员专属（RequireRole admin）。
+  const isAdmin = isPlatformAdminUser;
 
   const [items, setItems] = useState<LogInstance[]>([]);
   const [zones, setZones] = useState<Zone[]>([]);
@@ -103,7 +107,7 @@ export default function LogInstancePage() {
         instance_name: form.instance_name,
         retention_days: form.retention_days,
       });
-      enqueueSnackbar('日志工作空间创建成功', { variant: 'success' });
+      enqueueSnackbar('日志实例创建成功', { variant: 'success' });
       setDialogOpen(false);
       fetch();
     } catch (err) {
@@ -118,16 +122,16 @@ export default function LogInstancePage() {
   return (
     <Box>
       <PageHeader
-        title="日志工作空间"
-        subtitle="绑定 Zone 日志管道（Vector → Kafka → Aggregator → VictoriaLogs）"
-        actionLabel={isAdmin ? '创建工作空间' : undefined}
+        title="日志实例"
+        subtitle="VictoriaLogs 日志数据面：绑定 Zone 日志管道（Vector → Kafka → Aggregator → VictoriaLogs）"
+        actionLabel={isAdmin ? '创建日志实例' : undefined}
         onAction={isAdmin ? () => setDialogOpen(true) : undefined}
       />
 
       <Stack direction="row" spacing={2} sx={{ mb: 2 }}>
         <TextField
           size="small"
-          placeholder="搜索实例名称"
+          placeholder="搜索日志实例名称"
           value={keyword}
           onChange={(e) => setKeyword(e.target.value)}
           sx={{ minWidth: 260 }}
@@ -136,8 +140,8 @@ export default function LogInstancePage() {
 
       {items.length === 0 ? (
         <EmptyState
-          title="暂无日志工作空间"
-          description={isAdmin ? '请先对 Zone 执行 init-logs，再创建工作空间' : '当前工作空间下暂无日志实例'}
+          title="暂无日志实例"
+          description={isAdmin ? '请先对 Zone 执行 init-logs，再创建日志实例' : '当前工作空间下暂无日志实例'}
         />
       ) : (
         <TableContainer component={Paper}>
@@ -150,6 +154,7 @@ export default function LogInstancePage() {
                 <TableCell>保留天数</TableCell>
                 <TableCell>状态</TableCell>
                 <TableCell>创建时间</TableCell>
+                <TableCell align="right">操作</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
@@ -163,6 +168,15 @@ export default function LogInstancePage() {
                     <StatusChip status={i.status} />
                   </TableCell>
                   <TableCell>{new Date(i.created_at).toLocaleString()}</TableCell>
+                  <TableCell align="right">
+                    <Button
+                      size="small"
+                      startIcon={<ManageSearchOutlinedIcon />}
+                      onClick={() => navigate(`/logs/query?instance_id=${i.id}`)}
+                    >
+                      查询日志
+                    </Button>
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>
@@ -171,7 +185,7 @@ export default function LogInstancePage() {
       )}
 
       <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>创建日志工作空间</DialogTitle>
+        <DialogTitle>创建日志实例</DialogTitle>
         <DialogContent sx={{ pt: '16px !important' }}>
           <Alert severity="info" sx={{ mb: 2 }}>
             需先在目标 Zone 完成 init-logs（VictoriaLogs + Kafka + Vector Aggregator）。
@@ -209,7 +223,7 @@ export default function LogInstancePage() {
           <TextField
             fullWidth
             size="small"
-            label="名称"
+            label="日志实例名称"
             value={form.instance_name}
             onChange={(e) => setForm({ ...form, instance_name: e.target.value })}
             sx={{ mb: 2 }}

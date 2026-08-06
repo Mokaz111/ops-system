@@ -299,7 +299,7 @@ export default function TemplateWizard({ open, categories, onClose, onSuccess }:
                 fullWidth
                 multiline
                 minRows={4}
-                placeholder={`{\n  "vmrule": "...yaml...",\n  "n9e": [],\n  "alert_targets": ["vmrule"]\n}`}
+                placeholder={`{\n  "vmrule": "...yaml...",\n  "alert_targets": ["vmrule"]\n}`}
                 value={version.alert_spec}
                 onChange={(e) => setVersion({ ...version, alert_spec: e.target.value })}
                 InputProps={{ sx: { fontFamily: 'monospace', fontSize: 12.5 } }}

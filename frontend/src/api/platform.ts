@@ -1,8 +1,8 @@
 import api from './index';
 import type {
   ApiResponse,
+  AuditLog,
   PaginatedResponse,
-  PlatformScaleAuditItem,
   PlatformInitSharedClusterPlan,
   PlatformInitSharedClusterRequest,
   PlatformScaleTarget,
@@ -14,16 +14,9 @@ export const platformAPI = {
   listVMClusterTargets: () =>
     api.get<ApiResponse<PlatformScaleTarget[]>>('/platform/scaling/vmcluster/targets'),
 
-  listAudits: (params?: {
-    page?: number;
-    page_size?: number;
-    target_id?: string;
-    status?: 'success' | 'failed' | 'replayed' | '';
-    operator?: string;
-    start_time?: string;
-    end_time?: string;
-  }) =>
-    api.get<ApiResponse<PaginatedResponse<PlatformScaleAuditItem>>>('/platform/scaling/audits', { params }),
+  // 后端已并入统一审计（action=platform.scale），返回 AuditLog。
+  listAudits: (params?: { page?: number; page_size?: number }) =>
+    api.get<ApiResponse<PaginatedResponse<AuditLog>>>('/platform/scaling/audits', { params }),
 
   initSharedCluster: (data: PlatformInitSharedClusterRequest) =>
     api.post<ApiResponse<PlatformInitSharedClusterPlan>>('/platform/scaling/bootstrap/shared/init', data),

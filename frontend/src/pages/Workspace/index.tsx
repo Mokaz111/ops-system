@@ -47,6 +47,7 @@ import { userAPI } from '../../api/user';
 import { grafanaInstanceAPI, type GrafanaInstance } from '../../api/grafanaInstance';
 import { extractApiError } from '../../api';
 import { useAuthStore } from '../../stores/useAuthStore';
+import { isWorkspaceAdmin } from '../../utils/membership';
 import type { User, Workspace, WorkspaceMember, WorkspaceMetrics } from '../../types/api';
 
 const templateLabels: Record<string, string> = {
@@ -68,6 +69,9 @@ export default function WorkspacePage() {
   const navigate = useNavigate();
   const { user } = useAuthStore();
   const isAdmin = user?.role === 'admin';
+  // 工作空间 CRUD 是平台管理员专属；成员管理放开给该空间的 workspace admin（与后端一致）。
+  const canManageMembersOf = (workspaceId?: string) =>
+    isAdmin || (!!workspaceId && isWorkspaceAdmin(user, workspaceId));
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [loading, setLoading] = useState(true);
   const [total, setTotal] = useState(0);
@@ -120,7 +124,7 @@ export default function WorkspacePage() {
     try {
       const [membersRes, usersRes] = await Promise.all([
         workspaceAPI.listMembers(workspaceId, { page: 1, page_size: 100 }),
-        isAdmin ? userAPI.list({ page: 1, page_size: 200 }) : Promise.resolve(null),
+        isAdmin || isWorkspaceAdmin(user, workspaceId) ? userAPI.list({ page: 1, page_size: 200 }) : Promise.resolve(null),
       ]);
       setMembers(membersRes.data.data?.items || []);
       if (usersRes) setAllUsers(usersRes.data.data?.items || []);
@@ -129,7 +133,7 @@ export default function WorkspacePage() {
     } finally {
       setMembersLoading(false);
     }
-  }, [enqueueSnackbar, isAdmin]);
+  }, [enqueueSnackbar, isAdmin, user]);
 
   const handleSave = async () => {
     setSaving(true);
@@ -202,10 +206,11 @@ export default function WorkspacePage() {
     }
   };
 
+  // 后端成员路由以 user_id 定位（/members/:userId），不能传 membership 主键。
   const handleUpdateMemberRole = async (member: WorkspaceMember, role: string) => {
     if (!detail.tenant) return;
     try {
-      await workspaceAPI.updateMember(detail.tenant.id, member.id, { role });
+      await workspaceAPI.updateMember(detail.tenant.id, member.user_id, { role });
       enqueueSnackbar('成员角色已更新', { variant: 'success' });
       fetchMembers(detail.tenant.id);
     } catch (err) {
@@ -216,7 +221,7 @@ export default function WorkspacePage() {
   const handleRemoveMember = async () => {
     if (!detail.tenant || !removeMemberDialog.member) return;
     try {
-      await workspaceAPI.removeMember(detail.tenant.id, removeMemberDialog.member.id);
+      await workspaceAPI.removeMember(detail.tenant.id, removeMemberDialog.member.user_id);
       enqueueSnackbar('成员已移除', { variant: 'success' });
       setRemoveMemberDialog({ open: false });
       fetchMembers(detail.tenant.id);
@@ -228,6 +233,8 @@ export default function WorkspacePage() {
   if (loading && workspaces.length === 0) return <LoadingScreen />;
 
   const existingMemberUserIds = new Set(members.map((m) => m.user_id));
+  // 后端成员接口只返回 user_id，这里用用户列表映射出用户名。
+  const userNameById = new Map(allUsers.map((u) => [u.id, u.username]));
 
   return (
     <Box>
@@ -292,8 +299,8 @@ export default function WorkspacePage() {
                     <TableCell><StatusChip status={t.status} /></TableCell>
                     <TableCell sx={{ color: 'text.secondary', fontSize: '0.8125rem' }}>{new Date(t.created_at).toLocaleDateString()}</TableCell>
                     <TableCell align="right">
-                      <Tooltip title="为此工作空间创建实例">
-                        <IconButton size="small" onClick={() => navigate(`/instances/create?workspace_id=${t.id}`)} aria-label="为此工作空间创建实例" color="primary">
+                      <Tooltip title="为此工作空间创建监控实例">
+                        <IconButton size="small" onClick={() => navigate(`/instances/create?workspace_id=${t.id}`)} aria-label="为此工作空间创建监控实例" color="primary">
                           <AddCircleOutlineIcon fontSize="small" />
                         </IconButton>
                       </Tooltip>
@@ -385,7 +392,7 @@ export default function WorkspacePage() {
 
           {detail.tab === 'members' && detail.tenant && (
             <Box>
-              {isAdmin && (
+              {canManageMembersOf(detail.tenant.id) && (
                 <Box sx={{ display: 'flex', gap: 2, mb: 2, flexWrap: 'wrap' }}>
                   <FormControl size="small" sx={{ minWidth: 220, flex: 1 }}>
                     <InputLabel>添加用户</InputLabel>
@@ -395,7 +402,7 @@ export default function WorkspacePage() {
                       onChange={(e) => setMemberForm({ ...memberForm, user_id: e.target.value })}
                     >
                       {allUsers.filter((u) => !existingMemberUserIds.has(u.id)).map((u) => (
-                        <MenuItem key={u.id} value={u.id}>{u.display_name || u.username}</MenuItem>
+                        <MenuItem key={u.id} value={u.id}>{u.username}</MenuItem>
                       ))}
                     </Select>
                   </FormControl>
@@ -423,15 +430,15 @@ export default function WorkspacePage() {
                       <TableCell>用户</TableCell>
                       <TableCell>角色</TableCell>
                       <TableCell>加入时间</TableCell>
-                      {isAdmin && <TableCell align="right">操作</TableCell>}
+                      {canManageMembersOf(detail.tenant.id) && <TableCell align="right">操作</TableCell>}
                     </TableRow>
                   </TableHead>
                   <TableBody>
                     {members.map((m) => (
                       <TableRow key={m.id}>
-                        <TableCell>{m.display_name || m.username || m.user_id.slice(0, 8)}</TableCell>
+                        <TableCell>{userNameById.get(m.user_id) || m.user_id.slice(0, 8)}</TableCell>
                         <TableCell>
-                          {isAdmin ? (
+                          {canManageMembersOf(detail.tenant?.id) ? (
                             <Select
                               size="small"
                               value={m.role}
@@ -449,7 +456,7 @@ export default function WorkspacePage() {
                         <TableCell sx={{ color: 'text.secondary', fontSize: '0.8125rem' }}>
                           {new Date(m.created_at).toLocaleDateString()}
                         </TableCell>
-                        {isAdmin && (
+                        {canManageMembersOf(detail.tenant?.id) && (
                           <TableCell align="right">
                             <IconButton size="small" color="error" onClick={() => setRemoveMemberDialog({ open: true, member: m })}>
                               <DeleteOutlinedIcon fontSize="small" />

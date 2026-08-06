@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Alert,
   Box,
@@ -22,6 +23,7 @@ import {
 } from '@mui/material';
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
 import DeleteOutlinedIcon from '@mui/icons-material/DeleteOutlined';
+import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import { useSnackbar } from 'notistack';
 import PageHeader from '../../components/common/PageHeader';
 import StatusChip from '../../components/common/StatusChip';
@@ -57,6 +59,7 @@ const defaultForm: FormState = {
 
 export default function ClusterPage() {
   const { enqueueSnackbar } = useSnackbar();
+  const navigate = useNavigate();
   const { user } = useAuthStore();
   const isAdmin = user?.role === 'admin';
 
@@ -191,6 +194,9 @@ export default function ClusterPage() {
       )}
 
       <FilterToolbar>
+        <Button startIcon={<ArrowBackIcon />} onClick={() => navigate('/zones')}>
+          返回可用区
+        </Button>
         <Typography variant="body2" color="text.secondary">
           可观测集群是 Zone 的基础设施底座，注册后需在可用区管理中绑定 Zone 才能部署实例。
         </Typography>

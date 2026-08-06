@@ -56,14 +56,17 @@ export const zoneAPI = {
     api.delete<ApiResponse<null>>(`/zones/${id}`),
 
   initShared: (id: string, body?: { dry_run?: boolean; namespace?: string; release_name?: string; values?: Record<string, unknown> }) =>
-    api.post<ApiResponse<any>>(`/zones/${id}/init-shared`, body || {}),
+    api.post<ApiResponse<Record<string, unknown>>>(`/zones/${id}/init-shared`, body || {}),
 
   initLogs: (id: string, body?: { dry_run?: boolean; namespace?: string; release_name?: string; values?: Record<string, unknown> }) =>
-    api.post<ApiResponse<any>>(`/zones/${id}/init-logs`, body || {}),
+    api.post<ApiResponse<Record<string, unknown>>>(`/zones/${id}/init-logs`, body || {}),
 
-  preflight: (id: string, body?: { dry_run?: boolean; namespace?: string; release_name?: string; values?: Record<string, unknown> }) =>
-    api.post<ApiResponse<PreflightCheck>>(`/zones/${id}/preflight`, body || {}),
+  initGrafana: (id: string) =>
+    api.post<ApiResponse<Record<string, unknown>>>(`/zones/${id}/init-grafana`),
+
+  preflight: (id: string) =>
+    api.get<ApiResponse<{ checks: PreflightCheck[] }>>(`/zones/${id}/preflight`),
 
   getComponents: (id: string) =>
-    api.get<ApiResponse<ZoneComponent[]>>(`/zones/${id}/components`),
+    api.get<ApiResponse<{ components: ZoneComponent[] }>>(`/zones/${id}/components`),
 };
