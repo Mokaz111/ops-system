@@ -1,19 +1,32 @@
 # Changelog
 
-## [Unreleased] - 2026-06-27
+## [Unreleased] - 2026-08-06
+
+### Added — SaaS 控制台 IA 与平台告警闭环
+
+- **嵌套侧栏域**：概览 / 接入中心 / 监控 / 日志 / 链路 / 告警 / 资源 / 管理（`sidebarNav`）
+- **WorkspaceSwitcher** + `useWorkspaceStore`；文案统一为监控实例 / 日志实例 / 工作空间
+- **告警一等公民**：规则 / 事件 / 渠道；`POST /alerts/rules/import`（Prometheus YAML/Zip/tar.gz）；Alertmanager Webhook 入库；静默页占位
+- **业务集群采集配置**：`GET/PUT .../business-clusters/:id/collect-config`（VMAgent / Vector）
+- **UModel LogSet** CRUD；告警统计接入 Dashboard（recharts）
+- 设计文档全面对齐重构后架构（README / docs/01–06 / v4）
+
+### Known residual
+
+- 部分模型/JSON/标签仍使用历史名 `tenant_id` / `ops_tenant_id`（值为 Workspace UUID）；API 查询优先 `workspace_id`
 
 ### BREAKING — 纯 SaaS 平台化
 
 - **Tenant → Workspace**：`/api/v1/tenants` → `/api/v1/workspaces`，模型/表名/API 全部重命名
 - **删除 Department 模块**：`/api/v1/departments` 路由移除，`ops_departments` 表备份为 `_deprecated`
-- **删除 TenantMember / AuthzService**：细粒度 RBAC 移除，`ops_tenant_members` 表备份
-- **删除 ServiceAccount / APIToken**：独立权限体系移除
-- **User.role 简化**：仅 `admin` / `user` 两种角色；`platform_admin` → `admin`；`operator`/`viewer` → `user`
-- **User.TenantID → WorkspaceID**：`tenant_id` 列替换为 `workspace_id`
+- **TenantMember → WorkspaceMember**：旧 `ops_tenant_members` / AuthzService 路径废弃，现行为 `ops_workspace_members`（`admin` / `member` / `viewer`）
+- **User.role 简化**：仅 `admin` / `user`；`platform_admin` → `admin`；`operator`/`viewer` → `user`
+- **用户归属**：由工作空间成员表表达（非强制 `users.workspace_id` FK）；业务资源列可能仍名 `tenant_id`
 - **删除 instance_type='visual'**：Grafana 不再是 Instance 类型；GrafanaInstance 新增 `source` 字段（platform/external）
 - **GrafanaInstance 删除 scope/tenant_id**：统一为平台级，通过 Org 映射隔离工作空间
-- **SSO 登录统一入口**：`POST /api/v1/instances/:id/login` 删除，仅保留 `POST /api/v1/grafana/instances/:id/login`
-- **前端删除**：Department、DashboardMgmt、GrafanaHost(旧)、Grafana(旧)、VMStats 页面全部删除
+- **SSO**：Grafana 走 `POST /api/v1/grafana/instances/:id/login`（实例登录入口以实现为准）
+- **前端删除**：Department、DashboardMgmt、GrafanaHost(旧)、Grafana(旧)、VMStats、LogStats 等页面
+- **告警**：不再依赖 N9E 客户端；平台自管规则/事件/渠道
 
 ### Added — Grafana 管理端到端可用
 

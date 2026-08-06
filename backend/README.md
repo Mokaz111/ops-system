@@ -1,12 +1,12 @@
 # Backend
 
-Ops System 后端控制面服务，基于 Go + Gin + GORM，提供多租户管理、实例管理、平台级扩容与审计能力。
+Ops System 后端控制面：多工作空间隔离、监控/日志实例、接入中心、平台告警、业务集群采集配置、Zone/Grafana 与平台扩容审计。
 
 ## 运行要求
 
 - Go 1.25.8+
 - PostgreSQL 15+
-- Redis 7+（建议；用于平台扩容幂等）
+- Redis 7+（建议；幂等键等）
 
 ## 启动
 
@@ -21,13 +21,10 @@ make run
 
 ### 配置与秘钥
 
-- `configs/config.example.yaml` 是 git 中跟踪的模板；**实际配置请写在 `configs/config.yaml` 并不要提交**。
-- 所有敏感项（`database.password / jwt.secret / grafana.api_key / n9e.token` 等）都支持 `${OPS_*}` 占位符，由 `os.ExpandEnv` 展开。
-- `server.mode: release` 时会额外强校验：
-  - `jwt.secret` 长度必须 ≥ 32 且非仓库示例值；
-  - `database.password` 非空且非仓库示例值；
-  - `database.sslmode` 不能为 `disable`；
-  - `cors.allowed_origins` 必须非空。
+- `configs/config.example.yaml` 是模板；**实际配置写在 `configs/config.yaml` 且勿提交**。
+- 敏感项（`database.password` / `jwt.secret` / `grafana.api_key` 等）支持 `${OPS_*}` 占位符。
+- `server.mode: release` 时强校验 JWT 长度、数据库密码/sslmode、CORS 白名单。
+- 示例中若仍残留 `n9e.*`，视为未接线遗留，运行不依赖 N9E。
 
 ## 常用命令
 
@@ -40,27 +37,34 @@ make vet
 make tidy
 ```
 
-> 在部分 Windows 环境中 `go vet` 可能出现工具链异常；若仅做编译验证，可临时使用 `go test -vet=off ./...`。
+> 部分 Windows 环境 `go vet` 可能异常；可临时 `go test -vet=off ./...`。
 
 ## 关键模块
 
-- `internal/server`：路由与服务组装
-- `internal/handler`：HTTP handler
-- `internal/service`：业务逻辑（含扩缩容策略与平台扩容）
-- `internal/repository`：数据库访问
-- `internal/k8s`：K8s 客户端封装
-- `internal/idempotency`：Redis 幂等存储
-- `internal/model`：数据模型（含平台扩容审计表）
+- `internal/server`：路由组装（`router.go`）
+- `internal/handler` / `service` / `repository` / `model`
+- `internal/vm`：VMOperator、Query、Route、VMAgent 相关
+- `internal/logagent`：Vector 配置构建（读取 logs_collect_config）
+- `internal/integration`：接入中心渲染与下发
+- `internal/idempotency`：Redis 幂等
 
 ## 权限模型（摘要）
 
-- 普通用户：仅可访问自身租户/实例数据
-- `admin`：可访问管理接口（如平台级扩容与审计查询）
+- 平台角色：`admin` / `user`
+- 工作空间成员：`admin` / `member` / `viewer`（`ops_workspace_members`）
+- 普通用户仅访问所属工作空间数据；平台 `admin` 可跨空间与平台运维接口
+- 残余：部分模型列名 `tenant_id` = Workspace UUID
 
-## 平台扩容相关接口（admin）
+## 代表性接口
 
-- `POST /api/v1/platform/scaling/bootstrap/shared/init`
-- `GET /api/v1/platform/scaling/vmcluster/targets`
-- `POST /api/v1/platform/scaling/vmcluster`
-- `GET /api/v1/platform/scaling/audits`
+| 域 | 路径 |
+|---|---|
+| 工作空间 | `/api/v1/workspaces`、`.../members` |
+| 告警 | `/api/v1/alerts/rules[/import]`、`/events`、`/channels`、`/stats/*` |
+| Webhook | `POST /api/v1/webhooks/alertmanager` |
+| 业务集群 | `/api/v1/business-clusters`、`.../collect-config`、`enable-logs` |
+| UModel | `/api/v1/umodel/*` |
+| Zone | `/api/v1/zones`、`init-shared|logs|grafana` |
+| 平台扩容 | `/api/v1/platform/scaling/*` |
 
+完整清单见 `docs/02-后端详细设计.md` 与 `internal/server/router.go`。
