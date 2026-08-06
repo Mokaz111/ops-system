@@ -14,11 +14,13 @@ import (
 
 // ZoneHandler 可用区 HTTP handler。
 type ZoneHandler struct {
-	svc *service.ZoneService
+	svc          *service.ZoneService
+	preflightSvc *service.ZonePreflightService
+	componentSvc *service.ZoneComponentService
 }
 
-func NewZoneHandler(svc *service.ZoneService) *ZoneHandler {
-	return &ZoneHandler{svc: svc}
+func NewZoneHandler(svc *service.ZoneService, preflightSvc *service.ZonePreflightService, componentSvc *service.ZoneComponentService) *ZoneHandler {
+	return &ZoneHandler{svc: svc, preflightSvc: preflightSvc, componentSvc: componentSvc}
 }
 
 // List GET /api/v1/zones
@@ -104,6 +106,23 @@ func (h *ZoneHandler) InitShared(c *gin.Context) {
 	response.JSON(c, plan)
 }
 
+// InitLogs POST /api/v1/zones/:id/init-logs (admin)
+func (h *ZoneHandler) InitLogs(c *gin.Context) {
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid id")
+		return
+	}
+	var body service.ZoneInitSharedRequest
+	_ = c.ShouldBindJSON(&body)
+	plan, err := h.svc.InitLogs(c.Request.Context(), id, &body)
+	if err != nil {
+		h.handleErr(c, err)
+		return
+	}
+	response.JSON(c, plan)
+}
+
 // InitGrafana POST /api/v1/zones/:id/init-grafana (admin)
 // 在 Zone 的监控集群中部署 Zone 级 Grafana 并预配数据源。
 func (h *ZoneHandler) InitGrafana(c *gin.Context) {
@@ -118,6 +137,44 @@ func (h *ZoneHandler) InitGrafana(c *gin.Context) {
 		return
 	}
 	response.JSON(c, plan)
+}
+
+// Preflight GET /api/v1/zones/:id/preflight
+func (h *ZoneHandler) Preflight(c *gin.Context) {
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid id")
+		return
+	}
+	if h.preflightSvc == nil {
+		response.Error(c, http.StatusServiceUnavailable, http.StatusServiceUnavailable, response.ErrCodeServiceUnavail, "preflight service not configured")
+		return
+	}
+	checks, err := h.preflightSvc.Preflight(c.Request.Context(), id)
+	if err != nil {
+		h.handleErr(c, err)
+		return
+	}
+	response.JSON(c, gin.H{"checks": checks})
+}
+
+// Components GET /api/v1/zones/:id/components
+func (h *ZoneHandler) Components(c *gin.Context) {
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid id")
+		return
+	}
+	if h.componentSvc == nil {
+		response.Error(c, http.StatusServiceUnavailable, http.StatusServiceUnavailable, response.ErrCodeServiceUnavail, "component service not configured")
+		return
+	}
+	components, err := h.componentSvc.GetComponents(c.Request.Context(), id)
+	if err != nil {
+		h.handleErr(c, err)
+		return
+	}
+	response.JSON(c, gin.H{"components": components})
 }
 
 // Delete DELETE /api/v1/zones/:id (admin)

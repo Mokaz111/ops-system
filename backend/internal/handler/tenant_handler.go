@@ -35,7 +35,6 @@ type tenantResp struct {
 	VMSelectURL       string     `json:"vm_select_url,omitempty"`
 	VMInsertURL       string     `json:"vm_insert_url,omitempty"`
 	Status            string     `json:"status"`
-	N9ETeamID         int64      `json:"n9e_team_id"`
 	GrafanaOrgID      int64      `json:"grafana_org_id"`
 	GrafanaInstanceID *uuid.UUID `json:"grafana_instance_id,omitempty"`
 	CreatedAt         time.Time  `json:"created_at"`
@@ -55,7 +54,6 @@ func (h *TenantHandler) toTenantResp(w *model.Workspace, withKey bool) tenantRes
 		VMSelectURL:       w.VMSelectURL,
 		VMInsertURL:       w.VMInsertURL,
 		Status:            w.Status,
-		N9ETeamID:         w.N9ETeamID,
 		GrafanaOrgID:      w.GrafanaOrgID,
 		GrafanaInstanceID: w.GrafanaInstanceID,
 		CreatedAt:         w.CreatedAt,
@@ -87,25 +85,25 @@ func (h *TenantHandler) List(c *gin.Context) {
 		if !ok {
 			return
 		}
-		if u.WorkspaceID == nil {
-			raw := c.Query("workspace_id")
-			if raw == "" {
-				response.Error(c, http.StatusForbidden, http.StatusForbidden, response.ErrCodeForbidden, "forbidden")
-				return
-			}
-			id, err := uuid.Parse(raw)
-			if err != nil {
+		workspaceIDs, err := h.userSvc.ListUserWorkspaces(c.Request.Context(), u.ID)
+		if err != nil {
+			h.handleErr(c, err)
+			return
+		}
+		if raw := c.Query("workspace_id"); raw != "" {
+			id, pErr := uuid.Parse(raw)
+			if pErr != nil {
 				response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid workspace_id")
 				return
 			}
-			allowed, err := h.userSvc.CanAccessWorkspace(c.Request.Context(), u.ID, id, "read")
-			if err != nil || !allowed {
+			allowed, aErr := h.userSvc.CanAccessWorkspace(c.Request.Context(), u.ID, id, "read")
+			if aErr != nil || !allowed {
 				response.Error(c, http.StatusForbidden, http.StatusForbidden, response.ErrCodeForbidden, "forbidden")
 				return
 			}
-			w, err := h.svc.Get(c.Request.Context(), id)
-			if err != nil {
-				h.handleErr(c, err)
+			w, gErr := h.svc.Get(c.Request.Context(), id)
+			if gErr != nil {
+				h.handleErr(c, gErr)
 				return
 			}
 			response.JSON(c, gin.H{
@@ -116,14 +114,24 @@ func (h *TenantHandler) List(c *gin.Context) {
 			})
 			return
 		}
-		w, err := h.svc.Get(c.Request.Context(), *u.WorkspaceID)
-		if err != nil {
-			h.handleErr(c, err)
+		if len(workspaceIDs) == 0 {
+			response.Error(c, http.StatusForbidden, http.StatusForbidden, response.ErrCodeForbidden, "forbidden")
 			return
 		}
+		items := make([]tenantResp, 0, len(workspaceIDs))
+		for _, wsID := range workspaceIDs {
+			w, gErr := h.svc.Get(c.Request.Context(), wsID)
+			if gErr != nil {
+				h.handleErr(c, gErr)
+				return
+			}
+			if w != nil {
+				items = append(items, h.toTenantResp(w, false))
+			}
+		}
 		response.JSON(c, gin.H{
-			"items":     []tenantResp{h.toTenantResp(w, false)},
-			"total":     1,
+			"items":     items,
+			"total":     int64(len(items)),
 			"page":      page,
 			"page_size": ps,
 		})

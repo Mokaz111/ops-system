@@ -62,15 +62,11 @@ func (h *AlertHandler) ListRules(c *gin.Context) {
 	}
 	var tenantID *uuid.UUID
 	if !isAdmin(c) {
-		u, ok := currentUser(c, h.userSvc)
+		scope, ok := resolveWorkspaceScope(c, h.userSvc)
 		if !ok {
 			return
 		}
-		if u.WorkspaceID == nil {
-			response.Error(c, http.StatusForbidden, http.StatusForbidden, response.ErrCodeForbidden, "forbidden")
-			return
-		}
-		tenantID = u.WorkspaceID
+		tenantID = scope
 	} else if s := c.Query("workspace_id"); s != "" {
 		id, err := uuid.Parse(s)
 		if err != nil {
@@ -174,15 +170,11 @@ func (h *AlertHandler) ListEvents(c *gin.Context) {
 	}
 	var tenantID *uuid.UUID
 	if !isAdmin(c) {
-		u, ok := currentUser(c, h.userSvc)
+		scope, ok := resolveWorkspaceScope(c, h.userSvc)
 		if !ok {
 			return
 		}
-		if u.WorkspaceID == nil {
-			response.Error(c, http.StatusForbidden, http.StatusForbidden, response.ErrCodeForbidden, "forbidden")
-			return
-		}
-		tenantID = u.WorkspaceID
+		tenantID = scope
 	} else if s := c.Query("workspace_id"); s != "" {
 		id, err := uuid.Parse(s)
 		if err != nil {
@@ -246,12 +238,7 @@ func (h *AlertHandler) GetEvent(c *gin.Context) {
 		return
 	}
 	if !isAdmin(c) {
-		u, ok := currentUser(c, h.userSvc)
-		if !ok {
-			return
-		}
-		if u.WorkspaceID == nil || *u.WorkspaceID != event.TenantID {
-			response.Error(c, http.StatusForbidden, http.StatusForbidden, response.ErrCodeForbidden, "forbidden")
+		if !assertWorkspaceAccess(c, h.userSvc, event.TenantID) {
 			return
 		}
 	}
@@ -271,17 +258,12 @@ func (h *AlertHandler) AckEvent(c *gin.Context) {
 		return
 	}
 	if !isAdmin(c) {
-		u, ok := currentUser(c, h.userSvc)
-		if !ok {
-			return
-		}
 		event, err := h.eventSvc.GetEvent(c.Request.Context(), eventID)
 		if err != nil {
 			h.handleErr(c, err)
 			return
 		}
-		if u.WorkspaceID == nil || *u.WorkspaceID != event.TenantID {
-			response.Error(c, http.StatusForbidden, http.StatusForbidden, response.ErrCodeForbidden, "forbidden")
+		if !assertWorkspaceAccess(c, h.userSvc, event.TenantID) {
 			return
 		}
 	}
@@ -319,15 +301,11 @@ func (h *AlertHandler) ListChannels(c *gin.Context) {
 	}
 	var tenantID *uuid.UUID
 	if !isAdmin(c) {
-		u, ok := currentUser(c, h.userSvc)
+		scope, ok := resolveWorkspaceScope(c, h.userSvc)
 		if !ok {
 			return
 		}
-		if u.WorkspaceID == nil {
-			response.Error(c, http.StatusForbidden, http.StatusForbidden, response.ErrCodeForbidden, "forbidden")
-			return
-		}
-		tenantID = u.WorkspaceID
+		tenantID = scope
 	} else if s := c.Query("workspace_id"); s != "" {
 		id, err := uuid.Parse(s)
 		if err != nil {
@@ -418,15 +396,11 @@ func (h *AlertHandler) DeleteChannel(c *gin.Context) {
 func (h *AlertHandler) Summary(c *gin.Context) {
 	var tenantID uuid.UUID
 	if !isAdmin(c) {
-		u, ok := currentUser(c, h.userSvc)
+		id, ok := resolveWorkspaceID(c, h.userSvc)
 		if !ok {
 			return
 		}
-		if u.WorkspaceID == nil {
-			response.Error(c, http.StatusForbidden, http.StatusForbidden, response.ErrCodeForbidden, "forbidden")
-			return
-		}
-		tenantID = *u.WorkspaceID
+		tenantID = id
 	} else {
 		id, err := uuid.Parse(c.Query("workspace_id"))
 		if err != nil {
@@ -447,15 +421,11 @@ func (h *AlertHandler) Summary(c *gin.Context) {
 func (h *AlertHandler) Trend(c *gin.Context) {
 	var tenantID uuid.UUID
 	if !isAdmin(c) {
-		u, ok := currentUser(c, h.userSvc)
+		id, ok := resolveWorkspaceID(c, h.userSvc)
 		if !ok {
 			return
 		}
-		if u.WorkspaceID == nil {
-			response.Error(c, http.StatusForbidden, http.StatusForbidden, response.ErrCodeForbidden, "forbidden")
-			return
-		}
-		tenantID = *u.WorkspaceID
+		tenantID = id
 	} else {
 		id, err := uuid.Parse(c.Query("workspace_id"))
 		if err != nil {
@@ -482,15 +452,11 @@ func (h *AlertHandler) Trend(c *gin.Context) {
 func (h *AlertHandler) StatsByLevel(c *gin.Context) {
 	var tenantID uuid.UUID
 	if !isAdmin(c) {
-		u, ok := currentUser(c, h.userSvc)
+		id, ok := resolveWorkspaceID(c, h.userSvc)
 		if !ok {
 			return
 		}
-		if u.WorkspaceID == nil {
-			response.Error(c, http.StatusForbidden, http.StatusForbidden, response.ErrCodeForbidden, "forbidden")
-			return
-		}
-		tenantID = *u.WorkspaceID
+		tenantID = id
 	} else {
 		id, err := uuid.Parse(c.Query("workspace_id"))
 		if err != nil {
@@ -515,15 +481,11 @@ func (h *AlertHandler) StatsByLevel(c *gin.Context) {
 func (h *AlertHandler) StatsByRule(c *gin.Context) {
 	var tenantID uuid.UUID
 	if !isAdmin(c) {
-		u, ok := currentUser(c, h.userSvc)
+		id, ok := resolveWorkspaceID(c, h.userSvc)
 		if !ok {
 			return
 		}
-		if u.WorkspaceID == nil {
-			response.Error(c, http.StatusForbidden, http.StatusForbidden, response.ErrCodeForbidden, "forbidden")
-			return
-		}
-		tenantID = *u.WorkspaceID
+		tenantID = id
 	} else {
 		id, err := uuid.Parse(c.Query("workspace_id"))
 		if err != nil {

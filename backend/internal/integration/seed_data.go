@@ -102,6 +102,9 @@ spec:
 				{Name: "memory_threshold", Label: "剩余内存告警阈值(%)", Type: "int", Default: "10"},
 			},
 			Collector: CollectorSpec{
+				Workloads: []ResourceTemplate{
+					{Kind: "DaemonSet", APIVersion: "apps/v1", Name: "node-exporter", Manifest: nodeExporterWorkloadYAML()},
+				},
 				Resources: []ResourceTemplate{
 					{Kind: "VMPodScrape", APIVersion: "operator.victoriametrics.com/v1beta1", Name: "node-exporter", Manifest: collectorYAML},
 				},
@@ -192,8 +195,12 @@ spec:
 				{Name: "scrape_interval", Label: "采集间隔", Type: "string", Default: "30s"},
 				{Name: "conn_threshold", Label: "连接使用率阈值(%)", Type: "int", Default: "80"},
 				{Name: "slow_query_threshold", Label: "慢查询阈值(次/秒)", Type: "int", Default: "5"},
+				{Name: "mysql_dsn", Label: "MySQL DSN", Type: "string", Default: "user:pass@tcp(127.0.0.1:3306)/", Required: true},
 			},
 			Collector: CollectorSpec{
+				Workloads: []ResourceTemplate{
+					{Kind: "Deployment", APIVersion: "apps/v1", Name: "mysqld-exporter", Manifest: mysqldExporterWorkloadYAML()},
+				},
 				Resources: []ResourceTemplate{
 					{Kind: "VMServiceScrape", APIVersion: "operator.victoriametrics.com/v1beta1", Name: "mysqld-exporter", Manifest: collectorYAML},
 				},
@@ -281,8 +288,12 @@ spec:
 				{Name: "namespace", Label: "命名空间", Type: "string", Default: "monitoring", Required: true},
 				{Name: "scrape_interval", Label: "采集间隔", Type: "string", Default: "30s"},
 				{Name: "memory_threshold", Label: "内存告警阈值(%)", Type: "int", Default: "85"},
+				{Name: "redis_addr", Label: "Redis 地址", Type: "string", Default: "redis://127.0.0.1:6379", Required: true},
 			},
 			Collector: CollectorSpec{
+				Workloads: []ResourceTemplate{
+					{Kind: "Deployment", APIVersion: "apps/v1", Name: "redis-exporter", Manifest: redisExporterWorkloadYAML()},
+				},
 				Resources: []ResourceTemplate{
 					{Kind: "VMServiceScrape", APIVersion: "operator.victoriametrics.com/v1beta1", Name: "redis-exporter", Manifest: collectorYAML},
 				},
@@ -298,6 +309,92 @@ spec:
 			},
 		},
 	}
+}
+
+func nodeExporterWorkloadYAML() string {
+	return `apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: node-exporter
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/name: node-exporter
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: node-exporter
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: node-exporter
+    spec:
+      containers:
+        - name: node-exporter
+          image: prom/node-exporter:v1.8.2
+          ports:
+            - name: metrics
+              containerPort: 9100
+`
+}
+
+func mysqldExporterWorkloadYAML() string {
+	return `apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mysqld-exporter
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/name: mysqld-exporter
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: mysqld-exporter
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: mysqld-exporter
+    spec:
+      containers:
+        - name: mysqld-exporter
+          image: prom/mysqld-exporter:v0.15.1
+          ports:
+            - name: metrics
+              containerPort: 9104
+          env:
+            - name: DATA_SOURCE_NAME
+              value: "{{ .Values.mysql_dsn }}"
+`
+}
+
+func redisExporterWorkloadYAML() string {
+	return `apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis-exporter
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/name: redis-exporter
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: redis-exporter
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: redis-exporter
+    spec:
+      containers:
+        - name: redis-exporter
+          image: oliver006/redis_exporter:v1.62.0
+          ports:
+            - name: metrics
+              containerPort: 9121
+          env:
+            - name: REDIS_ADDR
+              value: "{{ .Values.redis_addr }}"
+`
 }
 
 // DescribeMetric 返回内置指标的中文描述 / 单位 / 类型（用于 seed 时 enrich ops_metrics）。

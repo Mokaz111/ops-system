@@ -1,5 +1,5 @@
 import api from './index';
-import type { ApiResponse, PaginatedResponse, PaginationParams } from '../types/api';
+import type { ApiResponse, PaginatedResponse, PaginationParams, PreflightCheck, ZoneComponent } from '../types/api';
 
 export interface Zone {
   id: string;
@@ -18,8 +18,6 @@ export interface Zone {
 export interface ZoneStats {
   zone_id: string;
   total_instances: number;
-  shared_instances: number;
-  dedicated_instances: number;
 }
 
 export interface CreateZoneRequest {
@@ -59,4 +57,13 @@ export const zoneAPI = {
 
   initShared: (id: string, body?: { dry_run?: boolean; namespace?: string; release_name?: string; values?: Record<string, unknown> }) =>
     api.post<ApiResponse<any>>(`/zones/${id}/init-shared`, body || {}),
+
+  initLogs: (id: string, body?: { dry_run?: boolean; namespace?: string; release_name?: string; values?: Record<string, unknown> }) =>
+    api.post<ApiResponse<any>>(`/zones/${id}/init-logs`, body || {}),
+
+  preflight: (id: string, body?: { dry_run?: boolean; namespace?: string; release_name?: string; values?: Record<string, unknown> }) =>
+    api.post<ApiResponse<PreflightCheck>>(`/zones/${id}/preflight`, body || {}),
+
+  getComponents: (id: string) =>
+    api.get<ApiResponse<ZoneComponent[]>>(`/zones/${id}/components`),
 };

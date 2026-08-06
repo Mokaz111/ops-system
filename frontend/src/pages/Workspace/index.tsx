@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Box,
+  Button,
   Card,
   Chip,
   Dialog,
@@ -9,13 +10,14 @@ import {
   DialogContent,
   DialogTitle,
   Alert,
-  Button,
   FormControl,
   Grid,
   IconButton,
   InputLabel,
   MenuItem,
   Select,
+  Tab,
+  Tabs,
   Table,
   TableBody,
   TableCell,
@@ -33,6 +35,7 @@ import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
 import DeleteOutlinedIcon from '@mui/icons-material/DeleteOutlined';
 import AddCircleOutlineIcon from '@mui/icons-material/AddCircleOutline';
 import VisibilityOutlinedIcon from '@mui/icons-material/VisibilityOutlined';
+import PeopleOutlinedIcon from '@mui/icons-material/PeopleOutlined';
 import { useSnackbar } from 'notistack';
 import PageHeader from '../../components/common/PageHeader';
 import StatusChip from '../../components/common/StatusChip';
@@ -40,21 +43,24 @@ import ConfirmDialog from '../../components/common/ConfirmDialog';
 import EmptyState from '../../components/common/EmptyState';
 import LoadingScreen from '../../components/common/LoadingScreen';
 import { workspaceAPI } from '../../api/workspace';
+import { userAPI } from '../../api/user';
 import { grafanaInstanceAPI, type GrafanaInstance } from '../../api/grafanaInstance';
 import { extractApiError } from '../../api';
 import { useAuthStore } from '../../stores/useAuthStore';
-import type { Workspace, WorkspaceMetrics } from '../../types/api';
+import type { User, Workspace, WorkspaceMember, WorkspaceMetrics } from '../../types/api';
 
 const templateLabels: Record<string, string> = {
   shared: '共享版',
-  dedicated_single: '独享单节点',
-  dedicated_cluster: '独享集群',
 };
 
 const isolationLabels: Record<string, string> = {
   shared: '共享',
-  namespace: '命名空间隔离',
-  dedicated: '独享',
+};
+
+const memberRoleLabels: Record<string, string> = {
+  admin: '管理员',
+  member: '成员',
+  viewer: '只读',
 };
 
 export default function WorkspacePage() {
@@ -74,7 +80,14 @@ export default function WorkspacePage() {
   const [grafanaHosts, setGrafanaHosts] = useState<GrafanaInstance[]>([]);
   const [saving, setSaving] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [detail, setDetail] = useState<{ open: boolean; tenant?: Workspace; metrics?: WorkspaceMetrics; loading?: boolean }>({ open: false });
+  const [detail, setDetail] = useState<{ open: boolean; tenant?: Workspace; metrics?: WorkspaceMetrics; loading?: boolean; tab?: 'overview' | 'members' }>({ open: false });
+
+  const [members, setMembers] = useState<WorkspaceMember[]>([]);
+  const [membersLoading, setMembersLoading] = useState(false);
+  const [allUsers, setAllUsers] = useState<User[]>([]);
+  const [memberForm, setMemberForm] = useState({ user_id: '', role: 'member' });
+  const [memberSaving, setMemberSaving] = useState(false);
+  const [removeMemberDialog, setRemoveMemberDialog] = useState<{ open: boolean; member?: WorkspaceMember }>({ open: false });
 
   const fetchWorkspaces = useCallback(async () => {
     setLoading(true);
@@ -100,7 +113,23 @@ export default function WorkspacePage() {
         /* grafana hosts optional */
       }
     })();
-  }, [enqueueSnackbar]);
+  }, []);
+
+  const fetchMembers = useCallback(async (workspaceId: string) => {
+    setMembersLoading(true);
+    try {
+      const [membersRes, usersRes] = await Promise.all([
+        workspaceAPI.listMembers(workspaceId, { page: 1, page_size: 100 }),
+        isAdmin ? userAPI.list({ page: 1, page_size: 200 }) : Promise.resolve(null),
+      ]);
+      setMembers(membersRes.data.data?.items || []);
+      if (usersRes) setAllUsers(usersRes.data.data?.items || []);
+    } catch (err) {
+      enqueueSnackbar(extractApiError(err, '获取成员列表失败'), { variant: 'error' });
+    } finally {
+      setMembersLoading(false);
+    }
+  }, [enqueueSnackbar, isAdmin]);
 
   const handleSave = async () => {
     setSaving(true);
@@ -142,18 +171,63 @@ export default function WorkspacePage() {
     setDialogOpen(true);
   };
 
-  const openDetail = async (tenant: Workspace) => {
-    setDetail({ open: true, tenant, loading: true });
+  const openDetail = async (tenant: Workspace, tab: 'overview' | 'members' = 'overview') => {
+    setDetail({ open: true, tenant, loading: tab === 'overview', tab });
+    if (tab === 'overview') {
+      try {
+        const { data: res } = await workspaceAPI.metrics(tenant.id);
+        setDetail({ open: true, tenant, metrics: res.data, loading: false, tab });
+      } catch (err) {
+        enqueueSnackbar(extractApiError(err, '获取工作空间指标失败'), { variant: 'warning' });
+        setDetail({ open: true, tenant, loading: false, tab });
+      }
+    }
+    if (tab === 'members' || isAdmin) {
+      fetchMembers(tenant.id);
+    }
+  };
+
+  const handleAddMember = async () => {
+    if (!detail.tenant || !memberForm.user_id) return;
+    setMemberSaving(true);
     try {
-      const { data: res } = await workspaceAPI.metrics(tenant.id);
-      setDetail({ open: true, tenant, metrics: res.data, loading: false });
+      await workspaceAPI.addMember(detail.tenant.id, memberForm);
+      enqueueSnackbar('成员已添加', { variant: 'success' });
+      setMemberForm({ user_id: '', role: 'member' });
+      fetchMembers(detail.tenant.id);
     } catch (err) {
-      enqueueSnackbar(extractApiError(err, '获取工作空间指标失败'), { variant: 'warning' });
-      setDetail({ open: true, tenant, loading: false });
+      enqueueSnackbar(extractApiError(err, '添加成员失败'), { variant: 'error' });
+    } finally {
+      setMemberSaving(false);
+    }
+  };
+
+  const handleUpdateMemberRole = async (member: WorkspaceMember, role: string) => {
+    if (!detail.tenant) return;
+    try {
+      await workspaceAPI.updateMember(detail.tenant.id, member.id, { role });
+      enqueueSnackbar('成员角色已更新', { variant: 'success' });
+      fetchMembers(detail.tenant.id);
+    } catch (err) {
+      enqueueSnackbar(extractApiError(err, '更新角色失败'), { variant: 'error' });
+    }
+  };
+
+  const handleRemoveMember = async () => {
+    if (!detail.tenant || !removeMemberDialog.member) return;
+    try {
+      await workspaceAPI.removeMember(detail.tenant.id, removeMemberDialog.member.id);
+      enqueueSnackbar('成员已移除', { variant: 'success' });
+      setRemoveMemberDialog({ open: false });
+      fetchMembers(detail.tenant.id);
+    } catch (err) {
+      enqueueSnackbar(extractApiError(err, '移除成员失败'), { variant: 'error' });
     }
   };
 
   if (loading && workspaces.length === 0) return <LoadingScreen />;
+
+  const existingMemberUserIds = new Set(members.map((m) => m.user_id));
 
   return (
     <Box>
@@ -223,8 +297,13 @@ export default function WorkspacePage() {
                           <AddCircleOutlineIcon fontSize="small" />
                         </IconButton>
                       </Tooltip>
+                      <Tooltip title="成员管理">
+                        <IconButton size="small" onClick={() => openDetail(t, 'members')} aria-label="成员管理">
+                          <PeopleOutlinedIcon fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
                       <Tooltip title="查看 VM 路由与指标">
-                        <IconButton size="small" onClick={() => openDetail(t)} aria-label="查看工作空间详情">
+                        <IconButton size="small" onClick={() => openDetail(t, 'overview')} aria-label="查看工作空间详情">
                           <VisibilityOutlinedIcon fontSize="small" />
                         </IconButton>
                       </Tooltip>
@@ -267,14 +346,6 @@ export default function WorkspacePage() {
         <DialogTitle>{editingId ? '编辑工作空间' : '新建工作空间'}</DialogTitle>
         <DialogContent sx={{ pt: '16px !important' }}>
           <TextField fullWidth label="工作空间名称" value={form.workspace_name} onChange={(e) => setForm({ ...form, workspace_name: e.target.value })} sx={{ mb: 2.5 }} required />
-          <FormControl fullWidth size="small" sx={{ mb: 2.5 }}>
-            <InputLabel>模板类型</InputLabel>
-            <Select value={form.template_type} label="模板类型" onChange={(e) => setForm({ ...form, template_type: e.target.value })}>
-              <MenuItem value="shared">共享版 (全局 VMCluster)</MenuItem>
-              <MenuItem value="dedicated_single">独享单节点版 (VMSingle)</MenuItem>
-              <MenuItem value="dedicated_cluster">独享集群版 (VMCluster)</MenuItem>
-            </Select>
-          </FormControl>
           <FormControl fullWidth size="small">
             <InputLabel>关联 Grafana（可选）</InputLabel>
             <Select value={form.grafana_instance_id} label="关联 Grafana（可选）" onChange={(e) => setForm({ ...form, grafana_instance_id: e.target.value })}>
@@ -282,7 +353,7 @@ export default function WorkspacePage() {
               {grafanaHosts.map((h) => (
                 <MenuItem key={h.id} value={h.id}>
                   {h.name}
-                  {h.scope === 'platform' ? ' · 平台' : ' · 工作空间'}
+                  {h.source === 'platform' ? ' · 平台' : ' · 外部'}
                 </MenuItem>
               ))}
             </Select>
@@ -297,9 +368,103 @@ export default function WorkspacePage() {
       </Dialog>
 
       <Dialog open={detail.open} onClose={() => setDetail({ open: false })} maxWidth="md" fullWidth>
-        <DialogTitle>工作空间可观测性控制面</DialogTitle>
-        <DialogContent sx={{ pt: '16px !important' }}>
-          {detail.tenant && (
+        <DialogTitle>{detail.tenant?.workspace_name}</DialogTitle>
+        <DialogContent sx={{ pt: '8px !important' }}>
+          <Tabs
+            value={detail.tab || 'overview'}
+            onChange={(_, tab) => {
+              setDetail((prev) => ({ ...prev, tab }));
+              if (tab === 'members' && detail.tenant) fetchMembers(detail.tenant.id);
+              if (tab === 'overview' && detail.tenant && !detail.metrics) openDetail(detail.tenant, 'overview');
+            }}
+            sx={{ borderBottom: 1, borderColor: 'divider', mb: 2 }}
+          >
+            <Tab value="overview" label="概览" />
+            <Tab value="members" label="成员" />
+          </Tabs>
+
+          {detail.tab === 'members' && detail.tenant && (
+            <Box>
+              {isAdmin && (
+                <Box sx={{ display: 'flex', gap: 2, mb: 2, flexWrap: 'wrap' }}>
+                  <FormControl size="small" sx={{ minWidth: 220, flex: 1 }}>
+                    <InputLabel>添加用户</InputLabel>
+                    <Select
+                      value={memberForm.user_id}
+                      label="添加用户"
+                      onChange={(e) => setMemberForm({ ...memberForm, user_id: e.target.value })}
+                    >
+                      {allUsers.filter((u) => !existingMemberUserIds.has(u.id)).map((u) => (
+                        <MenuItem key={u.id} value={u.id}>{u.display_name || u.username}</MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                  <FormControl size="small" sx={{ minWidth: 140 }}>
+                    <InputLabel>角色</InputLabel>
+                    <Select value={memberForm.role} label="角色" onChange={(e) => setMemberForm({ ...memberForm, role: e.target.value })}>
+                      <MenuItem value="admin">管理员</MenuItem>
+                      <MenuItem value="member">成员</MenuItem>
+                      <MenuItem value="viewer">只读</MenuItem>
+                    </Select>
+                  </FormControl>
+                  <Button variant="contained" onClick={handleAddMember} disabled={memberSaving || !memberForm.user_id}>
+                    添加
+                  </Button>
+                </Box>
+              )}
+              {membersLoading ? (
+                <Typography variant="body2" color="text.secondary">加载中...</Typography>
+              ) : members.length === 0 ? (
+                <EmptyState title="暂无成员" description="添加用户到此工作空间并分配角色" />
+              ) : (
+                <Table size="small">
+                  <TableHead>
+                    <TableRow>
+                      <TableCell>用户</TableCell>
+                      <TableCell>角色</TableCell>
+                      <TableCell>加入时间</TableCell>
+                      {isAdmin && <TableCell align="right">操作</TableCell>}
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {members.map((m) => (
+                      <TableRow key={m.id}>
+                        <TableCell>{m.display_name || m.username || m.user_id.slice(0, 8)}</TableCell>
+                        <TableCell>
+                          {isAdmin ? (
+                            <Select
+                              size="small"
+                              value={m.role}
+                              onChange={(e) => handleUpdateMemberRole(m, e.target.value)}
+                              sx={{ minWidth: 120 }}
+                            >
+                              <MenuItem value="admin">管理员</MenuItem>
+                              <MenuItem value="member">成员</MenuItem>
+                              <MenuItem value="viewer">只读</MenuItem>
+                            </Select>
+                          ) : (
+                            memberRoleLabels[m.role] || m.role
+                          )}
+                        </TableCell>
+                        <TableCell sx={{ color: 'text.secondary', fontSize: '0.8125rem' }}>
+                          {new Date(m.created_at).toLocaleDateString()}
+                        </TableCell>
+                        {isAdmin && (
+                          <TableCell align="right">
+                            <IconButton size="small" color="error" onClick={() => setRemoveMemberDialog({ open: true, member: m })}>
+                              <DeleteOutlinedIcon fontSize="small" />
+                            </IconButton>
+                          </TableCell>
+                        )}
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+            </Box>
+          )}
+
+          {detail.tab !== 'members' && detail.tenant && (
             <Box>
               <Grid container spacing={2} sx={{ mb: 2 }}>
                 <Grid size={{ xs: 12, md: 4 }}>
@@ -311,13 +476,13 @@ export default function WorkspacePage() {
                 <Grid size={{ xs: 12, md: 4 }}>
                   <Card variant="outlined" sx={{ p: 2 }}>
                     <Typography variant="caption" color="text.secondary">Series</Typography>
-                    <Typography variant="h6">{detail.metrics?.series_count ?? '-'}</Typography>
+                    <Typography variant="h6">{detail.metrics?.series_count ?? (detail.loading ? '...' : '-')}</Typography>
                   </Card>
                 </Grid>
                 <Grid size={{ xs: 12, md: 4 }}>
                   <Card variant="outlined" sx={{ p: 2 }}>
                     <Typography variant="caption" color="text.secondary">Ingest QPS</Typography>
-                    <Typography variant="h6">{detail.metrics?.ingest_qps?.toFixed?.(2) ?? '-'}</Typography>
+                    <Typography variant="h6">{detail.metrics?.ingest_qps?.toFixed?.(2) ?? (detail.loading ? '...' : '-')}</Typography>
                   </Card>
                 </Grid>
               </Grid>
@@ -351,6 +516,16 @@ export default function WorkspacePage() {
         confirmLabel="删除"
         onConfirm={handleDelete}
         onCancel={() => setDeleteDialog({ open: false })}
+      />
+
+      <ConfirmDialog
+        open={removeMemberDialog.open}
+        title="移除成员"
+        message={`确定要将该用户从工作空间移除吗？`}
+        severity="warning"
+        confirmLabel="移除"
+        onConfirm={handleRemoveMember}
+        onCancel={() => setRemoveMemberDialog({ open: false })}
       />
     </Box>
   );

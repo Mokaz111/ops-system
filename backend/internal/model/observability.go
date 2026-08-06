@@ -9,14 +9,18 @@ import (
 
 // VMCluster describes a VictoriaMetrics data plane target.
 type VMCluster struct {
-	ID        uuid.UUID      `json:"id" gorm:"type:uuid;primaryKey"`
-	Name      string         `json:"name" gorm:"type:varchar(255);not null;uniqueIndex:uk_vm_cluster_name_active,where:deleted_at IS NULL"`
-	Mode      string         `json:"mode" gorm:"type:varchar(50);not null"` // shared, dedicated_single, dedicated_cluster
-	Namespace string         `json:"namespace" gorm:"type:varchar(100)"`
-	SelectURL string         `json:"select_url"`
-	InsertURL string         `json:"insert_url"`
-	VMAuthURL string         `json:"vmauth_url"`
-	Status    string         `json:"status" gorm:"type:varchar(20);default:active"`
+	ID          uuid.UUID      `json:"id" gorm:"type:uuid;primaryKey"`
+	Name        string         `json:"name" gorm:"type:varchar(255);not null;uniqueIndex:uk_vm_cluster_name_active,where:deleted_at IS NULL"`
+	Mode        string         `json:"mode" gorm:"type:varchar(50);not null"` // shared
+	ZoneID      *uuid.UUID     `json:"zone_id" gorm:"type:uuid;index"`
+	ClusterID   *uuid.UUID     `json:"cluster_id" gorm:"type:uuid;index"`
+	ReleaseName string         `json:"release_name" gorm:"type:varchar(100)"`
+	Namespace   string         `json:"namespace" gorm:"type:varchar(100)"`
+	SelectURL   string         `json:"select_url"`
+	InsertURL   string         `json:"insert_url"`
+	VMAuthURL   string         `json:"vmauth_url"`
+	TargetURL   string         `json:"target_url" gorm:"type:text"` // VMUser targetRef 内部地址
+	Status      string         `json:"status" gorm:"type:varchar(20);default:active"`
 	CreatedAt time.Time      `json:"created_at"`
 	UpdatedAt time.Time      `json:"updated_at"`
 	DeletedAt gorm.DeletedAt `json:"-" gorm:"index"`
@@ -60,7 +64,7 @@ func (r *VMRoute) BeforeCreate(tx *gorm.DB) error {
 type Datasource struct {
 	ID         uuid.UUID      `json:"id" gorm:"type:uuid;primaryKey"`
 	TenantID   uuid.UUID      `json:"tenant_id" gorm:"type:uuid;not null;index"`
-	Provider   string         `json:"provider" gorm:"type:varchar(50);not null"` // grafana, api, n9e
+	Provider   string         `json:"provider" gorm:"type:varchar(50);not null"` // grafana, api
 	Name       string         `json:"name" gorm:"type:varchar(255);not null"`
 	Type       string         `json:"type" gorm:"type:varchar(50);not null"` // prometheus, victoriametrics
 	URL        string         `json:"url" gorm:"type:text;not null"`
@@ -77,70 +81,6 @@ func (Datasource) TableName() string { return "ops_datasources" }
 func (d *Datasource) BeforeCreate(tx *gorm.DB) error {
 	if d.ID == uuid.Nil {
 		d.ID = uuid.New()
-	}
-	return nil
-}
-
-type CollectorTarget struct {
-	ID         uuid.UUID      `json:"id" gorm:"type:uuid;primaryKey"`
-	TenantID   uuid.UUID      `json:"tenant_id" gorm:"type:uuid;not null;index"`
-	ClusterID  *uuid.UUID     `json:"cluster_id" gorm:"type:uuid;index"`
-	Name       string         `json:"name" gorm:"type:varchar(255);not null"`
-	TargetType string         `json:"target_type" gorm:"type:varchar(50);not null"`
-	Spec       string         `json:"spec" gorm:"type:jsonb"`
-	Status     string         `json:"status" gorm:"type:varchar(20);default:active"`
-	CreatedAt  time.Time      `json:"created_at"`
-	UpdatedAt  time.Time      `json:"updated_at"`
-	DeletedAt  gorm.DeletedAt `json:"-" gorm:"index"`
-}
-
-func (CollectorTarget) TableName() string { return "ops_collector_targets" }
-
-func (c *CollectorTarget) BeforeCreate(tx *gorm.DB) error {
-	if c.ID == uuid.Nil {
-		c.ID = uuid.New()
-	}
-	return nil
-}
-
-type RecordingRule struct {
-	ID        uuid.UUID      `json:"id" gorm:"type:uuid;primaryKey"`
-	TenantID  uuid.UUID      `json:"tenant_id" gorm:"type:uuid;not null;index"`
-	Name      string         `json:"name" gorm:"type:varchar(255);not null"`
-	Expr      string         `json:"expr" gorm:"type:text;not null"`
-	Labels    string         `json:"labels" gorm:"type:jsonb"`
-	Enabled   bool           `json:"enabled" gorm:"default:true"`
-	CreatedAt time.Time      `json:"created_at"`
-	UpdatedAt time.Time      `json:"updated_at"`
-	DeletedAt gorm.DeletedAt `json:"-" gorm:"index"`
-}
-
-func (RecordingRule) TableName() string { return "ops_recording_rules" }
-
-func (r *RecordingRule) BeforeCreate(tx *gorm.DB) error {
-	if r.ID == uuid.Nil {
-		r.ID = uuid.New()
-	}
-	return nil
-}
-
-type AlertReceiver struct {
-	ID        uuid.UUID      `json:"id" gorm:"type:uuid;primaryKey"`
-	TenantID  uuid.UUID      `json:"tenant_id" gorm:"type:uuid;not null;index"`
-	Name      string         `json:"name" gorm:"type:varchar(255);not null"`
-	Type      string         `json:"type" gorm:"type:varchar(50);not null"`
-	Config    string         `json:"config" gorm:"type:jsonb"`
-	Enabled   bool           `json:"enabled" gorm:"default:true"`
-	CreatedAt time.Time      `json:"created_at"`
-	UpdatedAt time.Time      `json:"updated_at"`
-	DeletedAt gorm.DeletedAt `json:"-" gorm:"index"`
-}
-
-func (AlertReceiver) TableName() string { return "ops_alert_receivers" }
-
-func (r *AlertReceiver) BeforeCreate(tx *gorm.DB) error {
-	if r.ID == uuid.Nil {
-		r.ID = uuid.New()
 	}
 	return nil
 }
@@ -183,6 +123,9 @@ type AuditLog struct {
 	Resource   string     `json:"resource" gorm:"type:varchar(100);not null"`
 	ResourceID string     `json:"resource_id" gorm:"type:varchar(100)"`
 	Details    string     `json:"details" gorm:"type:jsonb"`
+	IP         string     `json:"ip" gorm:"type:varchar(45)"`
+	UserAgent  string     `json:"user_agent" gorm:"type:varchar(512)"`
+	Status     string     `json:"status" gorm:"type:varchar(20);default:success"`
 	CreatedAt  time.Time  `json:"created_at"`
 }
 

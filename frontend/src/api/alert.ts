@@ -4,6 +4,8 @@ import type {
   AlertRule,
   ApiResponse,
   CreateAlertRuleRequest,
+  CreateNotificationChannelRequest,
+  NotificationChannel,
   PaginatedResponse,
   PaginationParams,
 } from '../types/api';
@@ -26,6 +28,24 @@ export const alertAPI = {
 
   ackEvent: (id: string) =>
     api.put<ApiResponse<AlertEvent>>(`/alerts/events/${id}/ack`),
+
+  listChannels: (params?: PaginationParams & { workspace_id?: string; channel_type?: string }) =>
+    api.get<ApiResponse<PaginatedResponse<NotificationChannel>>>('/alerts/channels', { params: normalizeListParams(params) }),
+
+  createChannel: (data: CreateNotificationChannelRequest) =>
+    api.post<ApiResponse<NotificationChannel>>('/alerts/channels', {
+      tenant_id: data.workspace_id,
+      channel_name: data.channel_name,
+      channel_type: data.channel_type,
+      config: data.config,
+      enabled: data.enabled,
+    }),
+
+  updateChannel: (id: string, data: Partial<CreateNotificationChannelRequest>) =>
+    api.put<ApiResponse<NotificationChannel>>(`/alerts/channels/${id}`, data),
+
+  deleteChannel: (id: string) =>
+    api.delete<ApiResponse<null>>(`/alerts/channels/${id}`),
 };
 
 function normalizeListParams<T extends PaginationParams>(params?: T) {

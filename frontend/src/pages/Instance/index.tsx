@@ -2,13 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Box,
-  Button,
   Card,
   Chip,
-  Dialog,
-  DialogActions,
-  DialogContent,
-  DialogTitle,
   FormControl,
   Grid,
   IconButton,
@@ -32,7 +27,6 @@ import {
 import SearchIcon from '@mui/icons-material/Search';
 import DeleteOutlinedIcon from '@mui/icons-material/DeleteOutlined';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
-import ScaleIcon from '@mui/icons-material/TuneOutlined';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import { useSnackbar } from 'notistack';
 import PageHeader from '../../components/common/PageHeader';
@@ -55,10 +49,6 @@ const typeLabels: Record<string, { label: string; color: 'primary' | 'secondary'
   logs: { label: 'Logs', color: 'secondary' },
   alert: { label: 'Alert', color: 'warning' },
 };
-
-function isInstanceLevelScalable(inst: Instance): boolean {
-  return inst.status === 'running' && inst.template_type === 'dedicated_single';
-}
 
 const statusFilterItems = [
   { key: '', label: '全部状态' },
@@ -83,19 +73,11 @@ export default function InstancePage() {
   const [typeFilter, setTypeFilter] = useState('');
 
   const [deleteDialog, setDeleteDialog] = useState<{ open: boolean; instance?: Instance }>({ open: false });
-  const [scaleDialog, setScaleDialog] = useState<{ open: boolean; instance?: Instance }>({ open: false });
   const [saving, setSaving] = useState(false);
 
   const [clusters, setClusters] = useState<Cluster[]>([]);
   const [zones, setZones] = useState<Zone[]>([]);
   const [grafanaHosts, setGrafanaHosts] = useState<GrafanaInstance[]>([]);
-  const [scaleForm, setScaleForm] = useState({
-    scale_type: 'vertical' as 'vertical' | 'storage',
-    replicas: 1,
-    cpu: 2,
-    memory: 4,
-    storage: 50,
-  });
 
   const fetchInstances = useCallback(async () => {
     setLoading(true);
@@ -181,36 +163,6 @@ export default function InstancePage() {
     );
   }, [instances]);
 
-  const handleScale = async () => {
-    if (!scaleDialog.instance) return;
-    // 下限保护：CPU/内存/存储不得小于 1。
-    if (scaleForm.scale_type === 'vertical' && (scaleForm.cpu < 1 || scaleForm.memory < 1)) {
-      enqueueSnackbar('CPU 和内存必须大于 0', { variant: 'warning' });
-      return;
-    }
-    if (scaleForm.scale_type === 'storage' && scaleForm.storage < 1) {
-      enqueueSnackbar('存储必须大于 0', { variant: 'warning' });
-      return;
-    }
-    setSaving(true);
-    try {
-      const payload = {
-        scale_type: scaleForm.scale_type,
-        cpu: scaleForm.scale_type === 'vertical' ? String(scaleForm.cpu) : undefined,
-        memory: scaleForm.scale_type === 'vertical' ? `${scaleForm.memory}Gi` : undefined,
-        storage: scaleForm.scale_type === 'storage' ? `${scaleForm.storage}Gi` : undefined,
-      };
-      await instanceAPI.scale(scaleDialog.instance.id, payload);
-      enqueueSnackbar('伸缩请求已提交', { variant: 'success' });
-      setScaleDialog({ open: false });
-      fetchInstances();
-    } catch (err) {
-      enqueueSnackbar(extractApiError(err, '伸缩失败'), { variant: 'error' });
-    } finally {
-      setSaving(false);
-    }
-  };
-
   const handleDelete = async () => {
     if (!deleteDialog.instance) return;
     setSaving(true);
@@ -231,9 +183,9 @@ export default function InstancePage() {
   return (
     <Box>
       <PageHeader
-        title="实例"
-        subtitle="管理监控实例，支持扩缩容与生命周期操作"
-        actionLabel={isAdmin ? '创建实例' : undefined}
+        title="指标空间"
+        subtitle="管理 Metric Workspace，绑定 Zone 共享 VM 池"
+        actionLabel={isAdmin ? '创建指标空间' : undefined}
         onAction={isAdmin ? () => navigate('/instances/create') : undefined}
       />
 
@@ -408,34 +360,6 @@ export default function InstancePage() {
                             </IconButton>
                           </span>
                         </Tooltip>
-                        {isInstanceLevelScalable(inst) ? (
-                          <Tooltip title="伸缩">
-                            <IconButton
-                              size="small"
-                              onClick={() => {
-                                const s = parseSpec(inst.spec);
-                                setScaleForm({
-                                  scale_type: 'vertical',
-                                  replicas: s.replicas || 1,
-                                  cpu: s.cpu || 1,
-                                  memory: s.memory || 1,
-                                  storage: s.storage || 1,
-                                });
-                                setScaleDialog({ open: true, instance: inst });
-                              }}
-                            >
-                              <ScaleIcon fontSize="small" />
-                            </IconButton>
-                          </Tooltip>
-                        ) : (
-                          <Tooltip title="共享版/独享集群版由平台管理员在集群层扩容">
-                            <span>
-                              <IconButton size="small" disabled aria-label="该模板不支持实例级伸缩">
-                                <ScaleIcon fontSize="small" />
-                              </IconButton>
-                            </span>
-                          </Tooltip>
-                        )}
                         <Tooltip title="删除">
                           <IconButton
                             size="small"
@@ -454,60 +378,6 @@ export default function InstancePage() {
           </Table>
         </TableContainer>
       </DataTableCard>
-
-      <Dialog open={scaleDialog.open} onClose={() => setScaleDialog({ open: false })} maxWidth="xs" fullWidth>
-        <DialogTitle>实例伸缩 - {scaleDialog.instance?.instance_name}</DialogTitle>
-        <DialogContent sx={{ pt: '16px !important' }}>
-          <FormControl fullWidth size="small" sx={{ mb: 2 }}>
-            <InputLabel>伸缩类型</InputLabel>
-            <Select
-              value={scaleForm.scale_type}
-              label="伸缩类型"
-              onChange={(e) => setScaleForm({ ...scaleForm, scale_type: e.target.value as 'vertical' | 'storage' })}
-            >
-              <MenuItem value="vertical">垂直伸缩（CPU/内存）</MenuItem>
-              <MenuItem value="storage">存储扩容</MenuItem>
-            </Select>
-          </FormControl>
-          {scaleForm.scale_type === 'vertical' && (
-            <>
-              <TextField
-                fullWidth
-                size="small"
-                label="CPU (核)"
-                type="number"
-                value={scaleForm.cpu}
-                onChange={(e) => setScaleForm({ ...scaleForm, cpu: Math.max(1, parseInt(e.target.value, 10) || 1) })}
-                sx={{ mb: 2 }}
-              />
-              <TextField
-                fullWidth
-                size="small"
-                label="内存 (Gi)"
-                type="number"
-                value={scaleForm.memory}
-                onChange={(e) => setScaleForm({ ...scaleForm, memory: Math.max(1, parseInt(e.target.value, 10) || 1) })}
-              />
-            </>
-          )}
-          {scaleForm.scale_type === 'storage' && (
-            <TextField
-              fullWidth
-              size="small"
-              label="存储 (Gi)"
-              type="number"
-              value={scaleForm.storage}
-              onChange={(e) => setScaleForm({ ...scaleForm, storage: Math.max(1, parseInt(e.target.value, 10) || 1) })}
-            />
-          )}
-        </DialogContent>
-        <DialogActions sx={{ px: 3, pb: 2 }}>
-          <Button onClick={() => setScaleDialog({ open: false })}>取消</Button>
-          <Button variant="contained" onClick={handleScale} disabled={saving}>
-            {saving ? '提交中...' : '确认伸缩'}
-          </Button>
-        </DialogActions>
-      </Dialog>
 
       <ConfirmDialog
         open={deleteDialog.open}

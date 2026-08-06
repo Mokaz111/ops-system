@@ -333,6 +333,82 @@ func (h *IntegrationHandler) Uninstall(c *gin.Context) {
 	response.JSON(c, nil)
 }
 
+type upgradeInstallationBody struct {
+	TemplateVersion string            `json:"template_version" binding:"required"`
+	InstalledParts  []string          `json:"installed_parts"`
+	Values          map[string]string `json:"values"`
+	Force           bool              `json:"force"`
+}
+
+// Upgrade POST /api/v1/integrations/installations/:id/upgrade
+func (h *IntegrationHandler) Upgrade(c *gin.Context) {
+	u, ok := currentUser(c, h.userSvc)
+	if !ok {
+		return
+	}
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid id")
+		return
+	}
+	m, err := h.installSvc.Get(c.Request.Context(), id)
+	if err != nil {
+		h.handleErr(c, err)
+		return
+	}
+	if !assertWorkspaceAccess(c, h.userSvc, m.TenantID) {
+		return
+	}
+	var body upgradeInstallationBody
+	if err := c.ShouldBindJSON(&body); err != nil {
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, response.TranslateBindingError(err))
+		return
+	}
+	result, err := h.installSvc.Upgrade(c.Request.Context(), id, u.Username, &service.UpgradeRequest{
+		TemplateVersion: body.TemplateVersion,
+		InstalledParts:  body.InstalledParts,
+		Values:          body.Values,
+		Force:           body.Force,
+	})
+	if err != nil {
+		h.handleErr(c, err)
+		return
+	}
+	response.JSON(c, result)
+}
+
+// Rollback POST /api/v1/integrations/installations/:id/rollback
+func (h *IntegrationHandler) Rollback(c *gin.Context) {
+	u, ok := currentUser(c, h.userSvc)
+	if !ok {
+		return
+	}
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid id")
+		return
+	}
+	revisionID, err := uuid.Parse(c.Query("revision_id"))
+	if err != nil {
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid revision_id")
+		return
+	}
+	m, err := h.installSvc.Get(c.Request.Context(), id)
+	if err != nil {
+		h.handleErr(c, err)
+		return
+	}
+	if !assertWorkspaceAccess(c, h.userSvc, m.TenantID) {
+		return
+	}
+	result, err := h.installSvc.Rollback(c.Request.Context(), id, revisionID, u.Username)
+	if err != nil {
+		h.handleErr(c, err)
+		return
+	}
+	response.JSON(c, result)
+}
+
 func (h *IntegrationHandler) handleErr(c *gin.Context, err error) {
 	switch {
 	case errors.Is(err, service.ErrIntegrationTemplateNotFound),

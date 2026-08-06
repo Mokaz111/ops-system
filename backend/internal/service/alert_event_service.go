@@ -2,11 +2,12 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"strings"
 	"time"
 
 	"ops-system/backend/internal/model"
-	"ops-system/backend/internal/n9e"
 	"ops-system/backend/internal/repository"
 
 	"github.com/google/uuid"
@@ -31,12 +32,25 @@ type AlertSummary struct {
 	Total        int64 `json:"total"`
 }
 
+// AlertmanagerWebhookPayload Alertmanager webhook 格式（简化）。
+type AlertmanagerWebhookPayload struct {
+	Status string `json:"status"`
+	Alerts []struct {
+		Status       string            `json:"status"`
+		Labels       map[string]string `json:"labels"`
+		Annotations  map[string]string `json:"annotations"`
+		StartsAt     time.Time         `json:"startsAt"`
+		EndsAt       time.Time         `json:"endsAt"`
+		Fingerprint  string            `json:"fingerprint"`
+		GeneratorURL string            `json:"generatorURL"`
+	} `json:"alerts"`
+}
+
 // AlertEventService 告警事件业务。
 type AlertEventService struct {
 	eventRepo   *repository.AlertEventRepository
 	ruleRepo    *repository.AlertRuleRepository
 	channelRepo *repository.NotificationChannelRepository
-	n9e         *n9e.Client
 	notifySvc   NotificationSender
 	log         *zap.Logger
 }
@@ -45,7 +59,6 @@ func NewAlertEventService(
 	eventRepo *repository.AlertEventRepository,
 	ruleRepo *repository.AlertRuleRepository,
 	channelRepo *repository.NotificationChannelRepository,
-	n9eClient *n9e.Client,
 	notifySvc NotificationSender,
 	log *zap.Logger,
 ) *AlertEventService {
@@ -53,10 +66,120 @@ func NewAlertEventService(
 		eventRepo:   eventRepo,
 		ruleRepo:    ruleRepo,
 		channelRepo: channelRepo,
-		n9e:         n9eClient,
 		notifySvc:   notifySvc,
 		log:         log,
 	}
+}
+
+// IngestAlertmanager 处理 Alertmanager webhook 回调。
+func (s *AlertEventService) IngestAlertmanager(ctx context.Context, payload *AlertmanagerWebhookPayload) error {
+	if s == nil || payload == nil {
+		return nil
+	}
+	for _, alert := range payload.Alerts {
+		vmRuleName := alert.Labels["vm_rule_name"]
+		if vmRuleName == "" {
+			vmRuleName = alert.Labels["alertname"]
+		}
+		tenantIDStr := alert.Labels["ops_tenant_id"]
+		if tenantIDStr == "" {
+			tenantIDStr = alert.Labels["tenant_id"]
+		}
+		if vmRuleName == "" || tenantIDStr == "" {
+			s.log.Warn("alertmanager_alert_missing_labels", zap.Any("labels", alert.Labels))
+			continue
+		}
+		tenantID, err := uuid.Parse(tenantIDStr)
+		if err != nil {
+			continue
+		}
+
+		rule, err := s.ruleRepo.GetByVMRuleName(ctx, tenantID, vmRuleName)
+		if err != nil || rule == nil {
+			s.log.Warn("alertmanager_rule_not_found", zap.String("vm_rule_name", vmRuleName), zap.String("tenant_id", tenantIDStr))
+			continue
+		}
+
+		level := alert.Labels["severity"]
+		if level == "" {
+			level = rule.Level
+		}
+
+		details, _ := json.Marshal(map[string]any{
+			"labels":       alert.Labels,
+			"annotations":  alert.Annotations,
+			"fingerprint":  alert.Fingerprint,
+			"generatorURL": alert.GeneratorURL,
+		})
+
+		if alert.Status == "firing" {
+			event := &model.AlertEvent{
+				TenantID:  tenantID,
+				RuleID:    rule.ID,
+				RuleName:  rule.RuleName,
+				Level:     level,
+				Status:    "firing",
+				StartTime: alert.StartsAt,
+				Details:   string(details),
+			}
+			if event.StartTime.IsZero() {
+				event.StartTime = time.Now().UTC()
+			}
+			if err := s.eventRepo.Create(ctx, event); err != nil {
+				s.log.Warn("alert_event_create_failed", zap.Error(err))
+				continue
+			}
+			s.dispatchNotification(ctx, rule, event)
+		} else if alert.Status == "resolved" {
+			events, _, err := s.eventRepo.List(ctx, repository.AlertEventListFilter{
+				TenantID: &tenantID,
+				RuleID:   &rule.ID,
+				Status:   "firing",
+				Limit:    10,
+			})
+			if err != nil {
+				continue
+			}
+			now := time.Now().UTC()
+			for i := range events {
+				events[i].Status = "resolved"
+				events[i].EndTime = &now
+				_ = s.eventRepo.Update(ctx, &events[i])
+			}
+		}
+	}
+	return nil
+}
+
+func (s *AlertEventService) dispatchNotification(ctx context.Context, rule *model.AlertRule, event *model.AlertEvent) {
+	if s.notifySvc == nil || rule.Channels == "" || rule.Channels == "[]" {
+		return
+	}
+	var channelIDs []string
+	if err := json.Unmarshal([]byte(rule.Channels), &channelIDs); err != nil {
+		return
+	}
+	var channels []*model.NotificationChannel
+	for _, idStr := range channelIDs {
+		id, err := uuid.Parse(strings.TrimSpace(idStr))
+		if err != nil {
+			continue
+		}
+		ch, err := s.channelRepo.GetByID(ctx, id)
+		if err != nil || ch == nil || !ch.Enabled {
+			continue
+		}
+		channels = append(channels, ch)
+	}
+	if len(channels) == 0 {
+		return
+	}
+	if err := s.notifySvc.SendAlert(ctx, event, channels); err != nil {
+		s.log.Warn("alert_notify_failed", zap.Error(err), zap.String("event_id", event.ID.String()))
+		return
+	}
+	event.Notified = true
+	_ = s.eventRepo.Update(ctx, event)
 }
 
 // ListEvents 分页列表。

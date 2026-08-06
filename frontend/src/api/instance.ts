@@ -7,7 +7,6 @@ import type {
   Instance,
   PaginatedResponse,
   PaginationParams,
-  ScaleInstanceRequest,
 } from '../types/api';
 
 export const instanceAPI = {
@@ -29,24 +28,8 @@ export const instanceAPI = {
   delete: (id: string) =>
     api.delete<ApiResponse<null>>(`/instances/${id}`),
 
-  scale: (id: string, data: ScaleInstanceRequest) =>
-    api.post<ApiResponse<null>>(`/instances/${id}/scale`, data),
-
   metrics: (id: string, config?: AxiosRequestConfig) =>
     api.get<ApiResponse<InstanceMetrics>>(`/instances/${id}/metrics`, config),
-
-  scaleEvents: (
-    id: string,
-    params?: PaginationParams & { scale_type?: string; status?: string },
-    config?: AxiosRequestConfig,
-  ) =>
-    api.get<ApiResponse<PaginatedResponse<ScaleEvent>>>(`/instances/${id}/scale-events`, { ...config, params }),
-
-  rebuild: (id: string) =>
-    api.post<ApiResponse<null>>(`/instances/${id}/rebuild`),
-
-  upgrade: (id: string) =>
-    api.post<ApiResponse<null>>(`/instances/${id}/upgrade`),
 
   login: (id: string, redirect?: string) =>
     api.post<ApiResponse<{ proxyUrl: string }>>(`/instances/${id}/login`, null, {
@@ -58,21 +41,4 @@ function normalizeListParams<T extends PaginationParams>(params?: T) {
   if (!params?.search) return params;
   const { search, ...rest } = params;
   return { ...rest, keyword: search };
-}
-
-export interface ScaleEvent {
-  id: string;
-  instance_id: string;
-  instance_name: string;
-  workspace_id: string;
-  scale_type: 'horizontal' | 'vertical' | 'storage' | string;
-  method: 'cr_patch' | 'helm_upgrade' | 'k8s_native' | 'rejected' | string;
-  replicas?: number | null;
-  cpu?: string;
-  memory?: string;
-  storage?: string;
-  status: 'success' | 'failed' | string;
-  error_message?: string;
-  operator?: string;
-  created_at: string;
 }

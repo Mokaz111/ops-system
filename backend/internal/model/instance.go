@@ -15,7 +15,7 @@ type Instance struct {
 	ClusterID         *uuid.UUID     `json:"cluster_id" gorm:"type:uuid;index"` // 目标集群 id，nil=平台默认集群
 	InstanceName      string         `json:"instance_name" gorm:"type:varchar(255);not null"`
 	InstanceType      string         `json:"instance_type" gorm:"type:varchar(50)"` // metrics, logs, alert
-	TemplateType      string         `json:"template_type" gorm:"type:varchar(50)"` // shared, dedicated_single, dedicated_cluster
+	TemplateType      string         `json:"template_type" gorm:"type:varchar(50)"` // shared
 	ReleaseName       string         `json:"release_name" gorm:"type:varchar(100)"`
 	Namespace         string         `json:"namespace" gorm:"type:varchar(100)"`
 	Spec              string         `json:"spec" gorm:"type:jsonb"`

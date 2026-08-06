@@ -15,8 +15,10 @@ export type AppRouteKey =
   | 'zones'
   | 'clusters'
   | 'business-clusters'
+  | 'umodel'
   | 'stats'
-  | 'settings';
+  | 'settings'
+  | 'audit';
 
 export type SidebarSection = 'overview' | 'observability' | 'admin';
 
@@ -42,9 +44,10 @@ export const appRouteMeta: AppRouteMeta[] = [
   { key: 'metrics', path: 'metrics', label: '指标库', showInSidebar: true, sidebarSection: 'overview' },
 
   // ── 可观测性 ──
-  { key: 'instances', path: 'instances', label: '实例', showInSidebar: true, sidebarSection: 'observability' },
+  { key: 'instances', path: 'instances', label: '指标空间', showInSidebar: true, sidebarSection: 'observability' },
   { key: 'log-instances', path: 'log-instances', label: '日志实例', showInSidebar: true, sidebarSection: 'observability' },
   { key: 'business-clusters', path: 'business-clusters', label: '业务集群', showInSidebar: true, sidebarSection: 'observability' },
+  { key: 'umodel', path: 'umodel', label: 'UModel', showInSidebar: true, sidebarSection: 'observability' },
   { key: 'grafana-instances', path: 'grafana-instances', label: 'Grafana', showInSidebar: true, sidebarSection: 'observability' },
   { key: 'stats', path: 'stats', label: '用量统计', showInSidebar: true, sidebarSection: 'observability' },
 
@@ -53,6 +56,7 @@ export const appRouteMeta: AppRouteMeta[] = [
   { key: 'users', path: 'users', label: '用户管理', showInSidebar: true, sidebarSection: 'admin', requireAdmin: true },
   { key: 'zones', path: 'zones', label: '可用区', showInSidebar: true, sidebarSection: 'admin' },
   { key: 'clusters', path: 'clusters', label: '可观测集群', showInSidebar: true, sidebarSection: 'admin' },
+  { key: 'audit', path: 'audit', label: '审计日志', showInSidebar: true, sidebarSection: 'admin', requireAdmin: true },
   { key: 'settings', path: 'settings', label: '系统设置', showInSidebar: true, sidebarSection: 'admin' },
 
   // ── 隐藏路由（侧边栏不显示，供内链跳转）──

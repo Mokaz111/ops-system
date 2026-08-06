@@ -18,37 +18,36 @@ var (
 	ErrUsernameRequired    = errors.New("username required")
 	ErrUsernameExists      = errors.New("username already exists")
 	ErrBootstrapNotAllowed = errors.New("bootstrap only allowed when no users exist")
-	ErrPasswordTooShort    = errors.New("password must be at least 6 characters")
+	ErrPasswordTooShort    = errors.New("password must be at least 8 characters")
 )
 
 // CreateUserRequest 创建用户。
 type CreateUserRequest struct {
-	Username    string
-	Password    string
-	Email       string
-	Phone       string
-	WorkspaceID *uuid.UUID
-	Role        string
-	Status      string
+	Username string
+	Password string
+	Email    string
+	Phone    string
+	Role     string
+	Status   string
 }
 
 // UpdateUserRequest 更新用户。
 type UpdateUserRequest struct {
-	Email       *string
-	Phone       *string
-	WorkspaceID *uuid.UUID
-	Role        *string
-	Status      *string
-	Password    *string // 明文新密码，非空则更新
+	Email    *string
+	Phone    *string
+	Role     *string
+	Status   *string
+	Password *string // 明文新密码，非空则更新
 }
 
 // UserService 用户业务。
 type UserService struct {
-	user *repository.UserRepository
+	user    *repository.UserRepository
+	members *repository.WorkspaceMemberRepository
 }
 
-func NewUserService(user *repository.UserRepository, _ ...*repository.WorkspaceRepository) *UserService {
-	return &UserService{user: user}
+func NewUserService(user *repository.UserRepository, members *repository.WorkspaceMemberRepository) *UserService {
+	return &UserService{user: user, members: members}
 }
 
 // Bootstrap 首个管理员（仅当用户表为空）。
@@ -57,7 +56,7 @@ func (s *UserService) Bootstrap(ctx context.Context, req *CreateUserRequest) (*m
 	if req.Username == "" {
 		return nil, ErrUsernameRequired
 	}
-	if len(req.Password) < 6 {
+	if len(req.Password) < 8 {
 		return nil, ErrPasswordTooShort
 	}
 	req.Role = "admin"
@@ -73,7 +72,6 @@ func (s *UserService) Bootstrap(ctx context.Context, req *CreateUserRequest) (*m
 		PasswordHash: hash,
 		Email:        strings.TrimSpace(req.Email),
 		Phone:        strings.TrimSpace(req.Phone),
-		WorkspaceID:  req.WorkspaceID,
 		Role:         req.Role,
 		Status:       req.Status,
 	}
@@ -83,8 +81,6 @@ func (s *UserService) Bootstrap(ctx context.Context, req *CreateUserRequest) (*m
 		}
 		return nil, err
 	}
-	// 首任管理员创建是高敏操作，必须在日志中留痕，便于事后审计与
-	// 发现异常的"二次 bootstrap"尝试。这里只记元数据，不落密码/hash。
 	zap.L().Warn("bootstrap_admin_created",
 		zap.String("user_id", u.ID.String()),
 		zap.String("username", u.Username),
@@ -109,7 +105,7 @@ func (s *UserService) create(ctx context.Context, req *CreateUserRequest) (*mode
 	if req.Username == "" {
 		return nil, ErrUsernameRequired
 	}
-	if len(req.Password) < 6 {
+	if len(req.Password) < 8 {
 		return nil, ErrPasswordTooShort
 	}
 	if exist, err := s.user.GetByUsername(ctx, req.Username); err != nil {
@@ -126,7 +122,6 @@ func (s *UserService) create(ctx context.Context, req *CreateUserRequest) (*mode
 		PasswordHash: hash,
 		Email:        strings.TrimSpace(req.Email),
 		Phone:        strings.TrimSpace(req.Phone),
-		WorkspaceID:  req.WorkspaceID,
 		Role:         req.Role,
 		Status:       req.Status,
 	}
@@ -163,9 +158,6 @@ func (s *UserService) Update(ctx context.Context, id uuid.UUID, req *UpdateUserR
 	if req.Phone != nil {
 		u.Phone = strings.TrimSpace(*req.Phone)
 	}
-	if req.WorkspaceID != nil {
-		u.WorkspaceID = req.WorkspaceID
-	}
 	if req.Role != nil && *req.Role != "" {
 		u.Role = *req.Role
 	}
@@ -173,7 +165,7 @@ func (s *UserService) Update(ctx context.Context, id uuid.UUID, req *UpdateUserR
 		u.Status = *req.Status
 	}
 	if req.Password != nil && *req.Password != "" {
-		if len(*req.Password) < 6 {
+		if len(*req.Password) < 8 {
 			return nil, ErrPasswordTooShort
 		}
 		hash, err := utils.HashPassword(*req.Password)
@@ -201,6 +193,7 @@ func (s *UserService) Delete(ctx context.Context, id uuid.UUID) error {
 }
 
 // CanAccessWorkspace 检查用户是否有权访问指定工作空间。
+// action: read / write
 func (s *UserService) CanAccessWorkspace(ctx context.Context, userID uuid.UUID, workspaceID uuid.UUID, action string) (bool, error) {
 	if s == nil || s.user == nil {
 		return false, nil
@@ -212,10 +205,35 @@ func (s *UserService) CanAccessWorkspace(ctx context.Context, userID uuid.UUID, 
 	if u.Role == "admin" {
 		return true, nil
 	}
-	if u.WorkspaceID != nil && *u.WorkspaceID == workspaceID {
+	if s.members == nil {
+		return false, nil
+	}
+	m, err := s.members.GetByUserAndWorkspace(ctx, userID, workspaceID)
+	if err != nil || m == nil {
+		return false, err
+	}
+	switch strings.ToLower(strings.TrimSpace(action)) {
+	case "write":
+		return m.Role == "admin", nil
+	default:
 		return true, nil
 	}
-	return false, nil
+}
+
+// ListUserWorkspaces 返回用户所属工作空间 ID 列表。
+func (s *UserService) ListUserWorkspaces(ctx context.Context, userID uuid.UUID) ([]uuid.UUID, error) {
+	if s == nil || s.members == nil {
+		return nil, nil
+	}
+	memberships, err := s.members.ListByUserID(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]uuid.UUID, 0, len(memberships))
+	for _, m := range memberships {
+		out = append(out, m.WorkspaceID)
+	}
+	return out, nil
 }
 
 // List 分页筛选。

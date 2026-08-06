@@ -6,6 +6,7 @@ import type {
   PaginatedResponse,
   PaginationParams,
   Workspace,
+  WorkspaceMember,
 } from '../types/api';
 
 export const workspaceAPI = {
@@ -26,6 +27,18 @@ export const workspaceAPI = {
 
   metrics: (id: string) =>
     api.get<ApiResponse<WorkspaceMetrics>>(`/workspaces/${id}/metrics`),
+
+  listMembers: (workspaceId: string, params?: PaginationParams) =>
+    api.get<ApiResponse<PaginatedResponse<WorkspaceMember>>>(`/workspaces/${workspaceId}/members`, { params: normalizeListParams(params) }),
+
+  addMember: (workspaceId: string, data: { user_id: string; role: string }) =>
+    api.post<ApiResponse<WorkspaceMember>>(`/workspaces/${workspaceId}/members`, data),
+
+  updateMember: (workspaceId: string, memberId: string, data: { role: string }) =>
+    api.put<ApiResponse<WorkspaceMember>>(`/workspaces/${workspaceId}/members/${memberId}`, data),
+
+  removeMember: (workspaceId: string, memberId: string) =>
+    api.delete<ApiResponse<null>>(`/workspaces/${workspaceId}/members/${memberId}`),
 };
 
 function normalizeListParams(params?: PaginationParams) {

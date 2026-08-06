@@ -15,38 +15,36 @@ import (
 // UserHandler 用户 HTTP。
 type UserHandler struct {
 	userSvc   *service.UserService
+	memberSvc *service.WorkspaceMemberService
 	jwtSecret string
 }
 
-func NewUserHandler(userSvc *service.UserService, jwtSecret string) *UserHandler {
-	return &UserHandler{userSvc: userSvc, jwtSecret: jwtSecret}
+func NewUserHandler(userSvc *service.UserService, memberSvc *service.WorkspaceMemberService, jwtSecret string) *UserHandler {
+	return &UserHandler{userSvc: userSvc, memberSvc: memberSvc, jwtSecret: jwtSecret}
 }
 
 type bootstrapBody struct {
-	Username    string     `json:"username" binding:"required"`
-	Password    string     `json:"password" binding:"required"`
-	Email       string     `json:"email"`
-	Phone       string     `json:"phone"`
-	WorkspaceID *uuid.UUID `json:"workspace_id"`
+	Username string `json:"username" binding:"required"`
+	Password string `json:"password" binding:"required"`
+	Email    string `json:"email"`
+	Phone    string `json:"phone"`
 }
 
 type createUserBody struct {
-	Username    string     `json:"username" binding:"required"`
-	Password    string     `json:"password" binding:"required"`
-	Email       string     `json:"email"`
-	Phone       string     `json:"phone"`
-	WorkspaceID *uuid.UUID `json:"workspace_id"`
-	Role        string     `json:"role"`
-	Status      string     `json:"status"`
+	Username string `json:"username" binding:"required"`
+	Password string `json:"password" binding:"required"`
+	Email    string `json:"email"`
+	Phone    string `json:"phone"`
+	Role     string `json:"role"`
+	Status   string `json:"status"`
 }
 
 type updateUserBody struct {
-	Email       *string    `json:"email"`
-	Phone       *string    `json:"phone"`
-	WorkspaceID *uuid.UUID `json:"workspace_id"`
-	Role        *string    `json:"role"`
-	Status      *string    `json:"status"`
-	Password    *string    `json:"password"`
+	Email    *string `json:"email"`
+	Phone    *string `json:"phone"`
+	Role     *string `json:"role"`
+	Status   *string `json:"status"`
+	Password *string `json:"password"`
 }
 
 // Bootstrap POST /api/v1/users/bootstrap
@@ -61,7 +59,6 @@ func (h *UserHandler) Bootstrap(c *gin.Context) {
 		Password: body.Password,
 		Email:    body.Email,
 		Phone:    body.Phone,
-		WorkspaceID: body.WorkspaceID,
 	})
 	if err != nil {
 		// bootstrap 失败也需留痕：多次失败的 bootstrap 请求往往意味着
@@ -81,7 +78,7 @@ func (h *UserHandler) Bootstrap(c *gin.Context) {
 		zap.String("client_ip", c.ClientIP()),
 		zap.String("user_agent", c.Request.UserAgent()),
 	)
-	response.JSON(c, toUserPublic(u))
+	response.JSON(c, enrichUserPublic(c, h.memberSvc, u))
 }
 
 // List GET /api/v1/users
@@ -102,7 +99,7 @@ func (h *UserHandler) List(c *gin.Context) {
 			return
 		}
 		response.JSON(c, gin.H{
-			"items":     []userPublic{toUserPublic(u)},
+			"items":     []userPublic{enrichUserPublic(c, h.memberSvc, u)},
 			"total":     1,
 			"page":      page,
 			"page_size": ps,
@@ -137,7 +134,7 @@ func (h *UserHandler) List(c *gin.Context) {
 	}
 	items := make([]userPublic, 0, len(list))
 	for i := range list {
-		items = append(items, toUserPublic(&list[i]))
+		items = append(items, enrichUserPublic(c, h.memberSvc, &list[i]))
 	}
 	response.JSON(c, gin.H{
 		"items":     items,
@@ -163,7 +160,6 @@ func (h *UserHandler) Create(c *gin.Context) {
 		Password: body.Password,
 		Email:    body.Email,
 		Phone:    body.Phone,
-		WorkspaceID: body.WorkspaceID,
 		Role:     body.Role,
 		Status:   body.Status,
 	})
@@ -171,7 +167,7 @@ func (h *UserHandler) Create(c *gin.Context) {
 		h.handleErr(c, err)
 		return
 	}
-	response.JSON(c, toUserPublic(u))
+	response.JSON(c, enrichUserPublic(c, h.memberSvc, u))
 }
 
 // Get GET /api/v1/users/:id
@@ -193,7 +189,7 @@ func (h *UserHandler) Get(c *gin.Context) {
 		h.handleErr(c, err)
 		return
 	}
-	response.JSON(c, toUserPublic(u))
+	response.JSON(c, enrichUserPublic(c, h.memberSvc, u))
 }
 
 // Update PUT /api/v1/users/:id
@@ -222,7 +218,6 @@ func (h *UserHandler) Update(c *gin.Context) {
 	u, err := h.userSvc.Update(c.Request.Context(), id, &service.UpdateUserRequest{
 		Email:    body.Email,
 		Phone:    body.Phone,
-		WorkspaceID: body.WorkspaceID,
 		Role:     body.Role,
 		Status:   body.Status,
 		Password: body.Password,
@@ -231,7 +226,7 @@ func (h *UserHandler) Update(c *gin.Context) {
 		h.handleErr(c, err)
 		return
 	}
-	response.JSON(c, toUserPublic(u))
+	response.JSON(c, enrichUserPublic(c, h.memberSvc, u))
 }
 
 // Delete DELETE /api/v1/users/:id

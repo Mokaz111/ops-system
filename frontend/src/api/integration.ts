@@ -207,6 +207,12 @@ export const integrationAPI = {
 
   uninstall: (id: string) =>
     api.delete<ApiResponse<null>>(`/integrations/installations/${id}`),
+
+  upgrade: (id: string, data?: { template_version?: string; values?: Record<string, string>; force?: boolean }) =>
+    api.post<ApiResponse<InstallResponse>>(`/integrations/installations/${id}/upgrade`, data || {}),
+
+  rollback: (id: string, data?: { revision_id?: string }) =>
+    api.post<ApiResponse<InstallResponse>>(`/integrations/installations/${id}/rollback`, data || {}),
 };
 
 /**

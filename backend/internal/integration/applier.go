@@ -23,7 +23,7 @@ type K8sClientResolver func(ctx context.Context, clusterID *uuid.UUID) (*k8s.Cli
 
 // AppliedRef 已经 Apply 成功的资源引用，供 Uninstall 时反向清理。
 type AppliedRef struct {
-	Part              string `json:"part"`                          // collector / vmrule / dashboard / n9e
+	Part              string `json:"part"` // collector / vmrule / dashboard / workload
 	Target            string `json:"target"`                        // k8s / grafana
 	APIVersion        string `json:"apiVersion,omitempty"`          // K8s 资源的 apiVersion
 	Kind              string `json:"kind,omitempty"`                // K8s 资源的 Kind
@@ -135,7 +135,7 @@ func (a *CompositeApplier) Preflight(ctx context.Context, rendered []RenderedRes
 	if k8sCli != nil {
 		seen := map[string]bool{}
 		for _, r := range rendered {
-			if r.Part == "dashboard" || r.Part == "n9e" {
+			if r.Part == "dashboard" {
 				continue
 			}
 			if r.APIVersion == "" || r.Kind == "" {
@@ -159,7 +159,7 @@ func (a *CompositeApplier) Preflight(ctx context.Context, rendered []RenderedRes
 	} else {
 		// 若渲染结果包含 k8s 资源但 k8s client 缺失，也记录。
 		for _, r := range rendered {
-			if r.Part == "dashboard" || r.Part == "n9e" {
+			if r.Part == "dashboard" {
 				continue
 			}
 			issues = append(issues, PreflightIssue{
@@ -213,15 +213,6 @@ func (a *CompositeApplier) Apply(ctx context.Context, rendered []RenderedResourc
 			if ref.Status == "failed" && firstErr == nil {
 				firstErr = fmt.Errorf("dashboard %s apply failed: %s", r.Name, ref.Error)
 			}
-		case "n9e":
-			refs = append(refs, AppliedRef{
-				Part:   r.Part,
-				Target: "n9e",
-				Name:   r.Name,
-				Status: "success",
-				Action: "skipped",
-				Error:  "n9e apply not implemented",
-			})
 		default:
 			ref := a.applyK8s(ctx, r, opts)
 			refs = append(refs, ref)

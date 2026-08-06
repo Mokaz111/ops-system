@@ -37,6 +37,7 @@ const iconMap: Record<AppRouteKey, React.ReactNode> = {
   'log-instances': <DescriptionOutlinedIcon />,
   'log-query': <DescriptionOutlinedIcon />,
   'business-clusters': <DnsOutlinedIcon />,
+  umodel: <HubOutlinedIcon />,
   'grafana-instances': <VisibilityOutlinedIcon />,
   'grafana-instance-detail': <VisibilityOutlinedIcon />,
   stats: <BarChartOutlinedIcon />,
@@ -45,6 +46,7 @@ const iconMap: Record<AppRouteKey, React.ReactNode> = {
   users: <PeopleOutlinedIcon />,
   zones: <LanguageOutlinedIcon />,
   clusters: <HubOutlinedIcon />,
+  audit: <DescriptionOutlinedIcon />,
   settings: <SettingsOutlinedIcon />,
 };
 

@@ -27,10 +27,9 @@ var (
 	ErrWorkspaceDeprovisionFailed = errors.New("workspace deprovision failed")
 )
 
+// SaaS 形态下工作空间只有共享池一种模板。
 var allowedTemplateTypes = map[string]struct{}{
-	"shared":            {},
-	"dedicated_single":  {},
-	"dedicated_cluster": {},
+	"shared": {},
 }
 
 type CreateWorkspaceRequest struct {
@@ -105,7 +104,10 @@ func (s *WorkspaceService) Create(ctx context.Context, req *CreateWorkspaceReque
 	if req.WorkspaceName == "" {
 		return nil, ErrWorkspaceNameRequired
 	}
-	if req.TemplateType == "" || !allowedTemplateType(req.TemplateType) {
+	if req.TemplateType == "" {
+		req.TemplateType = "shared"
+	}
+	if !allowedTemplateType(req.TemplateType) {
 		return nil, ErrInvalidTemplateType
 	}
 	if err := validateQuotaJSON(req.QuotaConfig); err != nil {
@@ -140,7 +142,7 @@ func (s *WorkspaceService) Create(ctx context.Context, req *CreateWorkspaceReque
 		VMUserKey:         vmKey,
 		TemplateType:      req.TemplateType,
 		QuotaConfig:       quotaCfg,
-		IsolationLevel:    isolationLevelForTemplate(req.TemplateType),
+		IsolationLevel:    "shared",
 		GrafanaInstanceID: req.GrafanaInstanceID,
 		Status:            "creating",
 	}
@@ -191,15 +193,6 @@ func (s *WorkspaceService) Create(ctx context.Context, req *CreateWorkspaceReque
 		return nil, err
 	}
 	return w, nil
-}
-
-func isolationLevelForTemplate(templateType string) string {
-	switch templateType {
-	case "dedicated_single", "dedicated_cluster":
-		return "dedicated"
-	default:
-		return "shared"
-	}
 }
 
 func allowedTemplateType(s string) bool {

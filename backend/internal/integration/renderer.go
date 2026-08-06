@@ -63,6 +63,19 @@ func (r *Renderer) Render(in RenderInput) ([]RenderedResource, error) {
 	var out []RenderedResource
 
 	if wants["collector"] || len(wants) == 0 {
+		for _, rt := range in.Spec.Collector.Workloads {
+			rendered, err := execTpl(rt.Name, rt.Manifest, root)
+			if err != nil {
+				return nil, fmt.Errorf("render workload %s: %w", rt.Name, err)
+			}
+			out = append(out, RenderedResource{
+				Part:       "workload",
+				Kind:       rt.Kind,
+				APIVersion: rt.APIVersion,
+				Name:       rt.Name,
+				YAML:       rendered,
+			})
+		}
 		for _, rt := range in.Spec.Collector.Resources {
 			rendered, err := execTpl(rt.Name, rt.Manifest, root)
 			if err != nil {

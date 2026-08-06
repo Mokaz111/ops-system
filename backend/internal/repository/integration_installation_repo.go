@@ -152,6 +152,19 @@ func (r *IntegrationInstallationRepository) ListRevisions(ctx context.Context, i
 	return list, err
 }
 
+// GetRevisionByID 按 ID 查询 revision。
+func (r *IntegrationInstallationRepository) GetRevisionByID(ctx context.Context, id uuid.UUID) (*model.IntegrationInstallationRevision, error) {
+	var rev model.IntegrationInstallationRevision
+	err := r.db.WithContext(ctx).First(&rev, "id = ?", id).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &rev, nil
+}
+
 // CountActiveByTemplateVersion 统计仍在使用（未卸载）指定模板版本的安装记录数。
 // 用于模板版本删除前的引用检查。
 func (r *IntegrationInstallationRepository) CountActiveByTemplateVersion(

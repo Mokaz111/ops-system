@@ -4,12 +4,14 @@ import type { ApiResponse, PaginatedResponse, PaginationParams } from '../types/
 
 export interface BusinessCluster {
   id: string;
-  workspace_id: string;
+  tenant_id: string;
   instance_id: string;
   name: string;
   display_name: string;
   kubeconfig_path: string;
   agent_status: string;
+  log_agent_status: string;
+  log_instance_id?: string;
   labels: string;
   created_at: string;
   updated_at: string;
@@ -39,4 +41,12 @@ export const businessClusterAPI = {
 
   delete: (id: string, force?: boolean) =>
     api.delete<ApiResponse<null>>(`/business-clusters/${id}`, { params: { force: force ? 'true' : undefined } }),
+
+  enableLogs: (id: string, data: { log_instance_id: string }) =>
+    api.post<ApiResponse<BusinessCluster>>(`/business-clusters/${id}/enable-logs`, data),
+
+  disableLogs: (id: string, force?: boolean) =>
+    api.post<ApiResponse<BusinessCluster>>(`/business-clusters/${id}/disable-logs`, undefined, {
+      params: { force: force ? 'true' : undefined },
+    }),
 };

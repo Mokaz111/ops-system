@@ -15,15 +15,23 @@ type RouteSet struct {
 }
 
 type RouteBuilder struct {
-	baseURL string
+	baseURL       string
+	poolNamespace string
 }
 
 func NewRouteBuilder(cfg *config.VMConfig) *RouteBuilder {
 	base := ""
+	ns := "monitoring"
 	if cfg != nil {
 		base = cfg.VMAuthBaseURL
+		if strings.TrimSpace(cfg.SharedPoolNamespace) != "" {
+			ns = strings.TrimSpace(cfg.SharedPoolNamespace)
+		}
 	}
-	return &RouteBuilder{baseURL: strings.TrimRight(strings.TrimSpace(base), "/")}
+	return &RouteBuilder{
+		baseURL:       strings.TrimRight(strings.TrimSpace(base), "/"),
+		poolNamespace: ns,
+	}
 }
 
 func (b *RouteBuilder) BuildWorkspaceRoutes(t *model.Workspace) RouteSet {
@@ -32,7 +40,7 @@ func (b *RouteBuilder) BuildWorkspaceRoutes(t *model.Workspace) RouteSet {
 	}
 	ns := strings.TrimSpace(t.VMNamespace)
 	if ns == "" {
-		ns = "ops-tenant-" + strings.ToLower(strings.ReplaceAll(t.VMUserID, "_", "-"))
+		ns = b.sharedPoolNamespace()
 	}
 	return RouteSet{
 		InsertURL: InsertURL(b.baseURL, t.VMUserID),
@@ -40,4 +48,11 @@ func (b *RouteBuilder) BuildWorkspaceRoutes(t *model.Workspace) RouteSet {
 		RuleName:  "tenant-" + strings.ToLower(strings.ReplaceAll(t.VMUserID, "_", "-")),
 		Namespace: ns,
 	}
+}
+
+func (b *RouteBuilder) sharedPoolNamespace() string {
+	if b.poolNamespace != "" {
+		return b.poolNamespace
+	}
+	return "monitoring"
 }

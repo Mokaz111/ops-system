@@ -46,6 +46,83 @@ func (r *VMRouteRepository) GetByTenantAndType(ctx context.Context, tenantID uui
 	return &route, nil
 }
 
+func (r *VMRouteRepository) DeactivateByTenant(ctx context.Context, tenantID uuid.UUID) error {
+	return r.db.WithContext(ctx).Model(&model.VMRoute{}).
+		Where("tenant_id = ?", tenantID).
+		Update("status", "inactive").Error
+}
+
+type VMClusterRepository struct {
+	db *gorm.DB
+}
+
+func NewVMClusterRepository(db *gorm.DB) *VMClusterRepository {
+	return &VMClusterRepository{db: db}
+}
+
+func (r *VMClusterRepository) UpsertShared(ctx context.Context, cluster *model.VMCluster) error {
+	var existing model.VMCluster
+	q := r.db.WithContext(ctx).Where("mode = ? AND status = ?", "shared", "active")
+	if cluster.ZoneID != nil {
+		q = q.Where("zone_id = ?", *cluster.ZoneID)
+	} else {
+		q = q.Where("zone_id IS NULL")
+	}
+	err := q.First(&existing).Error
+	if err == nil {
+		existing.Name = cluster.Name
+		existing.Namespace = cluster.Namespace
+		existing.ReleaseName = cluster.ReleaseName
+		existing.SelectURL = cluster.SelectURL
+		existing.InsertURL = cluster.InsertURL
+		existing.VMAuthURL = cluster.VMAuthURL
+		existing.TargetURL = cluster.TargetURL
+		existing.ClusterID = cluster.ClusterID
+		existing.Status = cluster.Status
+		return r.db.WithContext(ctx).Save(&existing).Error
+	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return err
+	}
+	return r.db.WithContext(ctx).Create(cluster).Error
+}
+
+func (r *VMClusterRepository) GetActiveSharedByZone(ctx context.Context, zoneID uuid.UUID) (*model.VMCluster, error) {
+	var cluster model.VMCluster
+	err := r.db.WithContext(ctx).
+		Where("zone_id = ? AND mode = ? AND status = ?", zoneID, "shared", "active").
+		First(&cluster).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &cluster, nil
+}
+
+func (r *VMClusterRepository) GetByID(ctx context.Context, id uuid.UUID) (*model.VMCluster, error) {
+	var cluster model.VMCluster
+	err := r.db.WithContext(ctx).Where("id = ?", id).First(&cluster).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &cluster, nil
+}
+
+// ListActive 列出全部活跃 VM 集群。
+func (r *VMClusterRepository) ListActive(ctx context.Context) ([]model.VMCluster, error) {
+	var list []model.VMCluster
+	err := r.db.WithContext(ctx).
+		Where("status = ?", "active").
+		Order("created_at ASC").
+		Find(&list).Error
+	return list, err
+}
+
 type DatasourceRepository struct {
 	db *gorm.DB
 }
@@ -69,6 +146,12 @@ func (r *DatasourceRepository) Upsert(ctx context.Context, ds *model.Datasource)
 		return err
 	}
 	return r.db.WithContext(ctx).Create(ds).Error
+}
+
+func (r *DatasourceRepository) DeactivateByTenant(ctx context.Context, tenantID uuid.UUID) error {
+	return r.db.WithContext(ctx).Model(&model.Datasource{}).
+		Where("tenant_id = ?", tenantID).
+		Update("status", "inactive").Error
 }
 
 type ProvisioningTaskRepository struct {
@@ -118,4 +201,40 @@ func NewAuditLogRepository(db *gorm.DB) *AuditLogRepository { return &AuditLogRe
 
 func (r *AuditLogRepository) Create(ctx context.Context, a *model.AuditLog) error {
 	return r.db.WithContext(ctx).Create(a).Error
+}
+
+// AuditLogListFilter 审计日志列表筛选。
+type AuditLogListFilter struct {
+	Action   string
+	Resource string
+	ActorID  *uuid.UUID
+	TenantID *uuid.UUID
+	Offset   int
+	Limit    int
+}
+
+// List 分页查询审计日志。
+func (r *AuditLogRepository) List(ctx context.Context, f AuditLogListFilter) ([]model.AuditLog, int64, error) {
+	q := r.db.WithContext(ctx).Model(&model.AuditLog{})
+	if f.Action != "" {
+		q = q.Where("action = ?", f.Action)
+	}
+	if f.Resource != "" {
+		q = q.Where("resource = ?", f.Resource)
+	}
+	if f.ActorID != nil {
+		q = q.Where("actor_id = ?", *f.ActorID)
+	}
+	if f.TenantID != nil {
+		q = q.Where("tenant_id = ?", *f.TenantID)
+	}
+	var total int64
+	if err := q.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	var rows []model.AuditLog
+	if err := q.Order("created_at DESC").Offset(f.Offset).Limit(f.Limit).Find(&rows).Error; err != nil {
+		return nil, 0, err
+	}
+	return rows, total, nil
 }

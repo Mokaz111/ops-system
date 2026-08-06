@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"ops-system/backend/internal/model"
-	"ops-system/backend/internal/repository"
 	"ops-system/backend/internal/service"
 	"ops-system/backend/pkg/response"
 
@@ -17,13 +16,12 @@ import (
 // InstanceHandler 实例 HTTP。
 type InstanceHandler struct {
 	svc                *service.InstanceService
-	scaleSvc           *service.ScaleService
 	userSvc            *service.UserService
 	grafanaInstanceSvc *service.GrafanaInstanceService
 }
 
-func NewInstanceHandler(svc *service.InstanceService, scaleSvc *service.ScaleService, userSvc *service.UserService, grafanaInstanceSvc *service.GrafanaInstanceService) *InstanceHandler {
-	return &InstanceHandler{svc: svc, scaleSvc: scaleSvc, userSvc: userSvc, grafanaInstanceSvc: grafanaInstanceSvc}
+func NewInstanceHandler(svc *service.InstanceService, userSvc *service.UserService, grafanaInstanceSvc *service.GrafanaInstanceService) *InstanceHandler {
+	return &InstanceHandler{svc: svc, userSvc: userSvc, grafanaInstanceSvc: grafanaInstanceSvc}
 }
 
 type instanceResp struct {
@@ -83,30 +81,11 @@ func (h *InstanceHandler) List(c *gin.Context) {
 	}
 	var tenantID *uuid.UUID
 	if !isAdmin(c) {
-		u, ok := currentUser(c, h.userSvc)
+		scope, ok := resolveWorkspaceScope(c, h.userSvc)
 		if !ok {
 			return
 		}
-		if u.WorkspaceID == nil {
-			if s := c.Query("workspace_id"); s != "" {
-				id, err := uuid.Parse(s)
-				if err != nil {
-					response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid workspace_id")
-					return
-				}
-				allowed, err := h.userSvc.CanAccessWorkspace(c.Request.Context(), u.ID, id, "read")
-				if err != nil || !allowed {
-					response.Error(c, http.StatusForbidden, http.StatusForbidden, response.ErrCodeForbidden, "forbidden")
-					return
-				}
-				tenantID = &id
-			} else {
-				response.Error(c, http.StatusForbidden, http.StatusForbidden, response.ErrCodeForbidden, "forbidden")
-				return
-			}
-		} else {
-			tenantID = u.WorkspaceID
-		}
+		tenantID = scope
 	} else if s := c.Query("workspace_id"); s != "" {
 		id, err := uuid.Parse(s)
 		if err != nil {
@@ -226,103 +205,6 @@ func (h *InstanceHandler) Delete(c *gin.Context) {
 	response.JSON(c, nil)
 }
 
-type scaleBody struct {
-	ScaleType string `json:"scale_type" binding:"required"`
-	Replicas  *int32 `json:"replicas"`
-	CPU       string `json:"cpu"`
-	Memory    string `json:"memory"`
-	Storage   string `json:"storage"`
-}
-
-// Scale POST /api/v1/instances/:id/scale
-func (h *InstanceHandler) Scale(c *gin.Context) {
-	id, err := uuid.Parse(c.Param("id"))
-	if err != nil {
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid id")
-		return
-	}
-	var body scaleBody
-	if err := c.ShouldBindJSON(&body); err != nil {
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, response.TranslateBindingError(err))
-		return
-	}
-	operator := ""
-	if u, ok := currentUser(c, h.userSvc); ok {
-		operator = u.Username
-	}
-	if err := h.scaleSvc.Scale(c.Request.Context(), id, &service.ScaleRequest{
-		ScaleType: body.ScaleType,
-		Replicas:  body.Replicas,
-		CPU:       body.CPU,
-		Memory:    body.Memory,
-		Storage:   body.Storage,
-		Operator:  operator,
-	}); err != nil {
-		h.handleErr(c, err)
-		return
-	}
-	response.JSON(c, nil)
-}
-
-// ListScaleEvents GET /api/v1/instances/:id/scale-events
-func (h *InstanceHandler) ListScaleEvents(c *gin.Context) {
-	id, err := uuid.Parse(c.Param("id"))
-	if err != nil {
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid id")
-		return
-	}
-	// 先拉 instance 做租户校验，防止 IDOR：非 admin 只能看自己租户实例的伸缩历史。
-	inst, err := h.svc.Get(c.Request.Context(), id)
-	if err != nil {
-		h.handleErr(c, err)
-		return
-	}
-	if !assertWorkspaceAccess(c, h.userSvc, inst.TenantID) {
-		return
-	}
-	page, ps, ok := parsePageAndSize(c, 20)
-	if !ok {
-		return
-	}
-	f := repository.ScaleEventListFilter{InstanceID: &id}
-	f.ScaleType = c.Query("scale_type")
-	f.Status = c.Query("status")
-	list, total, err := h.scaleSvc.ListScaleEvents(c.Request.Context(), f, page, ps)
-	if err != nil {
-		h.handleErr(c, err)
-		return
-	}
-	response.JSON(c, gin.H{"items": list, "total": total, "page": page, "page_size": ps})
-}
-
-// Rebuild POST /api/v1/instances/:id/rebuild
-func (h *InstanceHandler) Rebuild(c *gin.Context) {
-	id, err := uuid.Parse(c.Param("id"))
-	if err != nil {
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid id")
-		return
-	}
-	if err := h.svc.Rebuild(c.Request.Context(), id); err != nil {
-		h.handleErr(c, err)
-		return
-	}
-	response.JSON(c, nil)
-}
-
-// Upgrade POST /api/v1/instances/:id/upgrade
-func (h *InstanceHandler) Upgrade(c *gin.Context) {
-	id, err := uuid.Parse(c.Param("id"))
-	if err != nil {
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid id")
-		return
-	}
-	if err := h.svc.Upgrade(c.Request.Context(), id); err != nil {
-		h.handleErr(c, err)
-		return
-	}
-	response.JSON(c, nil)
-}
-
 // Metrics GET /api/v1/instances/:id/metrics
 func (h *InstanceHandler) Metrics(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
@@ -383,23 +265,19 @@ func (h *InstanceHandler) handleErr(c *gin.Context, err error) {
 	switch {
 	case errors.Is(err, service.ErrInstanceNotFound):
 		response.Error(c, http.StatusNotFound, http.StatusNotFound, response.ErrCodeInstanceNotFound, err.Error())
-	case errors.Is(err, service.ErrScaleInstanceNotFound):
-		response.Error(c, http.StatusNotFound, http.StatusNotFound, response.ErrCodeScaleInstanceNotFound, err.Error())
 	case errors.Is(err, service.ErrWorkspaceNotFoundForInstance):
 		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeTenantNotFoundForInstance, err.Error())
 	case errors.Is(err, service.ErrInstanceNameRequired),
 		errors.Is(err, service.ErrInvalidInstanceType),
 		errors.Is(err, service.ErrInvalidInstanceStatus),
-		errors.Is(err, service.ErrInstanceNotReady):
+		errors.Is(err, service.ErrInvalidTemplateType):
 		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, err.Error())
 	case errors.Is(err, service.ErrInstanceHasInstallations),
-		errors.Is(err, service.ErrInstanceBusy):
+		errors.Is(err, service.ErrInstanceHasBusinessClusters):
 		response.Error(c, http.StatusConflict, http.StatusConflict, response.ErrCodeConflict, err.Error())
-	case errors.Is(err, service.ErrInvalidScaleType),
-		errors.Is(err, service.ErrScaleNotSupported),
-		errors.Is(err, service.ErrScaleManagedByPlatform),
-		errors.Is(err, service.ErrScaleTypeNotAllowed):
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, err.Error())
+	case errors.Is(err, service.ErrZoneSharedNotReady),
+		errors.Is(err, service.ErrWorkspaceProvisionFailed):
+		response.Error(c, http.StatusUnprocessableEntity, http.StatusUnprocessableEntity, response.ErrCodeZoneSharedNotReady, err.Error())
 	case errors.Is(err, service.ErrInvalidPagination):
 		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeInvalidPagination, err.Error())
 	default:

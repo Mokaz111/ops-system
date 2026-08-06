@@ -36,13 +36,23 @@ import LoadingScreen from '../../components/common/LoadingScreen';
 import FilterToolbar from '../../components/common/FilterToolbar';
 import DataTableCard from '../../components/common/DataTableCard';
 import { businessClusterAPI, type BusinessCluster, type CreateBusinessClusterRequest } from '../../api/businessCluster';
+import { logAPI, type LogInstance } from '../../api/logs';
 import { extractApiError } from '../../api';
 import { useAuthStore } from '../../stores/useAuthStore';
+import { isWorkspaceAdmin, isPlatformAdmin } from '../../utils/membership';
 
 const agentStatusLabels: Record<string, { label: string; color: 'success' | 'warning' | 'error' | 'default' }> = {
   pending: { label: '待部署', color: 'default' },
   deploying: { label: '部署中', color: 'warning' },
   active: { label: '运行中', color: 'success' },
+  failed: { label: '失败', color: 'error' },
+  off: { label: '已停止', color: 'default' },
+};
+
+const logAgentStatusLabels: Record<string, { label: string; color: 'success' | 'warning' | 'error' | 'default' }> = {
+  pending: { label: '未启用', color: 'default' },
+  deploying: { label: '部署中', color: 'warning' },
+  active: { label: '采集中', color: 'success' },
   failed: { label: '失败', color: 'error' },
   off: { label: '已停止', color: 'default' },
 };
@@ -59,7 +69,7 @@ const defaultForm: CreateBusinessClusterRequest = {
 export default function BusinessClusterPage() {
   const { enqueueSnackbar } = useSnackbar();
   const { user } = useAuthStore();
-  const isAdmin = user?.role === 'admin' || user?.role === 'tenant_admin';
+  const isAdmin = isPlatformAdmin(user) || isWorkspaceAdmin(user);
   const [searchParams] = useSearchParams();
 
   const tenantFilter = searchParams.get('workspace_id') || '';
@@ -74,6 +84,9 @@ export default function BusinessClusterPage() {
   const [statusFilter, setStatusFilter] = useState('');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [deleteDialog, setDeleteDialog] = useState<{ open: boolean; cluster?: BusinessCluster }>({ open: false });
+  const [logsDialog, setLogsDialog] = useState<{ open: boolean; cluster?: BusinessCluster }>({ open: false });
+  const [logInstances, setLogInstances] = useState<LogInstance[]>([]);
+  const [selectedLogInstance, setSelectedLogInstance] = useState('');
   const [form, setForm] = useState<CreateBusinessClusterRequest>(defaultForm);
   const [saving, setSaving] = useState(false);
 
@@ -122,6 +135,34 @@ export default function BusinessClusterPage() {
     }
   };
 
+  const handleEnableLogs = async () => {
+    if (!logsDialog.cluster || !selectedLogInstance) return;
+    setSaving(true);
+    try {
+      await businessClusterAPI.enableLogs(logsDialog.cluster.id, { log_instance_id: selectedLogInstance });
+      enqueueSnackbar('日志采集已启用（Vector Agent → Kafka）', { variant: 'success' });
+      setLogsDialog({ open: false });
+      fetch();
+    } catch (err) {
+      enqueueSnackbar(extractApiError(err, '启用日志采集失败'), { variant: 'error' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const openLogsDialog = async (cluster: BusinessCluster) => {
+    setLogsDialog({ open: true, cluster });
+    setSelectedLogInstance('');
+    try {
+      const { data: res } = await logAPI.list({ page: 1, page_size: 100 });
+      const items = res.data?.items || [];
+      setLogInstances(items);
+      if (items.length > 0) setSelectedLogInstance(items[0].id);
+    } catch {
+      setLogInstances([]);
+    }
+  };
+
   const handleDelete = async () => {
     if (!deleteDialog.cluster) return;
     try {
@@ -144,7 +185,7 @@ export default function BusinessClusterPage() {
     <Box>
       <PageHeader
         title="业务集群管理"
-        subtitle="管理工作空间接入的业务 Kubernetes 集群，通过 VMAgent CR 采集监控数据"
+        subtitle="管理工作空间接入的业务 Kubernetes 集群，VMAgent 采集指标，Vector Agent 采集日志（→ Kafka）"
         actionLabel={isAdmin ? '接入业务集群' : undefined}
         onAction={isAdmin ? () => {
           setForm({ ...defaultForm, instance_id: instanceFilter });
@@ -220,7 +261,8 @@ export default function BusinessClusterPage() {
                 <TableCell>名称</TableCell>
                 <TableCell>显示名</TableCell>
                 <TableCell>实例 ID</TableCell>
-                <TableCell>Agent 状态</TableCell>
+                <TableCell>指标 Agent</TableCell>
+                <TableCell>日志 Agent</TableCell>
                 <TableCell>标签</TableCell>
                 <TableCell>创建时间</TableCell>
                 <TableCell align="right">操作</TableCell>
@@ -229,7 +271,7 @@ export default function BusinessClusterPage() {
             <TableBody>
               {clusters.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={7}>
+                  <TableCell colSpan={8}>
                     <EmptyState
                       title="暂无业务集群"
                       description={isAdmin ? '点击右上角按钮接入第一个业务集群' : '当前工作空间下没有已接入的业务集群'}
@@ -256,6 +298,13 @@ export default function BusinessClusterPage() {
                         />
                       </TableCell>
                       <TableCell>
+                        <Chip
+                          size="small"
+                          label={logAgentStatusLabels[c.log_agent_status]?.label || c.log_agent_status || 'pending'}
+                          color={logAgentStatusLabels[c.log_agent_status]?.color || 'default'}
+                        />
+                      </TableCell>
+                      <TableCell>
                         {Object.keys(labels).length > 0
                           ? Object.entries(labels).map(([k, v]) => (
                               <Chip
@@ -273,15 +322,24 @@ export default function BusinessClusterPage() {
                       </TableCell>
                       <TableCell align="right">
                         {isAdmin && (
-                          <Tooltip title="移除">
-                            <IconButton
-                              size="small"
-                              color="error"
-                              onClick={() => setDeleteDialog({ open: true, cluster: c })}
-                            >
-                              <DeleteOutlinedIcon fontSize="small" />
-                            </IconButton>
-                          </Tooltip>
+                          <>
+                            {c.log_agent_status !== 'active' && (
+                              <Tooltip title="启用日志采集">
+                                <Button size="small" onClick={() => openLogsDialog(c)} sx={{ mr: 1 }}>
+                                  日志
+                                </Button>
+                              </Tooltip>
+                            )}
+                            <Tooltip title="移除">
+                              <IconButton
+                                size="small"
+                                color="error"
+                                onClick={() => setDeleteDialog({ open: true, cluster: c })}
+                              >
+                                <DeleteOutlinedIcon fontSize="small" />
+                              </IconButton>
+                            </Tooltip>
+                          </>
                         )}
                       </TableCell>
                     </TableRow>
@@ -366,6 +424,45 @@ export default function BusinessClusterPage() {
           <Button onClick={() => setDialogOpen(false)}>取消</Button>
           <Button variant="contained" onClick={handleSave} disabled={saving || !form.name || !form.instance_id}>
             {saving ? '接入中...' : '接入'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* 启用日志采集 */}
+      <Dialog open={logsDialog.open} onClose={() => setLogsDialog({ open: false })} maxWidth="sm" fullWidth>
+        <DialogTitle>启用日志采集</DialogTitle>
+        <DialogContent sx={{ pt: '16px !important' }}>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            将在业务集群部署 Vector Agent，日志写入 Zone Kafka（不直连存储）。
+          </Typography>
+          <FormControl fullWidth size="small">
+            <InputLabel>日志工作空间</InputLabel>
+            <Select
+              value={selectedLogInstance}
+              label="日志工作空间"
+              onChange={(e) => setSelectedLogInstance(e.target.value)}
+            >
+              {logInstances.map((li) => (
+                <MenuItem key={li.id} value={li.id}>
+                  {li.instance_name}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+          {logInstances.length === 0 && (
+            <Alert severity="warning" sx={{ mt: 2 }}>
+              请先创建日志工作空间并完成 Zone init-logs。
+            </Alert>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button onClick={() => setLogsDialog({ open: false })}>取消</Button>
+          <Button
+            variant="contained"
+            onClick={handleEnableLogs}
+            disabled={saving || !selectedLogInstance}
+          >
+            {saving ? '部署中...' : '启用'}
           </Button>
         </DialogActions>
       </Dialog>

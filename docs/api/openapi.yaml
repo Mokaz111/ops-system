@@ -1,0 +1,167 @@
+openapi: 3.0.3
+info:
+  title: ops-system API
+  version: 0.5.0-logs
+  description: SaaS 可观测控制面 — 监控 + 日志数据面（Vector→Kafka→Aggregator→VL）
+
+paths:
+  /api/v1/zones/{id}/init-shared:
+    post:
+      summary: 初始化 Zone 共享 VM 池
+      tags: [zones]
+  /api/v1/zones/{id}/init-logs:
+    post:
+      summary: 初始化 Zone 日志管道（VictoriaLogs + Kafka + Vector Aggregator）
+      tags: [zones]
+  /api/v1/log-instances:
+    get:
+      summary: 列出日志工作空间
+      tags: [log-instances]
+    post:
+      summary: 创建日志工作空间
+      tags: [log-instances]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [tenant_id, zone_id, instance_name]
+              properties:
+                tenant_id: { type: string, format: uuid }
+                zone_id: { type: string, format: uuid }
+                instance_name: { type: string }
+                backend_type: { enum: [victorialogs], default: victorialogs }
+                retention_days: { type: integer }
+  /api/v1/log-instances/{id}/query:
+    post:
+      summary: LogsQL 查询（强制租户过滤）
+      tags: [log-instances]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                query: { type: string }
+                start: { type: string, format: date-time }
+                end: { type: string, format: date-time }
+                limit: { type: integer, maximum: 1000 }
+  /api/v1/instances:
+    post:
+      summary: 创建 Metric Workspace（shared-only）
+      tags: [instances]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [workspace_id, zone_id, instance_name, instance_type]
+              properties:
+                workspace_id: { type: string, format: uuid }
+                zone_id: { type: string, format: uuid }
+                instance_name: { type: string }
+                instance_type: { enum: [metrics] }
+                template_type: { enum: [shared], default: shared }
+  /api/v1/business-clusters:
+    post:
+      summary: 接入业务集群（VMAgent）
+      tags: [business-clusters]
+  /api/v1/business-clusters/{id}/enable-logs:
+    post:
+      summary: 启用 Vector Agent 日志采集（→ Kafka）
+      tags: [business-clusters]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [log_instance_id]
+              properties:
+                log_instance_id: { type: string, format: uuid }
+  /api/v1/business-clusters/{id}/disable-logs:
+    post:
+      summary: 停用 Vector Agent 日志采集
+      tags: [business-clusters]
+  /api/v1/umodel/entities:
+    get:
+      summary: 列出 Entity
+      tags: [umodel]
+    post:
+      summary: 创建 Entity
+      tags: [umodel]
+  /api/v1/umodel/metric-sets:
+    get:
+      summary: 列出 MetricSet
+      tags: [umodel]
+    post:
+      summary: 创建 MetricSet
+      tags: [umodel]
+  /api/v1/umodel/log-sets:
+    get:
+      summary: 列出 LogSet
+      tags: [umodel]
+    post:
+      summary: 创建 LogSet
+      tags: [umodel]
+  /api/v1/umodel/data-links:
+    post:
+      summary: 创建 DataLink
+      tags: [umodel]
+
+components:
+  schemas:
+    VMCluster:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        mode: { enum: [shared] }
+        zone_id: { type: string, format: uuid }
+        namespace: { type: string }
+        release_name: { type: string }
+        select_url: { type: string }
+        insert_url: { type: string }
+        vmauth_url: { type: string }
+        target_url: { type: string }
+    LogCluster:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        backend_type: { enum: [victorialogs, clickhouse, doris] }
+        zone_id: { type: string, format: uuid }
+        insert_url: { type: string }
+        select_url: { type: string }
+        kafka_brokers: { type: string }
+        kafka_topic: { type: string }
+        namespace: { type: string }
+        release_name: { type: string }
+        status: { type: string }
+    LogInstance:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        tenant_id: { type: string, format: uuid }
+        zone_id: { type: string, format: uuid }
+        backend_type: { type: string }
+        instance_name: { type: string }
+        status: { type: string }
+    Entity:
+      type: object
+      properties:
+        entity_type: { type: string }
+        name: { type: string }
+    MetricSet:
+      type: object
+      properties:
+        name: { type: string }
+        component: { type: string }
+    LogSet:
+      type: object
+      properties:
+        name: { type: string }
+        component: { type: string }
+    DataLink:
+      type: object
+      properties:
+        entity_id: { type: string, format: uuid }
+        target_type: { enum: [metric_set, log_set, trace_set] }
+        target_id: { type: string, format: uuid }

@@ -71,3 +71,9 @@ func (r *BusinessClusterRepository) List(ctx context.Context, f BusinessClusterL
 	}
 	return rows, total, nil
 }
+
+func (r *BusinessClusterRepository) CountByInstanceID(ctx context.Context, instanceID uuid.UUID) (int64, error) {
+	var n int64
+	err := r.db.WithContext(ctx).Model(&model.BusinessCluster{}).Where("instance_id = ?", instanceID).Count(&n).Error
+	return n, err
+}

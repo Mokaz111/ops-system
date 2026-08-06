@@ -7,10 +7,12 @@ import (
 	"gorm.io/gorm"
 )
 
-// LogInstance VictoriaLogs 日志实例。
+// LogInstance 日志工作空间（Log Workspace）。
 type LogInstance struct {
 	ID            uuid.UUID      `json:"id" gorm:"type:uuid;primaryKey"`
 	TenantID      uuid.UUID      `json:"tenant_id" gorm:"type:uuid;not null;index"`
+	ZoneID        *uuid.UUID     `json:"zone_id" gorm:"type:uuid;index"`
+	BackendType   string         `json:"backend_type" gorm:"type:varchar(50);not null;default:victorialogs"`
 	InstanceName  string         `json:"instance_name" gorm:"type:varchar(255);not null"`
 	ReleaseName   string         `json:"release_name" gorm:"type:varchar(100)"`
 	Namespace     string         `json:"namespace" gorm:"type:varchar(100)"`

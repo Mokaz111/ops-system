@@ -11,8 +11,6 @@ import (
 
 	"ops-system/backend/internal/idempotency"
 	"ops-system/backend/internal/middleware"
-	"ops-system/backend/internal/model"
-	"ops-system/backend/internal/repository"
 	"ops-system/backend/internal/service"
 	"ops-system/backend/pkg/response"
 
@@ -25,7 +23,7 @@ type PlatformHandler struct {
 	bootstrapSvc *service.PlatformBootstrapService
 	log          *zap.Logger
 	idem         idempotency.Store
-	audit        *repository.PlatformScaleAuditRepository
+	audit        *service.AuditService
 }
 
 func NewPlatformHandler(
@@ -33,14 +31,14 @@ func NewPlatformHandler(
 	bootstrapSvc *service.PlatformBootstrapService,
 	log *zap.Logger,
 	idemStore idempotency.Store,
-	auditRepo *repository.PlatformScaleAuditRepository,
+	auditSvc *service.AuditService,
 ) *PlatformHandler {
 	return &PlatformHandler{
 		scaleSvc:     scaleSvc,
 		bootstrapSvc: bootstrapSvc,
 		log:          log,
 		idem:         idemStore,
-		audit:        auditRepo,
+		audit:        auditSvc,
 	}
 }
 
@@ -93,57 +91,27 @@ func (h *PlatformHandler) InitSharedCluster(c *gin.Context) {
 	response.JSON(c, plan)
 }
 
-// ListAudits GET /api/v1/platform/scaling/audits
+// ListAudits GET /api/v1/platform/scaling/audits（兼容旧路由，转发到统一审计）。
 func (h *PlatformHandler) ListAudits(c *gin.Context) {
+	if h.audit == nil {
+		response.Error(c, http.StatusInternalServerError, http.StatusInternalServerError, response.ErrCodeInternal, "audit service not configured")
+		return
+	}
 	page, ps, ok := parsePageAndSize(c, 20)
 	if !ok {
 		return
 	}
-	if h.audit == nil {
-		response.Error(c, http.StatusInternalServerError, http.StatusInternalServerError, response.ErrCodeInternal, "audit repository not configured")
-		return
-	}
-	status := strings.TrimSpace(c.Query("status"))
-	switch status {
-	case "", "success", "failed", "replayed":
-	default:
-		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid status")
-		return
-	}
-	var startTime *time.Time
-	if raw := strings.TrimSpace(c.Query("start_time")); raw != "" {
-		t, err := time.Parse(time.RFC3339, raw)
-		if err != nil {
-			response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid start_time, expect RFC3339")
-			return
-		}
-		startTime = &t
-	}
-	var endTime *time.Time
-	if raw := strings.TrimSpace(c.Query("end_time")); raw != "" {
-		t, err := time.Parse(time.RFC3339, raw)
-		if err != nil {
-			response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid end_time, expect RFC3339")
-			return
-		}
-		endTime = &t
-	}
-	offset := (page - 1) * ps
-	rows, total, err := h.audit.List(c.Request.Context(), repository.PlatformScaleAuditListFilter{
-		TargetID:  strings.TrimSpace(c.Query("target_id")),
-		Status:    status,
-		Operator:  strings.TrimSpace(c.Query("operator")),
-		StartTime: startTime,
-		EndTime:   endTime,
-		Offset:    offset,
-		Limit:     ps,
+	list, total, err := h.audit.List(c.Request.Context(), service.AuditListFilter{
+		Action:   "platform.scale",
+		Page:     page,
+		PageSize: ps,
 	})
 	if err != nil {
 		response.Error(c, http.StatusInternalServerError, http.StatusInternalServerError, response.ErrCodeInternal, "internal server error")
 		return
 	}
 	response.JSON(c, gin.H{
-		"items":     rows,
+		"items":     list,
 		"total":     total,
 		"page":      page,
 		"page_size": ps,
@@ -264,26 +232,26 @@ func (h *PlatformHandler) writeAudit(
 	if h.audit == nil {
 		return
 	}
-	rawSpec := "{}"
-	if len(specPatch) > 0 {
-		if b, err := json.Marshal(specPatch); err == nil {
-			rawSpec = string(b)
-		}
+	actorID, _ := userIDFromContext(c)
+	details := map[string]any{
+		"target_id":  targetID,
+		"dry_run":    dryRun,
+		"spec_patch": specPatch,
 	}
-	row := &model.PlatformScaleAudit{
-		UserID:       c.GetString(middleware.ContextUserIDKey),
-		Username:     c.GetString(middleware.ContextUsernameKey),
-		Role:         c.GetString(middleware.ContextRoleKey),
-		ClientIP:     c.ClientIP(),
-		TargetID:     targetID,
-		DryRun:       dryRun,
-		Status:       status,
-		SpecPatch:    rawSpec,
-		ErrorMessage: errMsg,
+	if errMsg != "" {
+		details["error"] = errMsg
 	}
-	if err := h.audit.Create(c.Request.Context(), row); err != nil && h.log != nil {
-		h.log.Warn("platform_scale_audit_persist_failed", zap.Error(err))
-	}
+	_ = h.audit.Record(c.Request.Context(), service.AuditEntry{
+		ActorID:    &actorID,
+		ActorType:  "user",
+		Action:     "platform.scale",
+		Resource:   "vmcluster",
+		ResourceID: targetID,
+		Details:    details,
+		IP:         c.ClientIP(),
+		UserAgent:  c.Request.UserAgent(),
+		Status:     status,
+	})
 }
 
 func (h *PlatformHandler) handleErr(c *gin.Context, err error) {

@@ -8,10 +8,12 @@ import (
 	"os"
 	"strings"
 
+	"ops-system/backend/internal/config"
 	"ops-system/backend/internal/helm"
 	"ops-system/backend/internal/k8s"
 	"ops-system/backend/internal/model"
 	"ops-system/backend/internal/repository"
+	"ops-system/backend/internal/vm"
 
 	"github.com/google/uuid"
 	"go.uber.org/zap"
@@ -51,26 +53,41 @@ type ZoneInitSharedPlan struct {
 type ZoneService struct {
 	repo              *repository.ZoneRepository
 	instRepo          *repository.InstanceRepository
+	vmClusterRepo     *repository.VMClusterRepository
+	logClusterRepo    *repository.LogClusterRepository
 	grafanaInstRepo   *repository.GrafanaInstanceRepository
 	clusterRepo       *repository.ClusterRepository
 	clientCache       *k8s.ClusterClientCache
+	vmCfg             *config.VMConfig
+	logsCfg           *config.LogsConfig
+	helmCharts        *config.HelmCharts
 	log               *zap.Logger
 }
 
 func NewZoneService(
 	repo *repository.ZoneRepository,
 	instRepo *repository.InstanceRepository,
+	vmClusterRepo *repository.VMClusterRepository,
+	logClusterRepo *repository.LogClusterRepository,
 	grafanaInstRepo *repository.GrafanaInstanceRepository,
 	clusterRepo *repository.ClusterRepository,
 	clientCache *k8s.ClusterClientCache,
+	vmCfg *config.VMConfig,
+	logsCfg *config.LogsConfig,
+	helmCharts *config.HelmCharts,
 	log *zap.Logger,
 ) *ZoneService {
 	return &ZoneService{
 		repo:            repo,
 		instRepo:        instRepo,
+		vmClusterRepo:   vmClusterRepo,
+		logClusterRepo:  logClusterRepo,
 		grafanaInstRepo: grafanaInstRepo,
 		clusterRepo:     clusterRepo,
 		clientCache:     clientCache,
+		vmCfg:           vmCfg,
+		logsCfg:         logsCfg,
+		helmCharts:      helmCharts,
 		log:             log,
 	}
 }
@@ -194,10 +211,8 @@ func (s *ZoneService) Get(ctx context.Context, id uuid.UUID) (*model.Zone, error
 
 // GetZoneStats 获取 Zone 容量统计。
 type ZoneStats struct {
-	ZoneID              string `json:"zone_id"`
-	TotalInstances      int64  `json:"total_instances"`
-	SharedInstances     int64  `json:"shared_instances"`
-	DedicatedInstances  int64  `json:"dedicated_instances"`
+	ZoneID         string `json:"zone_id"`
+	TotalInstances int64  `json:"total_instances"`
 }
 
 // GetStats 获取 Zone 容量统计。
@@ -376,6 +391,30 @@ func (s *ZoneService) InitShared(ctx context.Context, zoneID uuid.UUID, req *Zon
 		return nil, err
 	}
 
+	if !req.DryRun && s.vmClusterRepo != nil {
+		vmauthBase := ""
+		if s.vmCfg != nil {
+			vmauthBase = s.vmCfg.VMAuthBaseURL
+		}
+		ep := vm.BuildSharedPoolEndpoints(plan.Namespace, plan.ReleaseName, vmauthBase)
+		cluster := &model.VMCluster{
+			Name:        fmt.Sprintf("shared-%s", z.Slug),
+			Mode:        "shared",
+			ZoneID:      &zoneID,
+			ClusterID:   &z.ClusterID,
+			ReleaseName: plan.ReleaseName,
+			Namespace:   plan.Namespace,
+			SelectURL:   ep.SelectURL,
+			InsertURL:   ep.InsertURL,
+			VMAuthURL:   ep.VMAuthURL,
+			TargetURL:   ep.VMAuthURL,
+			Status:      "active",
+		}
+		if err := s.vmClusterRepo.UpsertShared(ctx, cluster); err != nil {
+			s.log.Warn("zone_register_shared_pool_failed", zap.String("zone_id", zoneID.String()), zap.Error(err))
+		}
+	}
+
 	return &ZoneInitSharedPlan{
 		DryRun:      plan.DryRun,
 		ZoneID:      zoneID.String(),
@@ -387,6 +426,67 @@ func (s *ZoneService) InitShared(ctx context.Context, zoneID uuid.UUID, req *Zon
 		Action:      plan.Action,
 		Values:      plan.Values,
 	}, nil
+}
+
+// InitLogs 在可用区绑定的集群中初始化共享日志管道（VL + Kafka + Vector Aggregator）。
+func (s *ZoneService) InitLogs(ctx context.Context, zoneID uuid.UUID, req *ZoneInitSharedRequest) (*InitLogsPipelinePlan, error) {
+	z, err := s.repo.GetByID(ctx, zoneID)
+	if err != nil {
+		return nil, err
+	}
+	if z == nil {
+		return nil, ErrZoneNotFound
+	}
+	if z.Status == "offline" {
+		return nil, ErrZoneOffline
+	}
+
+	helmCli, k8sCli, err := s.resolveClusterClients(ctx, z.ClusterID)
+	if err != nil {
+		return nil, err
+	}
+
+	ns := strings.TrimSpace(req.Namespace)
+	if ns == "" {
+		ns = "logging-" + z.Slug
+	}
+	release := strings.TrimSpace(req.ReleaseName)
+	if release == "" {
+		release = "vl-shared-stack"
+	}
+
+	pipelineSvc := NewLogPipelineService(helmCli, k8sCli, s.logsCfg, s.helmCharts)
+	plan, err := pipelineSvc.InitLogsPipeline(ctx, &InitLogsPipelineRequest{
+		DryRun:      req.DryRun,
+		Namespace:   ns,
+		ReleaseName: release,
+		ZoneSlug:    z.Slug,
+		Values:      req.Values,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	if !req.DryRun && s.logClusterRepo != nil {
+		cluster := &model.LogCluster{
+			Name:         fmt.Sprintf("shared-logs-%s", z.Slug),
+			BackendType:  "victorialogs",
+			ZoneID:       &zoneID,
+			ClusterID:    &z.ClusterID,
+			ReleaseName:  plan.ReleaseName,
+			Namespace:    plan.Namespace,
+			InsertURL:    plan.InsertURL,
+			SelectURL:    plan.SelectURL,
+			KafkaBrokers: plan.KafkaBrokers,
+			KafkaTopic:   plan.KafkaTopic,
+			Status:       "active",
+		}
+		if err := s.logClusterRepo.UpsertShared(ctx, cluster); err != nil {
+			s.log.Warn("zone_register_log_pipeline_failed", zap.String("zone_id", zoneID.String()), zap.Error(err))
+		}
+	}
+
+	return plan, nil
 }
 
 // InitGrafana 在可用区绑定的集群中初始化 Grafana。

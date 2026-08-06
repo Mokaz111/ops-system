@@ -1,4 +1,4 @@
-# 共享版：与平台共享 VictoriaMetrics，租户侧仅部署 VL + n9e-edge
+# 共享版：与平台共享 VictoriaMetrics，租户侧仅部署 VL
 tenant:
   mode: shared
 
@@ -15,16 +15,3 @@ victoriaLogs:
   storage:
     size: 5Gi
     storageClassName: ""
-
-n9eEdge:
-  enabled: true
-  replicas: 1
-  resources:
-    requests:
-      cpu: 50m
-      memory: 64Mi
-    limits:
-      cpu: 200m
-      memory: 256Mi
-  config:
-    heartbeat_interval: 15s

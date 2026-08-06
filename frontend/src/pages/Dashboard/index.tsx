@@ -44,7 +44,7 @@ export default function DashboardPage() {
   const statCards: StatCard[] = [
     { label: '工作空间总数', value: stats.workspaces, icon: <GroupsOutlinedIcon />, color: '#1a73e8', bgColor: '#e8f0fe' },
     { label: '实例总数', value: stats.instances, icon: <StorageOutlinedIcon />, color: '#1e8e3e', bgColor: '#e6f4ea' },
-    { label: '活跃告警', value: '--', change: '由夜莺 N9E 提供', icon: <NotificationsActiveOutlinedIcon />, color: '#d93025', bgColor: '#fce8e6' },
+    { label: '活跃告警', value: '--', change: '告警引擎统计接入后展示', icon: <NotificationsActiveOutlinedIcon />, color: '#d93025', bgColor: '#fce8e6' },
     { label: '指标写入速率', value: '--', change: '监控接口接入后展示', icon: <SpeedOutlinedIcon />, color: '#e37400', bgColor: '#fef7e0' },
   ];
 
@@ -106,7 +106,7 @@ export default function DashboardPage() {
                 告警分布
               </Typography>
               <Alert severity="info">
-                告警统计由夜莺 N9E 独立提供，请前往告警页进入夜莺控制台查看实时分布。
+                告警统计将在平台告警引擎接入汇总接口后展示，请前往告警页查看规则与事件。
               </Alert>
             </CardContent>
           </Card>

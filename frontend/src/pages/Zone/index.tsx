@@ -31,6 +31,7 @@ import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
 import DeleteOutlinedIcon from '@mui/icons-material/DeleteOutlined';
 import CloudUploadOutlinedIcon from '@mui/icons-material/CloudUploadOutlined';
 import AddCircleOutlineIcon from '@mui/icons-material/AddCircleOutline';
+import VisibilityOutlinedIcon from '@mui/icons-material/VisibilityOutlined';
 import { useSnackbar } from 'notistack';
 import PageHeader from '../../components/common/PageHeader';
 import StatusChip from '../../components/common/StatusChip';
@@ -40,6 +41,7 @@ import LoadingScreen from '../../components/common/LoadingScreen';
 import FilterToolbar from '../../components/common/FilterToolbar';
 import DataTableCard from '../../components/common/DataTableCard';
 import { zoneAPI, type Zone } from '../../api/zone';
+import type { PreflightCheck, ZoneComponent } from '../../types/api';
 import { clusterAPI, type Cluster } from '../../api/cluster';
 import { extractApiError } from '../../api';
 import { useAuthStore } from '../../stores/useAuthStore';
@@ -93,6 +95,11 @@ export default function ZonePage() {
   const [initLoading, setInitLoading] = useState(false);
   const [initPlan, setInitPlan] = useState<object | null>(null);
   const [initConfirmOpen, setInitConfirmOpen] = useState(false);
+  const [preflightResult, setPreflightResult] = useState<PreflightCheck | null>(null);
+
+  const [componentsDialog, setComponentsDialog] = useState<{ open: boolean; zone?: Zone }>({ open: false });
+  const [components, setComponents] = useState<ZoneComponent[]>([]);
+  const [componentsLoading, setComponentsLoading] = useState(false);
 
   const clusterNameById = useMemo(() => {
     const map: Record<string, string> = {};
@@ -135,6 +142,44 @@ export default function ZonePage() {
     setInitDialog({ open: true, zone: z });
     setInitForm({ namespace: `monitoring-${z.slug}`, release_name: 'vm-shared-stack', helm_values: defaultHelmValues });
     setInitPlan(null);
+    setPreflightResult(null);
+  };
+
+  const openComponentsDialog = async (z: Zone) => {
+    setComponentsDialog({ open: true, zone: z });
+    setComponentsLoading(true);
+    try {
+      const { data: res } = await zoneAPI.getComponents(z.id);
+      setComponents(res.data || []);
+    } catch (err) {
+      enqueueSnackbar(extractApiError(err, '获取组件状态失败'), { variant: 'error' });
+      setComponents([]);
+    } finally {
+      setComponentsLoading(false);
+    }
+  };
+
+  const runPreflight = async () => {
+    if (!initDialog.zone) return;
+    setInitLoading(true);
+    try {
+      let values: Record<string, unknown> | undefined;
+      try { values = JSON.parse(initForm.helm_values); } catch { enqueueSnackbar('Helm Values JSON 格式错误', { variant: 'warning' }); setInitLoading(false); return; }
+      const { data: res } = await zoneAPI.preflight(initDialog.zone.id, {
+        dry_run: true,
+        namespace: initForm.namespace,
+        release_name: initForm.release_name,
+        values,
+      });
+      setPreflightResult(res.data);
+      if (res.data?.ok) {
+        enqueueSnackbar('预检通过', { variant: 'success' });
+      } else {
+        enqueueSnackbar(`预检发现 ${res.data?.issues?.length || 0} 项问题`, { variant: 'warning' });
+      }
+    } catch (err) {
+      enqueueSnackbar(extractApiError(err, '预检失败'), { variant: 'error' });
+    } finally { setInitLoading(false); }
   };
 
   const handleInitDryRun = async () => {
@@ -158,6 +203,10 @@ export default function ZonePage() {
 
   const handleInitApply = async () => {
     if (!initDialog.zone) return;
+    if (!preflightResult?.ok) {
+      enqueueSnackbar('请先执行预检并确保通过后再初始化', { variant: 'warning' });
+      return;
+    }
     setInitLoading(true);
     try {
       let values: Record<string, unknown> | undefined;
@@ -263,6 +312,9 @@ export default function ZonePage() {
                       <Tooltip title="在此可用区创建实例">
                         <IconButton size="small" onClick={() => navigate(`/instances/create?zone_id=${z.id}`)} color="primary"><AddCircleOutlineIcon fontSize="small" /></IconButton>
                       </Tooltip>
+                      <Tooltip title="组件状态">
+                        <IconButton size="small" onClick={() => openComponentsDialog(z)}><VisibilityOutlinedIcon fontSize="small" /></IconButton>
+                      </Tooltip>
                       <Tooltip title="初始化共享 VM 集群">
                         <IconButton size="small" onClick={() => openInitDialog(z)}><CloudUploadOutlinedIcon fontSize="small" /></IconButton>
                       </Tooltip>
@@ -334,6 +386,16 @@ export default function ZonePage() {
             sx={{ fontFamily: 'monospace', '& textarea': { fontSize: '0.8125rem', fontFamily: 'monospace' } }}
             helperText="自定义 Helm values 覆盖默认配置。留空或保持默认值则使用预设。"
           />
+          {preflightResult && (
+            <Alert severity={preflightResult.ok ? 'success' : 'warning'} sx={{ mt: 2 }}>
+              {preflightResult.ok ? '预检通过，可以执行初始化' : `预检发现 ${preflightResult.issues?.length || 0} 项问题`}
+              {!preflightResult.ok && preflightResult.issues?.map((issue, i) => (
+                <Typography key={i} variant="caption" sx={{ display: 'block' }}>
+                  · [{issue.component}] {issue.reason}{issue.message ? `: ${issue.message}` : ''}
+                </Typography>
+              ))}
+            </Alert>
+          )}
           {initPlan && (
             <Box component="pre" sx={{ mt: 2, p: 2, borderRadius: 1, backgroundColor: '#f8f9fa', fontSize: 11, overflowX: 'auto', m: 0, maxHeight: 300 }}>
               {JSON.stringify(initPlan, null, 2)}
@@ -342,8 +404,9 @@ export default function ZonePage() {
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2 }}>
           <Button onClick={() => setInitDialog({ open: false })}>取消</Button>
+          <Button variant="outlined" onClick={runPreflight} disabled={initLoading}>预检</Button>
           <Button variant="outlined" onClick={handleInitDryRun} disabled={initLoading}>{initLoading ? '执行中...' : 'Dry-run 预览'}</Button>
-          <Button variant="contained" onClick={() => setInitConfirmOpen(true)} disabled={initLoading || !initPlan}>应用初始化</Button>
+          <Button variant="contained" onClick={() => setInitConfirmOpen(true)} disabled={initLoading || !preflightResult?.ok}>应用初始化</Button>
         </DialogActions>
       </Dialog>
 
@@ -354,6 +417,45 @@ export default function ZonePage() {
       <ConfirmDialog open={deleteDialog.open} title="删除可用区"
         message={`确定要删除可用区「${deleteDialog.zone?.display_name}」吗？不可逆，且要求无活跃实例。`}
         severity="error" confirmLabel="删除" onConfirm={handleDelete} onCancel={() => setDeleteDialog({ open: false })} />
+
+      <Dialog open={componentsDialog.open} onClose={() => setComponentsDialog({ open: false })} maxWidth="md" fullWidth>
+        <DialogTitle>组件状态 — {componentsDialog.zone?.display_name}</DialogTitle>
+        <DialogContent sx={{ pt: '16px !important' }}>
+          {componentsLoading ? (
+            <Typography variant="body2" color="text.secondary">加载中...</Typography>
+          ) : components.length === 0 ? (
+            <EmptyState title="暂无组件信息" description="可用区尚未初始化或后端未上报组件状态" />
+          ) : (
+            <TableContainer>
+              <Table size="small">
+                <TableHead>
+                  <TableRow>
+                    <TableCell>组件</TableCell>
+                    <TableCell>类型</TableCell>
+                    <TableCell>状态</TableCell>
+                    <TableCell>版本</TableCell>
+                    <TableCell>说明</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {components.map((c, idx) => (
+                    <TableRow key={idx}>
+                      <TableCell sx={{ fontWeight: 500 }}>{c.name}</TableCell>
+                      <TableCell>{c.component}</TableCell>
+                      <TableCell><StatusChip status={c.status} /></TableCell>
+                      <TableCell>{c.version || '-'}</TableCell>
+                      <TableCell sx={{ color: 'text.secondary', fontSize: '0.8125rem' }}>{c.message || '-'}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button onClick={() => setComponentsDialog({ open: false })}>关闭</Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 }

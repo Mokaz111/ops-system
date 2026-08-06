@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"ops-system/backend/internal/model"
-	"ops-system/backend/internal/n9e"
 	"ops-system/backend/internal/repository"
 	"ops-system/backend/internal/vm"
 
@@ -60,21 +59,19 @@ type UpdateAlertRuleRequest struct {
 
 // AlertService 告警规则业务。
 type AlertService struct {
-	ruleRepo   *repository.AlertRuleRepository
+	ruleRepo      *repository.AlertRuleRepository
 	workspaceRepo *repository.WorkspaceRepository
-	n9e        *n9e.Client
-	vmRules    *vm.VMOperatorClient
-	log        *zap.Logger
+	vmRules       *vm.VMOperatorClient
+	log           *zap.Logger
 }
 
 func NewAlertService(
 	ruleRepo *repository.AlertRuleRepository,
 	workspaceRepo *repository.WorkspaceRepository,
-	n9eClient *n9e.Client,
 	vmRules *vm.VMOperatorClient,
 	log *zap.Logger,
 ) *AlertService {
-	return &AlertService{ruleRepo: ruleRepo, workspaceRepo: workspaceRepo, n9e: n9eClient, vmRules: vmRules, log: log}
+	return &AlertService{ruleRepo: ruleRepo, workspaceRepo: workspaceRepo, vmRules: vmRules, log: log}
 }
 
 // CreateRule 创建告警规则。
@@ -117,16 +114,6 @@ func (s *AlertService) CreateRule(ctx context.Context, req *CreateAlertRuleReque
 
 	if err := s.applyVMRule(ctx, t, rule); err != nil {
 		s.log.Warn("vmrule_apply_failed", zap.Error(err), zap.String("rule_id", rule.ID.String()))
-	}
-
-	if s.n9e != nil && s.n9e.Enabled() {
-		n9eID, err := s.n9e.CreateAlertRule(ctx, t.N9ETeamID, s.buildN9EPayload(rule))
-		if err != nil {
-			s.log.Warn("n9e_create_alert_rule_failed", zap.Error(err), zap.String("rule_id", rule.ID.String()))
-		} else if n9eID > 0 {
-			rule.N9ERuleID = n9eID
-			_ = s.ruleRepo.Update(ctx, rule)
-		}
 	}
 
 	return rule, nil
@@ -214,12 +201,6 @@ func (s *AlertService) UpdateRule(ctx context.Context, id uuid.UUID, req *Update
 		}
 	}
 
-	if s.n9e != nil && s.n9e.Enabled() && rule.N9ERuleID > 0 {
-		if err := s.n9e.UpdateAlertRule(ctx, rule.N9ERuleID, s.buildN9EPayload(rule)); err != nil {
-			s.log.Warn("n9e_update_alert_rule_failed", zap.Error(err), zap.String("rule_id", rule.ID.String()))
-		}
-	}
-
 	return rule, nil
 }
 
@@ -262,13 +243,6 @@ func (s *AlertService) DeleteRule(ctx context.Context, id uuid.UUID) error {
 	if rule == nil {
 		return ErrAlertRuleNotFound
 	}
-
-	if s.n9e != nil && s.n9e.Enabled() && rule.N9ERuleID > 0 {
-		if err := s.n9e.DeleteAlertRule(ctx, rule.N9ERuleID); err != nil {
-			s.log.Warn("n9e_delete_alert_rule_failed", zap.Error(err), zap.String("rule_id", rule.ID.String()))
-		}
-	}
-
 	return s.ruleRepo.Delete(ctx, id)
 }
 
@@ -287,25 +261,13 @@ func (s *AlertService) ToggleRule(ctx context.Context, id uuid.UUID, enabled boo
 		return nil, err
 	}
 
-	if s.n9e != nil && s.n9e.Enabled() && rule.N9ERuleID > 0 {
-		if err := s.n9e.UpdateAlertRule(ctx, rule.N9ERuleID, s.buildN9EPayload(rule)); err != nil {
-			s.log.Warn("n9e_toggle_alert_rule_failed", zap.Error(err), zap.String("rule_id", rule.ID.String()))
+	if t, err := s.workspaceRepo.GetByID(ctx, rule.TenantID); err == nil && t != nil {
+		if err := s.applyVMRule(ctx, t, rule); err != nil {
+			s.log.Warn("vmrule_toggle_failed", zap.Error(err), zap.String("rule_id", rule.ID.String()))
 		}
 	}
 
 	return rule, nil
-}
-
-func (s *AlertService) buildN9EPayload(rule *model.AlertRule) map[string]any {
-	return map[string]any{
-		"name":        rule.RuleName,
-		"rule_type":   rule.RuleType,
-		"query":       rule.Query,
-		"condition":   rule.Condition,
-		"level":       rule.Level,
-		"annotations": rule.Annotations,
-		"enabled":     rule.Enabled,
-	}
 }
 
 func validRuleType(s string) bool {

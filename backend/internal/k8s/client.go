@@ -65,6 +65,37 @@ func NewClient(kubeconfig string, inCluster bool) (*Client, error) {
 	return &Client{cs: cs, dyn: dc, disco: cached, mapper: mapper}, nil
 }
 
+// NewClientFromKubeconfigContent 从 kubeconfig YAML 文本构建 client。
+func NewClientFromKubeconfigContent(content string) (*Client, error) {
+	content = strings.TrimSpace(content)
+	if content == "" {
+		return nil, fmt.Errorf("kubeconfig content is empty")
+	}
+	cfg, err := clientcmd.NewClientConfigFromBytes([]byte(content))
+	if err != nil {
+		return nil, err
+	}
+	restCfg, err := cfg.ClientConfig()
+	if err != nil {
+		return nil, err
+	}
+	cs, err := kubernetes.NewForConfig(restCfg)
+	if err != nil {
+		return nil, err
+	}
+	dc, err := dynamic.NewForConfig(restCfg)
+	if err != nil {
+		return nil, err
+	}
+	discoClient, err := discovery.NewDiscoveryClientForConfig(restCfg)
+	if err != nil {
+		return nil, err
+	}
+	cached := memcached.NewMemCacheClient(discoClient)
+	mapper := restmapper.NewDeferredDiscoveryRESTMapper(cached)
+	return &Client{cs: cs, dyn: dc, disco: cached, mapper: mapper}, nil
+}
+
 // EnsureNamespace 创建命名空间（已存在则忽略）。
 func (c *Client) EnsureNamespace(ctx context.Context, name string, labels map[string]string) error {
 	if labels == nil {
@@ -452,4 +483,18 @@ func (c *Client) ApplyDefaultNetworkPolicy(ctx context.Context, namespace string
 		return nil
 	}
 	return err
+}
+
+// HasCRD 检查集群是否注册了 VMAgent CRD（或指定 CRD 资源名）。
+func (c *Client) HasCRD(ctx context.Context, crdName string) bool {
+	if c == nil || c.dyn == nil {
+		return false
+	}
+	gvr := schema.GroupVersionResource{
+		Group:    "operator.victoriametrics.com",
+		Version:  "v1beta1",
+		Resource: "vmagents",
+	}
+	_, err := c.dyn.Resource(gvr).Namespace("default").List(ctx, metav1.ListOptions{Limit: 1})
+	return err == nil
 }

@@ -37,7 +37,6 @@ const (
 	ErrCodeChannelNotFound         = "CHANNEL_NOT_FOUND"
 	ErrCodeLogInstanceNotFound     = "LOG_INSTANCE_NOT_FOUND"
 	ErrCodeGrafanaInstanceNotFound = "GRAFANA_INSTANCE_NOT_FOUND"
-	ErrCodeScaleInstanceNotFound   = "SCALE_INSTANCE_NOT_FOUND"
 	ErrCodePlatformTargetNotFound  = "PLATFORM_TARGET_NOT_FOUND"
 	ErrCodeParentNotFound          = "PARENT_NOT_FOUND"
 
@@ -45,12 +44,6 @@ const (
 	ErrCodeInvalidTemplateType    = "INVALID_TEMPLATE_TYPE"
 	ErrCodeInvalidInstanceType    = "INVALID_INSTANCE_TYPE"
 	ErrCodeInvalidInstanceStatus  = "INVALID_INSTANCE_STATUS"
-	ErrCodeInstanceNotReady       = "INSTANCE_NOT_READY"
-	ErrCodeInstanceBusy           = "INSTANCE_BUSY"
-	ErrCodeInvalidScaleType       = "INVALID_SCALE_TYPE"
-	ErrCodeScaleNotSupported      = "SCALE_NOT_SUPPORTED"
-	ErrCodeScaleManagedByPlatform = "SCALE_MANAGED_BY_PLATFORM"
-	ErrCodeScaleTypeNotAllowed    = "SCALE_TYPE_NOT_ALLOWED"
 	ErrCodeInvalidPagination      = "INVALID_PAGINATION"
 	ErrCodeInvalidPlatformScope   = "INVALID_PLATFORM_SCOPE"
 	ErrCodePlatformTargetRequired = "PLATFORM_TARGET_REQUIRED"
@@ -107,6 +100,7 @@ const (
 		ErrCodeZoneOffline            = "ZONE_OFFLINE"
 		ErrCodeZoneCapacityExhausted  = "ZONE_CAPACITY_EXHAUSTED"
 		ErrCodeZoneSharedNotReady     = "ZONE_SHARED_NOT_READY"
+		ErrCodeZoneLogsNotReady       = "ZONE_LOGS_NOT_READY"
 
 		ErrCodeBusinessClusterNotFound      = "BUSINESS_CLUSTER_NOT_FOUND"
 		ErrCodeBusinessClusterNameConflict  = "BUSINESS_CLUSTER_NAME_CONFLICT"
