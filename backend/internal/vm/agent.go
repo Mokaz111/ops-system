@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"ops-system/backend/internal/k8s"
+	"ops-system/backend/internal/model"
 )
 
 // AgentSpec VMAgent CR 构建参数。
@@ -19,9 +20,10 @@ type AgentSpec struct {
 	ZoneSlug       string
 	WorkspaceID    string
 	ClusterName    string
+	Collect        model.MetricsCollectConfig
 }
 
-// BuildVMAgentYAML 构建带 U-001 标签的 VMAgent CR。
+// BuildVMAgentYAML 构建带 U-001 标签与可配置采集参数的 VMAgent CR。
 func BuildVMAgentYAML(spec AgentSpec) string {
 	ns := strings.TrimSpace(spec.Namespace)
 	if ns == "" {
@@ -31,7 +33,30 @@ func BuildVMAgentYAML(spec AgentSpec) string {
 	if name == "" {
 		name = "ops-vmagent"
 	}
-	return fmt.Sprintf(`apiVersion: operator.victoriametrics.com/v1beta1
+
+	collect := spec.Collect
+	if collect.SelectAllByDefault == nil && collect.ScrapeInterval == "" {
+		collect = model.DefaultMetricsCollectConfig()
+	} else {
+		// 补默认值
+		def := model.DefaultMetricsCollectConfig()
+		if collect.SelectAllByDefault == nil {
+			collect.SelectAllByDefault = def.SelectAllByDefault
+		}
+		if strings.TrimSpace(collect.ScrapeInterval) == "" {
+			collect.ScrapeInterval = def.ScrapeInterval
+		}
+		if strings.TrimSpace(collect.ScrapeTimeout) == "" {
+			collect.ScrapeTimeout = def.ScrapeTimeout
+		}
+	}
+	selectAll := true
+	if collect.SelectAllByDefault != nil {
+		selectAll = *collect.SelectAllByDefault
+	}
+
+	var b strings.Builder
+	fmt.Fprintf(&b, `apiVersion: operator.victoriametrics.com/v1beta1
 kind: VMAgent
 metadata:
   name: %s
@@ -40,9 +65,20 @@ metadata:
     managed-by: ops-system
     ops-system/tenant-id: %s
 spec:
-  selectAllByDefault: true
-  remoteWrite:
-    - url: %s
+  selectAllByDefault: %t
+  scrapeInterval: %q
+  scrapeTimeout: %q
+`, name, ns, spec.TenantID, selectAll, collect.ScrapeInterval, collect.ScrapeTimeout)
+
+	if len(collect.NamespaceInclude) > 0 {
+		b.WriteString("  namespaceSelector:\n    matchNames:\n")
+		for _, n := range collect.NamespaceInclude {
+			fmt.Fprintf(&b, "      - %q\n", n)
+		}
+	}
+
+	b.WriteString("  remoteWrite:\n")
+	fmt.Fprintf(&b, `    - url: %s
       basicAuth:
         username:
           name: %s-auth
@@ -50,16 +86,28 @@ spec:
         password:
           name: %s-auth
           key: password
-  inlineRelabelConfig:
-    - target_label: ops_tenant_id
-      replacement: %s
+`, spec.RemoteWriteURL, name, name)
+
+	b.WriteString("  inlineRelabelConfig:\n")
+	fmt.Fprintf(&b, `    - target_label: ops_tenant_id
+      replacement: %q
     - target_label: ops_zone
-      replacement: %s
+      replacement: %q
     - target_label: ops_workspace
-      replacement: %s
+      replacement: %q
     - target_label: ops_cluster
-      replacement: %s
----
+      replacement: %q
+`, spec.TenantID, spec.ZoneSlug, spec.WorkspaceID, spec.ClusterName)
+
+	if len(collect.NamespaceExclude) > 0 {
+		regex := strings.Join(escapeRegexAlternation(collect.NamespaceExclude), "|")
+		fmt.Fprintf(&b, `    - action: drop
+      source_labels: [namespace]
+      regex: %q
+`, regex)
+	}
+
+	fmt.Fprintf(&b, `---
 apiVersion: v1
 kind: Secret
 metadata:
@@ -69,10 +117,27 @@ type: Opaque
 stringData:
   username: %s
   password: %s
-`, name, ns, spec.TenantID,
-		spec.RemoteWriteURL, name, name,
-		spec.TenantID, spec.ZoneSlug, spec.WorkspaceID, spec.ClusterName,
-		name, ns, spec.BasicAuthUser, spec.BasicAuthPass)
+`, name, ns, spec.BasicAuthUser, spec.BasicAuthPass)
+
+	return b.String()
+}
+
+func escapeRegexAlternation(items []string) []string {
+	out := make([]string, 0, len(items))
+	for _, item := range items {
+		item = strings.TrimSpace(item)
+		if item == "" {
+			continue
+		}
+		// 简单转义正则元字符，命名空间通常是 DNS label。
+		r := strings.NewReplacer(
+			`.`, `\.`, `+`, `\+`, `*`, `\*`, `?`, `\?`,
+			`(`, `\(`, `)`, `\)`, `[`, `\[`, `]`, `\]`,
+			`{`, `\{`, `}`, `\}`, `|`, `\|`, `^`, `\^`, `$`, `\$`,
+		)
+		out = append(out, r.Replace(item))
+	}
+	return out
 }
 
 func (c *VMOperatorClient) ApplyVMAgent(ctx context.Context, client *k8s.Client, spec AgentSpec) error {

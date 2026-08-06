@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"ops-system/backend/internal/k8s"
+	"ops-system/backend/internal/model"
 )
 
 // AgentSpec Vector Agent（业务集群）构建参数。
@@ -18,6 +19,7 @@ type AgentSpec struct {
 	ZoneSlug     string
 	WorkspaceID  string
 	ClusterName  string
+	Collect      model.LogsCollectConfig
 }
 
 func safeName(v string) string {
@@ -48,29 +50,12 @@ func BuildVectorAgentYAML(spec AgentSpec) string {
 	name := safeName(spec.Name)
 	brokers := strings.TrimSpace(spec.KafkaBrokers)
 	topic := strings.TrimSpace(spec.KafkaTopic)
-	vectorCfg := fmt.Sprintf(`data_dir: /vector-data-dir
-sources:
-  k8s_logs:
-    type: kubernetes_logs
-transforms:
-  inject_ops_labels:
-    type: remap
-    inputs: [k8s_logs]
-    source: |
-      .ops_tenant_id = "%s"
-      .ops_zone = "%s"
-      .ops_workspace = "%s"
-      .ops_cluster = "%s"
-sinks:
-  kafka_out:
-    type: kafka
-    inputs: [inject_ops_labels]
-    bootstrap_servers: "%s"
-    topic: "%s"
-    key_field: ops_tenant_id
-    encoding:
-      codec: json
-`, spec.TenantID, spec.ZoneSlug, spec.WorkspaceID, spec.ClusterName, brokers, topic)
+	collect := spec.Collect
+	if collect.NamespaceInclude == nil && collect.NamespaceExclude == nil && collect.ExcludePaths == nil {
+		collect = model.DefaultLogsCollectConfig()
+	}
+
+	vectorCfg := buildVectorConfig(spec, collect, brokers, topic)
 
 	return fmt.Sprintf(`apiVersion: v1
 kind: Namespace
@@ -169,6 +154,74 @@ spec:
           hostPath:
             path: /var/lib
 `, ns, name, ns, name, name, name, name, ns, name, ns, indentYAML(vectorCfg, 4), name, ns, name, name, name, name, name)
+}
+
+func buildVectorConfig(spec AgentSpec, collect model.LogsCollectConfig, brokers, topic string) string {
+	var b strings.Builder
+	b.WriteString("data_dir: /vector-data-dir\n")
+	b.WriteString("sources:\n")
+	b.WriteString("  k8s_logs:\n")
+	b.WriteString("    type: kubernetes_logs\n")
+	if len(collect.ExcludePaths) > 0 {
+		b.WriteString("    exclude_paths_glob_patterns:\n")
+		for _, p := range collect.ExcludePaths {
+			fmt.Fprintf(&b, "      - %q\n", p)
+		}
+	}
+
+	remapInput := "k8s_logs"
+	b.WriteString("transforms:\n")
+	if len(collect.NamespaceInclude) > 0 || len(collect.NamespaceExclude) > 0 {
+		b.WriteString("  filter_ns:\n")
+		b.WriteString("    type: filter\n")
+		b.WriteString("    inputs: [k8s_logs]\n")
+		b.WriteString("    condition: |\n")
+		fmt.Fprintf(&b, "      %s\n", buildNSFilterCondition(collect))
+		remapInput = "filter_ns"
+	}
+	b.WriteString("  inject_ops_labels:\n")
+	b.WriteString("    type: remap\n")
+	fmt.Fprintf(&b, "    inputs: [%s]\n", remapInput)
+	fmt.Fprintf(&b, `    source: |
+      .ops_tenant_id = %q
+      .ops_zone = %q
+      .ops_workspace = %q
+      .ops_cluster = %q
+sinks:
+  kafka_out:
+    type: kafka
+    inputs: [inject_ops_labels]
+    bootstrap_servers: %q
+    topic: %q
+    key_field: ops_tenant_id
+    encoding:
+      codec: json
+`, spec.TenantID, spec.ZoneSlug, spec.WorkspaceID, spec.ClusterName, brokers, topic)
+
+	return b.String()
+}
+
+func buildNSFilterCondition(collect model.LogsCollectConfig) string {
+	// Vector VRL condition；namespace 取自 kubernetes.pod_namespace。
+	parts := make([]string, 0, 2)
+	if len(collect.NamespaceInclude) > 0 {
+		parts = append(parts, fmt.Sprintf(`includes([%s], .kubernetes.pod_namespace)`, quoteList(collect.NamespaceInclude)))
+	}
+	if len(collect.NamespaceExclude) > 0 {
+		parts = append(parts, fmt.Sprintf(`!includes([%s], .kubernetes.pod_namespace)`, quoteList(collect.NamespaceExclude)))
+	}
+	if len(parts) == 0 {
+		return "true"
+	}
+	return strings.Join(parts, " && ")
+}
+
+func quoteList(items []string) string {
+	quoted := make([]string, 0, len(items))
+	for _, item := range items {
+		quoted = append(quoted, fmt.Sprintf("%q", item))
+	}
+	return strings.Join(quoted, ", ")
 }
 
 func indentYAML(s string, spaces int) string {

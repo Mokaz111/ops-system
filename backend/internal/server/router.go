@@ -413,6 +413,7 @@ func NewRouter(cfg *config.Config, log *zap.Logger, db *gorm.DB) *gin.Engine {
 			bg := protected.Group("/business-clusters")
 			bg.GET("", businessClusterH.List)
 			bg.GET("/:id", businessClusterH.Get)
+			bg.GET("/:id/collect-config", businessClusterH.GetCollectConfig)
 
 			umg := protected.Group("/umodel")
 			umg.GET("/entities", umodelH.ListEntities)
@@ -522,6 +523,7 @@ func NewRouter(cfg *config.Config, log *zap.Logger, db *gorm.DB) *gin.Engine {
 
 			adminBG := admin.Group("/business-clusters")
 			adminBG.POST("", businessClusterH.Create)
+			adminBG.PUT("/:id/collect-config", businessClusterH.UpdateCollectConfig)
 			adminBG.POST("/:id/enable-logs", businessClusterH.EnableLogs)
 			adminBG.POST("/:id/disable-logs", businessClusterH.DisableLogs)
 			adminBG.DELETE("/:id", businessClusterH.Delete)

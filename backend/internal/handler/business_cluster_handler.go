@@ -130,6 +130,58 @@ func (h *BusinessClusterHandler) Delete(c *gin.Context) {
 	response.JSON(c, nil)
 }
 
+// GetCollectConfig GET /api/v1/business-clusters/:id/collect-config
+func (h *BusinessClusterHandler) GetCollectConfig(c *gin.Context) {
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid id")
+		return
+	}
+	m, err := h.svc.Get(c.Request.Context(), id)
+	if err != nil {
+		h.handleErr(c, err)
+		return
+	}
+	if !assertWorkspaceAccess(c, h.userSvc, m.TenantID) {
+		return
+	}
+	view, err := h.svc.GetCollectConfig(c.Request.Context(), id)
+	if err != nil {
+		h.handleErr(c, err)
+		return
+	}
+	response.JSON(c, view)
+}
+
+// UpdateCollectConfig PUT /api/v1/business-clusters/:id/collect-config
+func (h *BusinessClusterHandler) UpdateCollectConfig(c *gin.Context) {
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, "invalid id")
+		return
+	}
+	var body service.UpdateCollectConfigRequest
+	if err := c.ShouldBindJSON(&body); err != nil {
+		response.Error(c, http.StatusBadRequest, http.StatusBadRequest, response.ErrCodeValidation, response.TranslateBindingError(err))
+		return
+	}
+	// 以集群归属租户为准，避免平台管理员无 membership 时 resolveWorkspaceID 失败。
+	m, err := h.svc.Get(c.Request.Context(), id)
+	if err != nil {
+		h.handleErr(c, err)
+		return
+	}
+	if !assertWorkspaceAccess(c, h.userSvc, m.TenantID) {
+		return
+	}
+	view, err := h.svc.UpdateCollectConfig(c.Request.Context(), m.TenantID, id, &body)
+	if err != nil {
+		h.handleErr(c, err)
+		return
+	}
+	response.JSON(c, view)
+}
+
 func (h *BusinessClusterHandler) handleErr(c *gin.Context, err error) {
 	switch {
 	case errors.Is(err, service.ErrBusinessClusterNotFound):
@@ -140,7 +192,7 @@ func (h *BusinessClusterHandler) handleErr(c *gin.Context, err error) {
 		response.Error(c, http.StatusNotFound, http.StatusNotFound, response.ErrCodeInstanceNotFound, err.Error())
 	case errors.Is(err, service.ErrVMOperatorRequired):
 		response.Error(c, http.StatusUnprocessableEntity, http.StatusUnprocessableEntity, response.ErrCodeVMOperatorRequired, err.Error())
-	case errors.Is(err, service.ErrInvalidKubeconfig):
+	case errors.Is(err, service.ErrInvalidKubeconfig), errors.Is(err, service.ErrInvalidCollectConfig):
 		response.Error(c, http.StatusUnprocessableEntity, http.StatusUnprocessableEntity, response.ErrCodeValidation, err.Error())
 	case errors.Is(err, service.ErrZoneSharedNotReady), errors.Is(err, service.ErrWorkspaceProvisionFailed):
 		response.Error(c, http.StatusUnprocessableEntity, http.StatusUnprocessableEntity, response.ErrCodeZoneSharedNotReady, err.Error())
